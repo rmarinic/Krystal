@@ -26,15 +26,15 @@ echo   Bumping Krystal to v%VER% ...
 
 REM --- package.json (first "version": "x" only) ---
 powershell -NoProfile -Command ^
-  "$p='package.json'; $c=Get-Content $p -Raw; $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")', ('${1}%VER%${2}'),1); Set-Content $p $c -NoNewline -Encoding utf8"
+  "$p='package.json'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")','${1}%VER%${2}',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
 
 REM --- src-tauri/tauri.conf.json (first "version": "x" only) ---
 powershell -NoProfile -Command ^
-  "$p='src-tauri/tauri.conf.json'; $c=Get-Content $p -Raw; $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")', ('${1}%VER%${2}'),1); Set-Content $p $c -NoNewline -Encoding utf8"
+  "$p='src-tauri/tauri.conf.json'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")','${1}%VER%${2}',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
 
 REM --- src-tauri/Cargo.toml (the [package] version line, anchored to line start) ---
 powershell -NoProfile -Command ^
-  "$p='src-tauri/Cargo.toml'; $c=Get-Content $p -Raw; $c=[regex]::Replace($c,'(?m)^version = \"[^\"]*\"', 'version = \"%VER%\"',1); Set-Content $p $c -NoNewline -Encoding utf8"
+  "$p='src-tauri/Cargo.toml'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(?m)^version = \"[^\"]*\"','version = \"%VER%\"',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
 
 echo   Updated package.json, tauri.conf.json, Cargo.toml
 echo.
