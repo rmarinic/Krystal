@@ -996,3 +996,99 @@ body.app {
 }
 .project-card:hover .proj-del { display: block; }
 .project-card .proj-del:hover { background: var(--bg-elev); color: var(--warn); }
+
+/* ===================== Self-update overlay ===================== */
+/* Full-screen gate shown on launch when a newer release is found. */
+.update-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(108,199,142,0.10), transparent 60%),
+    rgba(6,9,7,0.92);
+  backdrop-filter: blur(6px);
+  animation: fade-in .25s ease;
+}
+.update-overlay[hidden] { display: none; }
+
+.update-card {
+  width: min(520px, 100%);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 14px; padding: 36px 34px 30px;
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-elev));
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.6), inset 0 1px 0 rgba(143,224,170,0.06);
+  animation: update-pop .32s cubic-bezier(.2,.9,.3,1.2);
+}
+@keyframes update-pop { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+
+.update-logo { transform: scale(.7); margin-bottom: -6px; opacity: .95; }
+.update-logo .logo-k { color: var(--accent-3); }
+
+.update-spark { font-size: 26px; line-height: 1; filter: drop-shadow(0 0 10px rgba(143,224,170,0.5)); }
+
+.update-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 19px; font-weight: 600; color: var(--fg); margin: 0; letter-spacing: .2px;
+}
+.update-version {
+  margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--accent-3);
+}
+.update-version .from { color: var(--fg-dim); }
+
+.update-notes {
+  max-height: 160px; overflow: auto; width: 100%;
+  margin-top: 4px; padding: 12px 14px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 12.5px; line-height: 1.5; color: var(--fg-muted); text-align: left;
+}
+.update-notes[hidden] { display: none; }
+
+/* progress */
+.update-progress { width: 100%; margin-top: 6px; }
+.update-progress[hidden] { display: none; }
+.update-bar {
+  width: 100%; height: 9px; border-radius: 6px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.update-bar-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent-3));
+  border-radius: 6px; transition: width .25s ease;
+  box-shadow: 0 0 12px rgba(108,199,142,0.5);
+}
+/* indeterminate shimmer while we don't yet know total size */
+.update-bar-fill.indeterminate {
+  width: 35% !important;
+  animation: update-indef 1.1s ease-in-out infinite;
+}
+@keyframes update-indef { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+.update-progress-label {
+  margin-top: 8px; font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px; color: var(--fg-muted);
+}
+
+.update-status { margin: 4px 0 0; font-size: 13px; color: var(--fg-muted); }
+.update-status[hidden] { display: none; }
+
+.update-actions { display: flex; gap: 10px; margin-top: 10px; }
+.update-actions[hidden] { display: none; }
+.update-now, .update-later {
+  font-family: 'Inter', system-ui, sans-serif; font-size: 13.5px; font-weight: 600;
+  padding: 10px 20px; border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+}
+.update-now {
+  background: linear-gradient(180deg, var(--accent-3), var(--accent-2));
+  color: #06210f; border-color: var(--accent-2);
+}
+.update-now:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(108,199,142,0.3); }
+.update-later {
+  background: transparent; color: var(--fg-muted); border-color: var(--border-2);
+}
+.update-later:hover { color: var(--fg); border-color: var(--fg-dim); }
+
+.update-error {
+  margin: 6px 0 0; font-size: 12.5px; color: var(--warn);
+}
+.update-error[hidden] { display: none; }

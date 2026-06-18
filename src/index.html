@@ -171,7 +171,48 @@
     </div>
   </div>
 
+  <!-- ===================== Self-update overlay ===================== -->
+  <!-- Shown on launch when a newer release is found. Three states swapped by JS:
+       .is-prompt (ask first) → .is-downloading (progress) → .is-installing. -->
+  <div class="update-overlay" id="update-overlay" hidden>
+    <div class="update-card" role="dialog" aria-modal="true" aria-labelledby="update-title">
+      <div class="logo update-logo boot">
+        <pre class="logo-k" aria-hidden="true">██╗  ██╗
+██║ ██╔╝
+█████╔╝
+██╔═██╗
+██║  ██╗
+╚═╝  ╚═╝</pre>
+      </div>
+
+      <div class="update-spark" aria-hidden="true">✨</div>
+      <h2 class="update-title" id="update-title" data-i18n="update.title">A new version of Krystal is available</h2>
+      <p class="update-version" id="update-version"></p>
+
+      <!-- Release notes (optional, filled by JS) -->
+      <div class="update-notes" id="update-notes" hidden></div>
+
+      <!-- Progress bar (download state) -->
+      <div class="update-progress" id="update-progress" hidden>
+        <div class="update-bar"><div class="update-bar-fill" id="update-bar-fill"></div></div>
+        <div class="update-progress-label" id="update-progress-label"></div>
+      </div>
+
+      <!-- Status line for the downloading / installing states -->
+      <p class="update-status" id="update-status" hidden></p>
+
+      <!-- Buttons (prompt state) -->
+      <div class="update-actions" id="update-actions">
+        <button class="update-later" id="update-later" data-i18n="update.later">Later</button>
+        <button class="update-now" id="update-now" data-i18n="update.install">Install now</button>
+      </div>
+
+      <p class="update-error" id="update-error" hidden></p>
+    </div>
+  </div>
+
   <script defer src="i18n.js"></script>
+  <script defer src="updater.js"></script>
   <script defer src="app.js"></script>
 </body>
 </html>

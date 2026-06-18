@@ -26,10 +26,18 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "category": "Productivity",
     "shortDescription": "Local Claude Code chat",
     "longDescription": "A local chat-app frontend for Claude Code — talk to Claude over your own documents, fully offline UI, native folder picker."
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/rmarinic/Krystal/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGQTY2N0Q4MjUzRDQ4OTUKUldTVlNEMGwyR2VtSDNYWUlTVHM4UkFkZVZGUnY3Y2Rkem1lYTdyZDJJckJDelZpTjZxczQ5dGkK"
+    }
+  }
 }

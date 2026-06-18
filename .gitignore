@@ -20,6 +20,11 @@ boot.out.txt
 boot.err.txt
 *.log
 
+# ── Update signing keys (NEVER commit these — the private key signs releases) ─
+*.key
+*.key.pub
+krystal_updater*
+
 # ── Editor / OS cruft ───────────────────────────────────────────────────────
 .vscode/
 .idea/

@@ -200,6 +200,20 @@
       'wiz.acceptSave': 'Accept & save',
       'wiz.savedBodyAccept': 'Saved! <strong>CLAUDE.md</strong> is now in your folder. Claude will read it at the start of every conversation — you no longer need to repeat what it is about.',
 
+      /* ---- self-update ---- */
+      'update.title': 'A new version of Krystal is available',
+      'update.version': 'v{current} → v{version}',
+      'update.whatsNew': "What's new",
+      'update.install': 'Install now',
+      'update.later': 'Later',
+      'update.preparing': 'Preparing…',
+      'update.downloading': 'Downloading update…',
+      'update.progress': '{done} MB of {total} MB · {pct}%',
+      'update.progressNoTotal': '{done} MB downloaded…',
+      'update.installing': 'Installing — Krystal will restart in a moment…',
+      'update.restarting': 'Restarting…',
+      'update.failed': 'Update failed: {err}',
+
       /* ---- language toggle ---- */
       'lang.toggleTitle': 'Switch language (English → Hrvatski)',
     },
@@ -384,6 +398,20 @@
       'wiz.rewrite': '↻ Napiši ponovno',
       'wiz.acceptSave': 'Prihvati i spremi',
       'wiz.savedBodyAccept': 'Spremljeno! <strong>CLAUDE.md</strong> je sada u tvojoj mapi. Claude će ga čitati na početku svakog razgovora — ne moraš više ponavljati o čemu se radi.',
+
+      /* ---- self-update ---- */
+      'update.title': 'Dostupna je nova verzija Krystala',
+      'update.version': 'v{current} → v{version}',
+      'update.whatsNew': 'Novosti',
+      'update.install': 'Instaliraj sada',
+      'update.later': 'Kasnije',
+      'update.preparing': 'Pripremam…',
+      'update.downloading': 'Preuzimam ažuriranje…',
+      'update.progress': '{done} MB od {total} MB · {pct}%',
+      'update.progressNoTotal': '{done} MB preuzeto…',
+      'update.installing': 'Instaliram — Krystal će se ponovno pokrenuti…',
+      'update.restarting': 'Ponovno pokretanje…',
+      'update.failed': 'Ažuriranje nije uspjelo: {err}',
 
       /* ---- language toggle ---- */
       'lang.toggleTitle': 'Promijeni jezik (Hrvatski → English)',
