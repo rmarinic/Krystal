@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Krystal · claude code</title>
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238fe0aa'/><stop offset='1' stop-color='%236cc78e'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='%230a0f0b' stroke='url(%23g)' stroke-width='2'/><text x='16' y='22' font-family='monospace' font-size='17' font-weight='700' fill='url(%23g)' text-anchor='middle'>K</text></svg>">
+
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="chat.css">
+
+  <!-- Code highlighting + markdown + sanitizer (vendored locally — works offline) -->
+  <link rel="stylesheet" href="vendor/atom-one-dark.min.css">
+  <script defer src="vendor/highlight.min.js"></script>
+  <script defer src="vendor/marked.min.js"></script>
+  <script defer src="vendor/purify.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&family=Orbitron:wght@500;700;900&display=swap">
+</head>
+<body class="app">
+
+  <!-- ===================== Project picker (entry screen) ===================== -->
+  <div class="project-screen" id="project-screen" hidden>
+    <!-- Language toggle (shown only on the picker; the chat header has its own) -->
+    <button class="lang-toggle project-lang head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
+    <div class="project-wrap">
+      <div class="project-head">
+        <div class="logo project-logo">
+          <pre class="logo-k" aria-hidden="true">██╗  ██╗
+██║ ██╔╝
+█████╔╝
+██╔═██╗
+██║  ██╗
+╚═╝  ╚═╝</pre>
+          <div class="logo-word">
+            <span class="logo-rest">RYSTAL</span>
+            <span class="logo-tag">// claude code</span>
+          </div>
+        </div>
+        <h1 class="project-title" data-i18n="project.choose">Choose a project</h1>
+        <p class="project-sub" data-i18n="project.sub">Pick the folder Claude should work in. Each project keeps its own chats, model and history.</p>
+        <button id="new-project-btn" class="project-init-btn" data-i18n="project.initBtn">✨ Initialize new project</button>
+      </div>
+      <ul class="project-list" id="project-list"></ul>
+    </div>
+  </div>
+
+  <!-- ===================== Sidebar: thread list ===================== -->
+  <aside class="sidebar">
+    <header class="sidebar-header">
+      <div class="logo">
+        <pre class="logo-k" aria-hidden="true">██╗  ██╗
+██║ ██╔╝
+█████╔╝
+██╔═██╗
+██║  ██╗
+╚═╝  ╚═╝</pre>
+        <div class="logo-word">
+          <span class="logo-rest">RYSTAL</span>
+          <span class="logo-tag">// claude code</span>
+        </div>
+      </div>
+      <button id="to-projects" class="to-projects" data-i18n-title="nav.switchTitle" title="Switch project">
+        <span class="cp-label" data-i18n="nav.projectLabel">project</span>
+        <span class="cp-name" id="cp-name">—</span>
+        <span class="cp-switch">⇄</span>
+      </button>
+      <button id="new-chat" class="new-chat-btn" data-i18n="nav.newChat">▸ new chat</button>
+    </header>
+
+    <div class="sidebar-search">
+      <input id="search" type="search" data-i18n-ph="search.placeholder" placeholder="Search all chats…" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-head">
+        <h2 id="list-heading" data-i18n="list.conversations">Conversations</h2>
+        <button id="saved-toggle" class="saved-toggle" data-i18n="saved.toggle" data-i18n-title="saved.toggleTitle" title="Show your saved replies">★ Saved</button>
+      </div>
+      <ul class="sidebar-list" id="thread-list"></ul>
+    </div>
+
+    <!-- Bottom-left: ask Claude for a tip (Insight) + watch live shells/sub-agents (Activity) -->
+    <div class="sidebar-foot">
+      <div class="foot-row">
+        <button class="hint-btn" id="hint-btn" hidden data-i18n-title="hint.title" title="Ask Claude for a small insight on how to get even better results">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 14.5l.55 1.6 1.6.55-1.6.55-.55 1.6-.55-1.6-1.6-.55 1.6-.55z"/></svg>
+          <span data-i18n="hint.label">Insight</span>
+        </button>
+        <button class="activity-btn" id="activity-btn" hidden disabled data-i18n-title="activity.btnTitle" title="Agents & shells: when Claude runs a command or launches a sub-agent, open this to watch what it's doing">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span data-i18n="activity.label">Activity</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===================== Main: conversation ====================== -->
+  <main class="chat">
+    <header class="chat-header" id="chat-header">
+      <div class="chat-head-main">
+        <div class="chat-head-text">
+          <div class="chat-title" id="chat-title">No conversation</div>
+          <div class="chat-cwd" id="chat-cwd"></div>
+        </div>
+        <div class="chat-tools" id="chat-tools" hidden>
+          <div class="picker" id="model-picker" data-i18n-title="model.pickerTitle" title="Which Claude brain to use"></div>
+          <button id="init-btn" class="head-btn subtle" data-i18n="init.editBtn" data-i18n-title="init.editBtnTitle" title="Edit instructions: open this project's CLAUDE.md to edit it directly (or reinitialize from there)">✎ Edit instructions</button>
+          <button class="lang-toggle head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
+        </div>
+      </div>
+      <div class="meter-row" id="meter-row" hidden>
+        <div class="meter"><div class="meter-fill" id="meter-fill"></div></div>
+        <div class="meter-label" id="meter-label"></div>
+      </div>
+    </header>
+
+    <div class="feed" id="feed">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-mark">K</div>
+        <h2 data-i18n="empty.title">Start a conversation</h2>
+        <p data-i18n="empty.body">This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically; to point it at a file elsewhere, paste its path in your message.</p>
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer" id="composer" hidden>
+      <div class="composer-tools">
+        <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Plan only researches and proposes"></div>
+        <div class="composer-tools-spacer"></div>
+        <button id="compact-btn" class="head-btn" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">🧹 Compact</button>
+        <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
+      </div>
+      <div class="composer-row">
+        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="send-btn" id="send-btn" title="Send">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Side tips: context-rot nudges + hint results slide in here -->
+  <div class="tips" id="tips" aria-live="polite"></div>
+
+  <!-- ===================== Initialize wizard ======================= -->
+  <div class="modal-overlay" id="init-overlay" hidden>
+    <div class="init-modal" role="dialog" aria-modal="true" aria-labelledby="init-modal-title">
+      <header class="init-head">
+        <div class="init-title" id="init-modal-title">✨ Početno postavljanje</div>
+        <div class="init-steps" id="init-steps"></div>
+        <button class="init-x" id="init-close" title="Zatvori">×</button>
+      </header>
+      <div class="init-body" id="init-body"></div>
+      <footer class="init-foot" id="init-foot"></footer>
+    </div>
+  </div>
+
+  <!-- ============= Activity panel: live shells & sub-agents ============= -->
+  <div class="modal-overlay" id="activity-overlay" hidden>
+    <div class="init-modal activity-modal" role="dialog" aria-modal="true" aria-labelledby="activity-title">
+      <header class="init-head">
+        <div class="init-title" id="activity-title" data-i18n="activity.panelTitle">⚡ Agents &amp; shells</div>
+        <div class="activity-filters" id="activity-filters"></div>
+        <button class="init-x" id="activity-close" data-i18n-title="activity.close" title="Close">×</button>
+      </header>
+      <div class="init-body" id="activity-body"></div>
+    </div>
+  </div>
+
+  <script defer src="i18n.js"></script>
+  <script defer src="app.js"></script>
+</body>
+</html>

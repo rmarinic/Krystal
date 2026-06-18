@@ -1,0 +1,33 @@
+[package]
+name = "krystal"
+version = "0.1.0"
+description = "Krystal — a local Claude Code chat app (Tauri)"
+authors = ["Kristina"]
+edition = "2021"
+rust-version = "1.77"
+
+# The desktop binary. Single-binary desktop app (no mobile/lib split).
+[[bin]]
+name = "krystal"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["clock"] }
+
+# Smaller, faster release binary for the one-click app.
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

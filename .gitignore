@@ -1,0 +1,27 @@
+# ── Rust / Tauri build output ──────────────────────────────────────────────
+/src-tauri/target/
+target/
+
+# Tauri-generated schemas (regenerated on build)
+/src-tauri/gen/schemas/
+
+# ── Node (only package metadata is tracked; no build step) ──────────────────
+node_modules/
+dist/
+
+# ── Local app data (the SQLite DB lives in %APPDATA%, never the repo) ────────
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# ── Stray run/debug logs ────────────────────────────────────────────────────
+boot.out.txt
+boot.err.txt
+*.log
+
+# ── Editor / OS cruft ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
