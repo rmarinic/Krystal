@@ -13,12 +13,20 @@ use crate::models;
 pub struct AppState {
     pub db: std::sync::Mutex<rusqlite::Connection>,
     pub caps: Caps,
-    pub claude_bin: String,
+    /// The resolved `claude` executable. Mutable because onboarding can install
+    /// Claude Code at runtime and we then need every command to use the new path
+    /// without a restart.
+    pub claude_bin: std::sync::Mutex<String>,
 }
 
 impl AppState {
     fn sys_prompt(&self) -> String {
         claude::capability_prompt(self.caps)
+    }
+
+    /// Current claude executable path (owned clone — never held across an await).
+    pub fn claude_bin(&self) -> String {
+        self.claude_bin.lock().unwrap().clone()
     }
 }
 
@@ -29,6 +37,53 @@ type CmdResult = Result<Value, String>;
 #[tauri::command]
 pub fn get_config() -> Value {
     json!({ "models": models::MODELS, "modes": models::MODES })
+}
+
+/* ----------------------------- onboarding -------------------------------- */
+
+/// Boot-time readiness check: is Claude Code installed, and is the user signed in?
+#[tauri::command]
+pub fn preflight(state: State<'_, AppState>) -> Value {
+    let bin = state.claude_bin();
+    let version = claude::claude_version(&bin);
+    json!({
+        "installed": version.is_some(),
+        "version": version,
+        "authenticated": claude::is_authenticated(),
+        "claudeBin": bin,
+    })
+}
+
+/// Install Claude Code via the official PowerShell installer, streaming progress
+/// to `on_event`. On success the resolved binary is adopted into AppState so the
+/// rest of the app can use it without a restart. Returns the new preflight state.
+#[tauri::command]
+pub async fn install_claude(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
+    claude::install_claude_code(&on_event).await?;
+    // Re-resolve now that it should be on disk, and adopt the new path.
+    let resolved = claude::resolve_claude();
+    let version = claude::claude_version(&resolved);
+    if version.is_some() {
+        *state.claude_bin.lock().unwrap() = resolved.clone();
+    }
+    Ok(json!({
+        "installed": version.is_some(),
+        "version": version,
+        "authenticated": claude::is_authenticated(),
+        "claudeBin": resolved,
+    }))
+}
+
+/// Open a real terminal running interactive `claude`, which walks the user
+/// through Anthropic's normal browser sign-in. The UI re-checks via `preflight`.
+#[tauri::command]
+pub fn open_login(state: State<'_, AppState>) -> CmdResult {
+    let bin = state.claude_bin();
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/c", "start", "Krystal — Claude login", "cmd", "/k", &bin]);
+    cmd.spawn()
+        .map_err(|e| format!("could not open the login window: {e}"))?;
+    Ok(json!({ "ok": true }))
 }
 
 /* ------------------------------- threads --------------------------------- */
@@ -185,7 +240,7 @@ pub async fn chat(
         Some(s) => s.trim().is_empty() || s == "New chat",
     };
     let title_task = if needs_title {
-        let bin = state.claude_bin.clone();
+        let bin = state.claude_bin();
         let cwd = meta.cwd.clone();
         let opening = text.clone();
         Some(tokio::spawn(async move {
@@ -195,7 +250,7 @@ pub async fn chat(
         None
     };
 
-    let res = claude::run_chat_stream(&state.claude_bin, &args, &meta.cwd, &prompt, &on_event).await?;
+    let res = claude::run_chat_stream(&state.claude_bin(), &args, &meta.cwd, &prompt, &on_event).await?;
 
     // Match server.js: on a hard error with no text, the error event was already
     // emitted — don't record an empty turn.
@@ -262,7 +317,7 @@ pub async fn compact_thread(state: State<'_, AppState>, id: String) -> CmdResult
     args.push("--resume".into());
     args.push(session_id);
 
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin, &args, &meta.cwd, COMPACT_PROMPT).await?;
+    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, COMPACT_PROMPT).await?;
     {
         let conn = state.db.lock().unwrap();
         db::compact(&conn, &id, &text);
@@ -300,7 +355,7 @@ pub async fn hint_thread(state: State<'_, AppState>, id: String) -> CmdResult {
     let sys = state.sys_prompt();
     let args = claude::base_args(&meta.model, &sys); // fresh session — won't pollute the chat
     let prompt = format!("{HINT_PROMPT}{joined}");
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin, &args, &meta.cwd, &prompt).await?;
+    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
     let all_good = text.to_uppercase().contains("ALL_GOOD") || text.trim().is_empty();
     Ok(json!({
@@ -416,7 +471,7 @@ pub async fn init_analyze(state: State<'_, AppState>, id: String, brief: Option<
     let sys = state.sys_prompt();
     let args = claude::base_args(&meta.model, &sys);
     let prompt = analyze_prompt(brief.as_deref().unwrap_or(""));
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin, &args, &meta.cwd, &prompt).await?;
+    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
     match extract_json(&text) {
         Some(data) if data.get("questions").map(|q| q.is_array()).unwrap_or(false) => Ok(data),
@@ -441,7 +496,7 @@ pub async fn init_draft(
     let sys = state.sys_prompt();
     let args = claude::base_args(&meta.model, &sys);
     let prompt = draft_prompt(summary.as_deref().unwrap_or(""), &answers, brief.as_deref().unwrap_or(""));
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin, &args, &meta.cwd, &prompt).await?;
+    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
     let md = strip_md_fence(text.trim());
     if md.trim().is_empty() {

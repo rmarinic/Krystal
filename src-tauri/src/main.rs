@@ -42,12 +42,15 @@ fn main() {
             app.manage(AppState {
                 db: std::sync::Mutex::new(conn),
                 caps,
-                claude_bin: claude_bin.clone(),
+                claude_bin: std::sync::Mutex::new(claude_bin.clone()),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
+            commands::preflight,
+            commands::install_claude,
+            commands::open_login,
             commands::list_projects,
             commands::create_project,
             commands::select_project,

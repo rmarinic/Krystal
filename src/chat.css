@@ -1092,3 +1092,88 @@ body.app {
   margin: 6px 0 0; font-size: 12.5px; color: var(--warn);
 }
 .update-error[hidden] { display: none; }
+
+/* ===================== First-run onboarding overlay ===================== */
+.onb-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(108,199,142,0.10), transparent 60%),
+    rgba(6,9,7,0.96);
+  backdrop-filter: blur(6px);
+  animation: fade-in .25s ease;
+}
+.onb-overlay[hidden] { display: none; }
+
+.onb-card {
+  width: min(560px, 100%);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 14px; padding: 34px 34px 28px;
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-elev));
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.6), inset 0 1px 0 rgba(143,224,170,0.06);
+  animation: update-pop .32s cubic-bezier(.2,.9,.3,1.2);
+}
+
+.onb-logo { transform: scale(.66); margin: -6px 0 -10px; opacity: .95; }
+.onb-logo .logo-k { color: var(--accent-3); }
+.onb-spark { font-size: 26px; line-height: 1; filter: drop-shadow(0 0 10px rgba(143,224,170,0.5)); }
+
+.onb-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 20px; font-weight: 600; color: var(--fg); margin: 0; letter-spacing: .2px;
+}
+.onb-body {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--fg-muted);
+  max-width: 44ch;
+}
+.onb-body strong { color: var(--fg); font-weight: 600; }
+
+/* Live install log — a little terminal */
+.onb-log {
+  width: 100%; max-height: 168px; overflow: auto;
+  margin-top: 2px; padding: 12px 14px;
+  background: #060a07; border: 1px solid var(--border); border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5;
+  color: var(--fg-muted); text-align: left; white-space: pre-wrap; word-break: break-word;
+}
+.onb-log[hidden] { display: none; }
+.onb-log .ln { display: block; }
+.onb-log .ln:last-child { color: var(--accent-3); }
+
+.onb-status {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--fg-muted);
+}
+.onb-status[hidden] { display: none; }
+.onb-spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid var(--border-2); border-top-color: var(--accent-3);
+  animation: onb-spin .8s linear infinite; flex: none;
+}
+@keyframes onb-spin { to { transform: rotate(360deg); } }
+
+.onb-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 8px; }
+.onb-actions:empty { display: none; }
+.onb-btn {
+  font-family: 'Inter', system-ui, sans-serif; font-size: 13.5px; font-weight: 600;
+  padding: 10px 20px; border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease, color .15s ease;
+}
+.onb-btn.primary {
+  background: linear-gradient(180deg, var(--accent-3), var(--accent-2));
+  color: #06210f; border-color: var(--accent-2);
+}
+.onb-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(108,199,142,0.3); }
+.onb-btn.ghost { background: transparent; color: var(--fg-muted); border-color: var(--border-2); }
+.onb-btn.ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
+.onb-btn.link {
+  background: none; border: none; color: var(--fg-dim); font-weight: 500;
+  font-size: 12px; padding: 4px 8px; text-decoration: underline; text-underline-offset: 2px;
+}
+.onb-btn.link:hover { color: var(--fg-muted); }
+.onb-btn[disabled] { opacity: .55; cursor: default; transform: none; box-shadow: none; }
+
+.onb-error { margin: 4px 0 0; font-size: 12.5px; color: var(--warn); }
+.onb-error[hidden] { display: none; }

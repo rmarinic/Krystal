@@ -68,30 +68,158 @@ pub fn capability_prompt(caps: Caps) -> String {
 
 /* --------------------------- resolving claude ---------------------------- */
 
-/// Find the claude executable. Honours $CLAUDE_BIN, then searches PATH for the
-/// usual Windows/Unix variants. Falls back to bare "claude".
+const CLAUDE_CANDIDATES: [&str; 4] = ["claude.cmd", "claude.exe", "claude.bat", "claude"];
+
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Directories the official installers drop `claude` into that may NOT be on the
+/// PATH of an already-running process (so we check them explicitly). Covers the
+/// native installer (~/.local/bin, ~/.claude/local) and npm global (%APPDATA%/npm).
+fn extra_claude_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".local").join("bin"));
+        dirs.push(home.join(".claude").join("local"));
+        dirs.push(home.join("bin"));
+    }
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        dirs.push(PathBuf::from(appdata).join("npm"));
+    }
+    dirs
+}
+
+/// Find the claude executable. Honours $CLAUDE_BIN, then searches PATH and the
+/// known installer locations for the usual variants. Falls back to bare "claude".
 pub fn resolve_claude() -> String {
     if let Ok(p) = std::env::var("CLAUDE_BIN") {
         if !p.is_empty() && PathBuf::from(&p).exists() {
             return p;
         }
     }
-    let candidates = ["claude.cmd", "claude.exe", "claude.bat", "claude"];
+    let mut dirs: Vec<PathBuf> = Vec::new();
     if let Ok(path) = std::env::var("PATH") {
         let sep = if cfg!(windows) { ';' } else { ':' };
-        for dir in path.split(sep) {
-            if dir.is_empty() {
-                continue;
-            }
-            for cand in candidates {
-                let p = PathBuf::from(dir).join(cand);
-                if p.exists() {
-                    return p.to_string_lossy().into_owned();
-                }
+        dirs.extend(path.split(sep).filter(|d| !d.is_empty()).map(PathBuf::from));
+    }
+    dirs.extend(extra_claude_dirs());
+    for dir in dirs {
+        for cand in CLAUDE_CANDIDATES {
+            let p = dir.join(cand);
+            if p.exists() {
+                return p.to_string_lossy().into_owned();
             }
         }
     }
     "claude".to_string()
+}
+
+/// Run `<bin> --version` and return the trimmed output if it succeeds. `None`
+/// means Claude Code isn't actually installed / runnable at that path.
+pub fn claude_version(bin: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("--version")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Best-effort check that the user is signed in to Claude Code. True if an API
+/// key is set, the credentials file exists, or ~/.claude.json carries an OAuth
+/// account. Cheap and offline — the real verification is the first chat working.
+pub fn is_authenticated() -> bool {
+    if std::env::var("ANTHROPIC_API_KEY").map(|v| !v.is_empty()).unwrap_or(false) {
+        return true;
+    }
+    let home = match std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return false,
+    };
+    if home.join(".claude").join(".credentials.json").exists() {
+        return true;
+    }
+    // ~/.claude.json exists even before login (it stores config); only treat it
+    // as "logged in" when it actually carries an account/token.
+    if let Ok(txt) = std::fs::read_to_string(home.join(".claude.json")) {
+        if txt.contains("oauthAccount") || txt.contains("\"accessToken\"") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Run the official Windows installer for Claude Code, streaming every output
+/// line to the frontend as `{type:"log", line}` so the onboarding screen can
+/// show live progress. Resolves Ok on a clean exit.
+pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String> {
+    let _ = channel.send(json!({ "type": "log", "line": "Downloading the Claude Code installer…" }));
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "irm https://claude.ai/install.ps1 | iex",
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("could not start the installer: {e}"))?;
+
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+
+    // Stream stdout and stderr (the installer logs to both) line-by-line.
+    let ch_out = channel.clone();
+    let out_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = ch_out.send(json!({ "type": "log", "line": line }));
+            }
+        }
+    });
+    let ch_err = channel.clone();
+    let err_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = ch_err.send(json!({ "type": "log", "line": line }));
+            }
+        }
+    });
+
+    let status = child.wait().await.map_err(|e| e.to_string())?;
+    let _ = out_task.await;
+    let _ = err_task.await;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "installer exited with code {}",
+            status.code().unwrap_or(-1)
+        ))
+    }
 }
 
 /* ------------------------------ arguments -------------------------------- */

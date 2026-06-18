@@ -47,6 +47,8 @@ no `localhost`, no Node server, no browser. It launches instantly and works enti
   and trims the rest, **Clear** starts fresh.
 - **🔄 Updates itself** — Krystal checks for new versions on launch and updates with one click
   (more below). Install once, stay current forever.
+- **🧰 Guided first-run setup** — on first launch Krystal checks for Claude Code, installs it for
+  you if it's missing, and walks you through signing in — no terminal knowledge required.
 - **🌍 Bilingual** — full English 🇬🇧 and Croatian 🇭🇷 interface, toggle any time.
 - **📝 Word-aware** — detects `pandoc` / `python-docx` and lets Claude work with `.docx` files
   when they're available.
@@ -61,8 +63,9 @@ no `localhost`, no Node server, no browser. It launches instantly and works enti
 
 That's the only manual download you'll ever do — from then on Krystal **updates itself**.
 
-> **Requirements:** the [`claude` CLI](https://claude.com/claude-code) on your `PATH` and logged
-> in (Krystal finds it automatically; override with the `CLAUDE_BIN` env var). WebView2 ships
+> **Requirements:** none to get started — Krystal installs **Claude Code** for you on first run
+> and guides you through signing in. (Already have the [`claude` CLI](https://claude.com/claude-code)?
+> Krystal finds it automatically; override the path with the `CLAUDE_BIN` env var.) WebView2 ships
 > with Windows 10/11.
 
 ## 🔄 Automatic updates

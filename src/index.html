@@ -171,6 +171,40 @@
     </div>
   </div>
 
+  <!-- ===================== First-run onboarding overlay ===================== -->
+  <!-- Shown on launch until Claude Code is installed AND signed in. States are
+       swapped by onboarding.js: checking → install → login → ready. -->
+  <div class="onb-overlay" id="onb-overlay" hidden>
+    <div class="onb-card" role="dialog" aria-modal="true" aria-labelledby="onb-title">
+      <div class="logo onb-logo boot">
+        <pre class="logo-k" aria-hidden="true">██╗  ██╗
+██║ ██╔╝
+█████╔╝
+██╔═██╗
+██║  ██╗
+╚═╝  ╚═╝</pre>
+      </div>
+
+      <div class="onb-spark" id="onb-spark" aria-hidden="true">✨</div>
+      <h2 class="onb-title" id="onb-title"></h2>
+      <p class="onb-body" id="onb-body"></p>
+
+      <!-- Live install log -->
+      <div class="onb-log" id="onb-log" hidden></div>
+
+      <!-- Spinner + status line during long operations -->
+      <div class="onb-status" id="onb-status" hidden>
+        <span class="onb-spinner" aria-hidden="true"></span>
+        <span id="onb-status-text"></span>
+      </div>
+
+      <!-- Action buttons (built by JS per state) -->
+      <div class="onb-actions" id="onb-actions"></div>
+
+      <p class="onb-error" id="onb-error" hidden></p>
+    </div>
+  </div>
+
   <!-- ===================== Self-update overlay ===================== -->
   <!-- Shown on launch when a newer release is found. Three states swapped by JS:
        .is-prompt (ask first) → .is-downloading (progress) → .is-installing. -->
@@ -212,6 +246,7 @@
   </div>
 
   <script defer src="i18n.js"></script>
+  <script defer src="onboarding.js"></script>
   <script defer src="updater.js"></script>
   <script defer src="app.js"></script>
 </body>
