@@ -24,19 +24,9 @@ if errorlevel 1 (
 echo.
 echo   Bumping Krystal to v%VER% ...
 
-REM --- package.json (first "version": "x" only) ---
-powershell -NoProfile -Command ^
-  "$p='%~dp0package.json'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")','${1}%VER%${2}',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
-
-REM --- src-tauri/tauri.conf.json (first "version": "x" only) ---
-powershell -NoProfile -Command ^
-  "$p='%~dp0src-tauri\tauri.conf.json'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(\"version\":\s*\")[^\"]*(\")','${1}%VER%${2}',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
-
-REM --- src-tauri/Cargo.toml (the [package] version line, anchored to line start) ---
-powershell -NoProfile -Command ^
-  "$p='%~dp0src-tauri\Cargo.toml'; $c=[System.IO.File]::ReadAllText($p); $c=[regex]::Replace($c,'(?m)^version = \"[^\"]*\"','version = \"%VER%\"',1); [System.IO.File]::WriteAllText($p,$c,(New-Object System.Text.UTF8Encoding($false)))"
-
-echo   Updated package.json, tauri.conf.json, Cargo.toml
+REM --- Bump the version in all three manifests (robust UTF-8, no BOM) ---
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bump-version.ps1" %VER%
+if errorlevel 1 ( echo ERROR: version bump failed & exit /b 1 )
 echo.
 
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
