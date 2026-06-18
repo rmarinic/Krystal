@@ -144,6 +144,7 @@
       'tool.ExitPlanMode': 'Proposing a plan',
       'qa.title': 'Claude is asking you to choose',
       'qa.send': 'Send answer',
+      'qa.customPlaceholder': 'Or type your own answer…',
       'qa.answeredNote': 'Answer sent',
       'plan.title': 'Proposed plan',
 
@@ -364,6 +365,7 @@
       'tool.ExitPlanMode': 'Predlaže plan',
       'qa.title': 'Claude te traži da odabereš',
       'qa.send': 'Pošalji odgovor',
+      'qa.customPlaceholder': 'Ili upiši svoj odgovor…',
       'qa.answeredNote': 'Odgovor poslan',
       'plan.title': 'Predloženi plan',
 

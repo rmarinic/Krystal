@@ -50,6 +50,9 @@ pub fn capability_prompt(caps: Caps) -> String {
         "You are helping the user with the files and work in the current project folder.".into(),
         "Read CLAUDE.md (if present) for what this project is about, and reply in the language the user writes in.".into(),
         "When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.".into(),
+        "When you want the user to pick between a few clear options, use the AskUserQuestion tool — this app renders it as clickable cards with a text box for a custom answer.".into(),
+        "In THIS app the AskUserQuestion tool ALWAYS returns the error 'Answer questions?' the instant you call it; that is EXPECTED and only means the cards were shown — never treat it as a failure or say the tool didn't work.".into(),
+        "After calling AskUserQuestion, write at most one short line inviting the user to choose above, then STOP and wait — their selection (or typed answer) arrives as their very next message, so just continue naturally from it.".into(),
     ];
     if caps.pandoc {
         lines.push("Word documents (.docx) ARE supported via pandoc:".into());

@@ -886,14 +886,28 @@ function specialToolCard(seg) {
 }
 
 /* AskUserQuestion: Claude asks the user to choose between options. We render it
- * as an interactive card; since each turn is one-shot, picking an option (or
- * submitting a multi-select) sends the answer as the next message, which lets
- * Claude continue. Renders identically live and on reload (persisted segment). */
-function sendAnswer(text) {
-  if (!text || !text.trim() || state.streaming || !state.activeId) return;
+ * as an interactive card. In headless `claude -p` the tool itself can't return a
+ * choice (it's auto-denied), so the user's pick — a selected option and/or a
+ * typed custom answer — is sent as the next message, which `--resume` carries
+ * back to Claude. Renders identically live and on reload (persisted segment).
+ *
+ * The card can appear mid-stream, before the turn ends. Clicking then would be
+ * swallowed (we can't send while streaming), so we QUEUE the answer and flush it
+ * the moment the current turn finishes — the click is never lost. */
+let pendingAnswer = null;
+function flushPendingAnswer() {
+  if (!pendingAnswer || state.streaming || !state.activeId) return;
+  const text = pendingAnswer;
+  pendingAnswer = null;
   els.input.value = text;
   autosize();
   send();
+}
+function sendAnswer(text) {
+  if (!text || !text.trim() || !state.activeId) return false;
+  pendingAnswer = text.trim();
+  flushPendingAnswer();             // sends now if idle, otherwise on turn-end
+  return true;
 }
 
 function renderQuestionCard(seg) {
@@ -906,24 +920,27 @@ function renderQuestionCard(seg) {
   intro.innerHTML = `<span class="qa-ico" aria-hidden="true">🗳️</span><span>${escapeHtml(tr('qa.title'))}</span>`;
   card.appendChild(intro);
 
-  // Per-question selection sets. Single-question single-select sends on click.
-  const sel = questions.map(() => new Set());
+  const sel = questions.map(() => new Set());   // selected option labels per question
+  const customEls = [];                          // the custom-answer <input> per question
+  // A single yes/no-style question sends the moment you tap an option (fast path);
+  // multi-select or multi-question cards collect picks and send via the button.
   const single = questions.length === 1 && !questions[0].multiSelect;
 
-  function submit(forced) {
+  function submit() {
     if (card.classList.contains('answered')) return;
-    const chosen = forced || sel.map((s) => [...s]);
     const parts = [];
     questions.forEach((q, qi) => {
-      const ans = chosen[qi] || [];
+      const ans = [...sel[qi]];
+      const custom = (customEls[qi] && customEls[qi].value.trim()) || '';
+      if (custom) ans.push(custom);
       if (!ans.length) return;
       parts.push(questions.length === 1 ? ans.join(', ') : `${q.header || q.question}: ${ans.join(', ')}`);
     });
     const text = parts.join('\n');
-    if (!text.trim()) return;
+    if (!text.trim()) return;                    // nothing picked or typed yet
+    if (!sendAnswer(text)) return;               // only lock the card once accepted
     card.classList.add('answered');
-    card.querySelectorAll('.qa-opt, .qa-send').forEach((el) => { el.disabled = true; });
-    sendAnswer(text);
+    card.querySelectorAll('.qa-opt, .qa-send, .qa-custom').forEach((el) => { el.disabled = true; });
   }
 
   questions.forEach((q, qi) => {
@@ -933,6 +950,7 @@ function renderQuestionCard(seg) {
     if (q.header) h += `<div class="qa-head">${escapeHtml(q.header)}</div>`;
     if (q.question) h += `<div class="qa-text">${escapeHtml(q.question)}</div>`;
     block.innerHTML = h;
+
     const optsWrap = document.createElement('div');
     optsWrap.className = 'qa-opts';
     for (const opt of (q.options || [])) {
@@ -945,33 +963,46 @@ function renderQuestionCard(seg) {
         (desc ? `<span class="qa-opt-desc">${escapeHtml(desc)}</span>` : '');
       b.onclick = () => {
         if (card.classList.contains('answered')) return;
-        if (single) { submit([[label]]); return; }
-        if (sel[qi].has(label)) { sel[qi].delete(label); }
-        else {
-          if (!q.multiSelect) {
+        const multi = !!q.multiSelect;
+        if (sel[qi].has(label) && multi) {
+          sel[qi].delete(label);                 // toggle off (multi-select only)
+        } else {
+          if (!multi) {                          // single-select: replace
             sel[qi].clear();
             optsWrap.querySelectorAll('.qa-opt').forEach((x) => x.classList.remove('sel'));
           }
           sel[qi].add(label);
         }
         b.classList.toggle('sel', sel[qi].has(label));
+        if (single) submit();                    // one quick question → send immediately
       };
       optsWrap.appendChild(b);
     }
     block.appendChild(optsWrap);
+
+    // Free-text custom answer. Enter submits the whole card.
+    const custom = document.createElement('input');
+    custom.type = 'text';
+    custom.className = 'qa-custom';
+    custom.placeholder = tr('qa.customPlaceholder');
+    custom.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    customEls[qi] = custom;
+    block.appendChild(custom);
+
     card.appendChild(block);
   });
 
-  if (!single && questions.length) {
-    const foot = document.createElement('div');
-    foot.className = 'qa-foot';
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'qa-send';
-    sendBtn.textContent = tr('qa.send');
-    sendBtn.onclick = () => submit(null);
-    foot.appendChild(sendBtn);
-    card.appendChild(foot);
-  }
+  const foot = document.createElement('div');
+  foot.className = 'qa-foot';
+  const sendBtn = document.createElement('button');
+  sendBtn.className = 'qa-send';
+  sendBtn.textContent = tr('qa.send');
+  sendBtn.onclick = submit;
+  foot.appendChild(sendBtn);
+  card.appendChild(foot);
+
   return card;
 }
 
@@ -1251,6 +1282,8 @@ async function send() {
     els.input.focus();
     stopActivitySpinners();   // clear any lingering spinner if the stream ended abruptly
     refreshActivityBtn();     // drop the "live" pulse now that streaming is over
+    // A question answered mid-stream was queued; send it now that we're idle.
+    if (pendingAnswer) setTimeout(flushPendingAnswer, 0);
   }
 }
 
