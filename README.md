@@ -129,7 +129,7 @@ WebView2 (src/)  ──invoke()──►  Rust commands (src-tauri/)  ──spaw
    index.html                     commands.rs                  (stream-json)
    app.js        ──Channel──◄     chat()  ── streams tokens/tools back
    updater.js    ──checks──►      GitHub Releases (signed latest.json)
-   *.css                          db.rs   ──────►  kristina.db (SQLite, rusqlite)
+   *.css                          db.rs   ──────►  krystal.db (SQLite, rusqlite)
                                   dialog plugin ─►  native folder picker
 ```
 
@@ -141,7 +141,7 @@ bundled SQLite database, and the updater plugin handles self-updates.
 ## 💾 Where your data lives
 
 ```
-%APPDATA%\com.kristina.claudecode\kristina.db
+%APPDATA%\com.krystal.claudecode\krystal.db
 ```
 
 All threads and messages live in that single SQLite file — back it up or copy it to another

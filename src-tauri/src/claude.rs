@@ -76,6 +76,29 @@ const CLAUDE_CANDIDATES: [&str; 4] = ["claude.cmd", "claude.exe", "claude.bat", 
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Kill a process and its whole child tree. Used to interrupt a chat turn: the
+/// `claude` launcher (claude.cmd → node) spawns children, so a plain kill of the
+/// shim wouldn't stop the work — we kill the tree. Best-effort; never panics.
+pub fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let _ = cmd.status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+    }
+}
+
 /// Directories the official installers drop `claude` into that may NOT be on the
 /// PATH of an already-running process (so we check them explicitly). Covers the
 /// native installer (~/.local/bin, ~/.claude/local) and npm global (%APPDATA%/npm).
@@ -350,6 +373,43 @@ fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<String>) {
     (None, None)
 }
 
+/// Curated rich detail for change-making tools: the before/after of an edit, or
+/// the content of a write, so the action chip can reveal exactly what changed.
+/// Returns `(key, value)` pairs to merge into the streamed/persisted segment.
+/// Strings are capped so a big write can't bloat the transcript.
+fn tool_change(name: &str, input: &Value) -> Option<Vec<(&'static str, Value)>> {
+    const CAP: usize = 4000;
+    let str_of = |k: &str| input.get(k).and_then(|v| v.as_str());
+    match name {
+        "Edit" => {
+            let (o, n) = (str_of("old_string")?, str_of("new_string")?);
+            Some(vec![(
+                "edits",
+                json!([{ "old": cap_text(o, CAP), "new": cap_text(n, CAP) }]),
+            )])
+        }
+        "MultiEdit" => {
+            let arr = input.get("edits").and_then(|v| v.as_array())?;
+            let edits: Vec<Value> = arr
+                .iter()
+                .filter_map(|e| {
+                    let o = e.get("old_string").and_then(|v| v.as_str())?;
+                    let n = e.get("new_string").and_then(|v| v.as_str())?;
+                    Some(json!({ "old": cap_text(o, CAP), "new": cap_text(n, CAP) }))
+                })
+                .collect();
+            if edits.is_empty() {
+                None
+            } else {
+                Some(vec![("edits", json!(edits))])
+            }
+        }
+        "Write" => Some(vec![("content", json!(cap_text(str_of("content")?, CAP)))]),
+        "NotebookEdit" => Some(vec![("content", json!(cap_text(str_of("new_source")?, CAP)))]),
+        _ => None,
+    }
+}
+
 /* ------------------------------ spawning --------------------------------- */
 
 fn claude_command(bin: &str, args: &[String], cwd: &str) -> Command {
@@ -413,10 +473,17 @@ pub async fn run_chat_stream(
     cwd: &str,
     prompt: &str,
     channel: &Channel<Value>,
+    running: &std::sync::Mutex<HashMap<String, u32>>,
+    thread_id: &str,
 ) -> Result<ChatResult, String> {
     let mut child = claude_command(bin, args, cwd)
         .spawn()
         .map_err(|e| format!("failed to start claude: {e}"))?;
+
+    // Register the PID so `stop_chat` can interrupt this turn mid-stream.
+    if let Some(pid) = child.id() {
+        running.lock().unwrap().insert(thread_id.to_string(), pid);
+    }
 
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -461,6 +528,7 @@ pub async fn run_chat_stream(
 
     let _ = writer.await;
     let status = child.wait().await.map_err(|e| e.to_string())?;
+    running.lock().unwrap().remove(thread_id);
     let errout = err_task.await.unwrap_or_default();
     let code = status.code().unwrap_or(-1);
 
@@ -494,10 +562,21 @@ fn tool_result_text(c: Option<&Value>) -> String {
     }
 }
 
+/// Cap a string to `cap` characters, appending a truncation marker if it had to
+/// be cut, so a chatty tool can't bloat the saved transcript.
+fn cap_text(s: &str, cap: usize) -> String {
+    if s.chars().count() > cap {
+        let mut t: String = s.chars().take(cap).collect();
+        t.push_str("\n… (truncated)");
+        t
+    } else {
+        s.to_string()
+    }
+}
+
 /// Attach a tool's captured output to its segment (so it persists) and stream a
-/// `tool_result` event to the live view. Scoped to shells (Bash) and sub-agents
-/// (Task) — the things the Activity panel watches — and capped so a chatty
-/// command can't bloat the saved transcript.
+/// `tool_result` event to the live view. Applied to every tool so its action
+/// chip can be expanded to reveal what it did; capped to keep transcripts lean.
 fn attach_output(
     result: &mut ChatResult,
     id: &str,
@@ -505,25 +584,15 @@ fn attach_output(
     is_error: bool,
     channel: &Channel<Value>,
 ) {
-    const CAP: usize = 4000;
-    let capped: String = if output.chars().count() > CAP {
-        let mut s: String = output.chars().take(CAP).collect();
-        s.push_str("\n… (truncated)");
-        s
-    } else {
-        output.to_string()
-    };
+    let capped = cap_text(output, 4000);
     let mut matched = false;
     for seg in result.segments.iter_mut() {
         if seg.get("id").and_then(|v| v.as_str()) == Some(id) {
-            let name = seg.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            if name == "Bash" || name == "Task" {
-                seg["output"] = json!(capped.clone());
-                if is_error {
-                    seg["isError"] = json!(true);
-                }
-                matched = true;
+            seg["output"] = json!(capped.clone());
+            if is_error {
+                seg["isError"] = json!(true);
             }
+            matched = true;
             break;
         }
     }
@@ -636,6 +705,13 @@ fn route_event(
                                 if p.is_string() {
                                     msg["plan"] = p.clone();
                                 }
+                            }
+                        }
+                        // Edits & writes: carry the actual change so the chip can
+                        // be expanded into a readable diff / the written content.
+                        if let Some(rich) = tool_change(&name, &input) {
+                            for (k, v) in rich {
+                                msg[k] = v;
                             }
                         }
                         // Record the completed action as a persisted segment, then

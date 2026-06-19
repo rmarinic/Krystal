@@ -26,6 +26,8 @@
   <div class="project-screen" id="project-screen" hidden>
     <!-- Language toggle (shown only on the picker; the chat header has its own) -->
     <button class="lang-toggle project-lang head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
+    <!-- Settings (feature toggles + Discord presence live here) -->
+    <button class="settings-toggle project-settings head-btn" data-i18n-title="settings.title" title="Settings"></button>
     <div class="project-wrap">
       <div class="project-head">
         <div class="logo project-logo">
@@ -109,12 +111,15 @@
         <div class="chat-tools" id="chat-tools" hidden>
           <div class="picker" id="model-picker" data-i18n-title="model.pickerTitle" title="Which Claude brain to use"></div>
           <button id="init-btn" class="head-btn subtle" data-i18n="init.editBtn" data-i18n-title="init.editBtnTitle" title="Edit instructions: open this project's CLAUDE.md to edit it directly (or reinitialize from there)">✎ Edit instructions</button>
+          <button class="settings-toggle head-btn" data-i18n-title="settings.title" title="Settings"></button>
           <button class="lang-toggle head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
         </div>
       </div>
       <div class="meter-row" id="meter-row" hidden>
         <div class="meter"><div class="meter-fill" id="meter-fill"></div></div>
         <div class="meter-label" id="meter-label"></div>
+        <!-- Glanceable Claude-usage chip (5h / weekly %); opens Settings → Usage. -->
+        <button class="usage-chip" id="usage-chip" hidden></button>
       </div>
     </header>
 
@@ -122,7 +127,11 @@
       <div class="empty-state" id="empty-state">
         <div class="empty-mark">K</div>
         <h2 data-i18n="empty.title">Start a conversation</h2>
-        <p data-i18n="empty.body">This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically; to point it at a file elsewhere, paste its path in your message.</p>
+        <p data-i18n="empty.body">This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically.</p>
+        <div class="empty-actions">
+          <button id="empty-new-chat" class="empty-btn primary" data-i18n="empty.newChat">▸ New chat</button>
+          <button id="empty-init" class="empty-btn" data-i18n="empty.initBtn">✨ Initialize project</button>
+        </div>
       </div>
     </div>
 
@@ -136,10 +145,11 @@
       </div>
       <div class="composer-row">
         <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send, Shift+Enter for newline)"></textarea>
-        <button class="send-btn" id="send-btn" title="Send">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+        <button class="send-btn" id="send-btn" title="Send"></button>
       </div>
+      <!-- Tiny git status line: current branch + working-tree changes. Hidden
+           when the feature is off or the project folder isn't a git repo. -->
+      <div class="git-status" id="git-status" hidden></div>
     </div>
   </main>
 
@@ -168,6 +178,31 @@
         <button class="init-x" id="activity-close" data-i18n-title="activity.close" title="Close">×</button>
       </header>
       <div class="init-body" id="activity-body"></div>
+    </div>
+  </div>
+
+  <!-- ===================== Settings ===================== -->
+  <!-- Feature toggles + Discord presence. Choices persist in localStorage and
+       are applied live by app/settings.js. -->
+  <div class="modal-overlay" id="settings-overlay" hidden>
+    <div class="init-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+      <header class="init-head">
+        <div class="init-title" id="settings-modal-title" data-i18n="settings.heading">⚙ Settings</div>
+        <button class="init-x" id="settings-close" data-i18n-title="settings.close" title="Close">×</button>
+      </header>
+      <div class="init-body" id="settings-body"></div>
+    </div>
+  </div>
+
+  <!-- ===================== Compacting / clearing overlay ===================== -->
+  <!-- A brief, satisfying full-screen indicator while a chat is compacted or
+       cleared. Driven by app/controls.js (showProgressOverlay). -->
+  <div class="proc-overlay" id="proc-overlay" hidden>
+    <div class="proc-card" role="status" aria-live="polite">
+      <div class="proc-glyph" id="proc-glyph" aria-hidden="true">🧹</div>
+      <h2 class="proc-title" id="proc-title"></h2>
+      <p class="proc-sub" id="proc-sub"></p>
+      <div class="proc-bar"><div class="proc-bar-fill" id="proc-bar-fill"></div></div>
     </div>
   </div>
 
@@ -248,6 +283,27 @@
   <script defer src="i18n.js"></script>
   <script defer src="onboarding.js"></script>
   <script defer src="updater.js"></script>
-  <script defer src="app.js"></script>
+
+  <!-- Chat frontend, split from the former single app.js into cohesive modules.
+       These are classic scripts sharing one global scope, so ORDER MATTERS: each
+       file may use symbols declared in any earlier file. boot.js (entry point)
+       must stay last. See app/core.js for the full layout. -->
+  <script defer src="app/core.js"></script>
+  <script defer src="app/sidebar.js"></script>
+  <script defer src="app/chat.js"></script>
+  <script defer src="app/projects.js"></script>
+  <script defer src="app/controls.js"></script>
+  <script defer src="app/activity.js"></script>
+  <script defer src="app/search.js"></script>
+  <script defer src="app/messages.js"></script>
+  <script defer src="app/stream.js"></script>
+  <script defer src="app/wizard.js"></script>
+  <script defer src="app/localization.js"></script>
+  <script defer src="app/settings.js"></script>
+  <script defer src="app/git.js"></script>
+  <script defer src="app/links.js"></script>
+  <script defer src="app/logo.js"></script>
+  <script defer src="app/usage.js"></script>
+  <script defer src="app/boot.js"></script>
 </body>
 </html>

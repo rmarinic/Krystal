@@ -2,7 +2,7 @@
 name = "krystal"
 version = "0.3.0"
 description = "Krystal — a local Claude Code chat app (Tauri)"
-authors = ["Kristina"]
+authors = ["Krystal"]
 edition = "2021"
 rust-version = "1.77"
 
@@ -27,6 +27,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["clock"] }
+# Discord Rich Presence — pure-Rust IPC client (no native deps). Talks to the
+# local Discord desktop client to show the active project on the user's profile.
+discord-rich-presence = "0.2"
 
 # Smaller, faster release binary for the one-click app.
 [profile.release]

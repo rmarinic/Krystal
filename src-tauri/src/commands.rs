@@ -1,12 +1,15 @@
 //! Tauri command handlers — the IPC surface the frontend talks to.
 //! Each command maps 1:1 to an endpoint in the original server.js router.
 
+use std::process::Stdio;
+
 use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::claude::{self, Caps};
 use crate::db;
+use crate::discord;
 use crate::models;
 
 /// Shared app state managed by Tauri.
@@ -17,6 +20,11 @@ pub struct AppState {
     /// Claude Code at runtime and we then need every command to use the new path
     /// without a restart.
     pub claude_bin: std::sync::Mutex<String>,
+    /// Discord Rich Presence handle (opt-in; off until the user enables it).
+    pub discord: discord::Presence,
+    /// PIDs of in-flight `claude` chat processes, keyed by thread id, so a
+    /// `stop_chat` can interrupt a turn mid-stream.
+    pub running: std::sync::Mutex<std::collections::HashMap<String, u32>>,
 }
 
 impl AppState {
@@ -83,6 +91,26 @@ pub fn open_login(state: State<'_, AppState>) -> CmdResult {
     cmd.args(["/c", "start", "Krystal — Claude login", "cmd", "/k", &bin]);
     cmd.spawn()
         .map_err(|e| format!("could not open the login window: {e}"))?;
+    Ok(json!({ "ok": true }))
+}
+
+/// Open a URL in the user's default browser. Validated to http(s) only and free
+/// of control/quote characters, then handed to `explorer.exe` (which launches
+/// the default handler) as a single argument — no shell, so no `cmd` re-parsing.
+#[tauri::command]
+pub fn open_external(url: String) -> CmdResult {
+    let ok_scheme = {
+        let l = url.to_ascii_lowercase();
+        l.starts_with("http://") || l.starts_with("https://")
+    };
+    let safe = !url.chars().any(|c| c.is_control() || c == '"');
+    if !ok_scheme || !safe {
+        return Err("refused to open this link".into());
+    }
+    std::process::Command::new("explorer.exe")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("could not open the link: {e}"))?;
     Ok(json!({ "ok": true }))
 }
 
@@ -175,6 +203,20 @@ pub fn clear_thread(state: State<'_, AppState>, id: String) -> Value {
     json!({ "ok": true })
 }
 
+/// Rename a chat. Trims the title and caps its length; an empty title is
+/// rejected so a chat never loses its name to a blank.
+#[tauri::command]
+pub fn rename_thread(state: State<'_, AppState>, id: String, title: String) -> CmdResult {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("empty title".into());
+    }
+    let title: String = title.chars().take(120).collect();
+    let conn = state.db.lock().unwrap();
+    db::set_title(&conn, &id, &title);
+    Ok(json!({ "title": title }))
+}
+
 /* ------------------------------ search/fav ------------------------------- */
 
 #[tauri::command]
@@ -250,7 +292,16 @@ pub async fn chat(
         None
     };
 
-    let res = claude::run_chat_stream(&state.claude_bin(), &args, &meta.cwd, &prompt, &on_event).await?;
+    let res = claude::run_chat_stream(
+        &state.claude_bin(),
+        &args,
+        &meta.cwd,
+        &prompt,
+        &on_event,
+        &state.running,
+        &thread_id,
+    )
+    .await?;
 
     // Match server.js: on a hard error with no text, the error event was already
     // emitted — don't record an empty turn.
@@ -274,29 +325,376 @@ pub async fn chat(
         )
     };
 
-    // Prefer the auto-generated title (already in flight); fall back to the
-    // truncated first message that record_turn stored if naming didn't pan out.
-    let mut title = fallback_title;
+    // Signal completion immediately after persisting. `done` is the single
+    // completion signal the UI keys on: it drops the in-flight turn and renders
+    // from the DB instead. Emitting it before the (first-turn) auto-title
+    // resolves keeps that window ~0, so switching into the thread mid-finish
+    // can't briefly double-render the just-saved turn.
+    let _ = on_event.send(json!({
+        "type": "done",
+        "sessionId": session_id,
+        "text": res.final_text,
+        "title": fallback_title,
+        "updatedAt": updated_at,
+        "usage": usage,
+        "assistantId": assistant_id,
+    }));
+
+    // First-turn auto-naming resolves on its own clock (a cheap Haiku call run
+    // alongside the stream). When it lands, persist it and nudge the UI with a
+    // lightweight `title` event so the header/sidebar pick up the nicer name.
     if let Some(task) = title_task {
         if let Ok(Some(named)) = task.await {
             {
                 let conn = state.db.lock().unwrap();
                 db::set_title(&conn, &thread_id, &named);
             }
-            title = named;
+            let _ = on_event.send(json!({ "type": "title", "title": named }));
         }
     }
-
-    let _ = on_event.send(json!({
-        "type": "done",
-        "sessionId": session_id,
-        "text": res.final_text,
-        "title": title,
-        "updatedAt": updated_at,
-        "usage": usage,
-        "assistantId": assistant_id,
-    }));
     Ok(())
+}
+
+/// Interrupt the in-flight chat turn for `thread_id`, if any, by killing its
+/// `claude` process tree. The stream then ends on its own; any text already
+/// produced is still persisted by the `chat` handler.
+#[tauri::command]
+pub fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Value {
+    let pid = state.running.lock().unwrap().get(&thread_id).copied();
+    if let Some(pid) = pid {
+        claude::kill_process_tree(pid);
+    }
+    json!({ "ok": pid.is_some() })
+}
+
+/* ------------------------------- git status ------------------------------ */
+
+/// Run a `git` subcommand inside `cwd`, returning trimmed stdout on a clean exit.
+/// `None` means git failed (most often: the folder isn't a repository).
+fn git_out(cwd: &str, args: &[&str]) -> Option<String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(cwd)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(claude::CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// A tiny git summary for the composer status line: current branch plus the
+/// number of added/deleted lines in the working tree (staged + unstaged). If the
+/// folder isn't a git repository, `isRepo` is false and the UI hides the line.
+#[tauri::command]
+pub fn git_status(cwd: String) -> Value {
+    let branch = match git_out(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]) {
+        Some(b) if !b.is_empty() => b,
+        _ => return json!({ "isRepo": false }),
+    };
+
+    let mut added = 0i64;
+    let mut deleted = 0i64;
+    for args in [&["diff", "--numstat"][..], &["diff", "--cached", "--numstat"][..]] {
+        if let Some(out) = git_out(&cwd, args) {
+            for line in out.lines() {
+                let mut cols = line.split('\t');
+                // Binary files report "-" for both counts; parse failures → 0.
+                added += cols.next().and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+                deleted += cols.next().and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+            }
+        }
+    }
+    json!({ "isRepo": true, "branch": branch, "added": added, "deleted": deleted })
+}
+
+/// List the project's branches for the picker: local heads (most-recently
+/// committed first) and remote-tracking branches that don't already have a local
+/// counterpart. `isRepo` is false when the folder isn't a git repo.
+#[tauri::command]
+pub fn git_branches(cwd: String) -> Value {
+    let current = match git_out(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]) {
+        Some(c) if !c.is_empty() => c,
+        _ => return json!({ "isRepo": false }),
+    };
+
+    let local_raw = git_out(
+        &cwd,
+        &["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads"],
+    )
+    .unwrap_or_default();
+    let local: Vec<String> = local_raw
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    // Remote-tracking branches, e.g. "origin/feature". Drop the "*/HEAD" alias and
+    // any whose short name already exists locally (a local checkout takes priority).
+    let remote_raw = git_out(
+        &cwd,
+        &["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes"],
+    )
+    .unwrap_or_default();
+    let mut remote: Vec<Value> = Vec::new();
+    for full in remote_raw.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+        if full.ends_with("/HEAD") {
+            continue;
+        }
+        // Split once: "origin/feature/x" → remote "origin", short "feature/x".
+        let (rem, short) = match full.split_once('/') {
+            Some((r, s)) if !s.is_empty() => (r, s),
+            _ => continue,
+        };
+        if local.iter().any(|b| b == short) {
+            continue;
+        }
+        remote.push(json!({ "full": full, "short": short, "remote": rem }));
+    }
+
+    json!({ "isRepo": true, "current": current, "local": local, "remote": remote })
+}
+
+/// Run a git subcommand inside `cwd` and report success + git's message. Git
+/// writes status to stderr even on success (e.g. fetch/pull), so on success we
+/// surface stdout-or-stderr as `output`; on failure, stderr-or-stdout as `error`.
+fn git_action(cwd: &str, args: &[&str]) -> Value {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(cwd)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(claude::CREATE_NO_WINDOW);
+    }
+    match cmd.output() {
+        Ok(out) => {
+            let so = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let se = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if out.status.success() {
+                json!({ "ok": true, "output": if so.is_empty() { se } else { so } })
+            } else {
+                json!({ "ok": false, "error": if se.is_empty() { so } else { se } })
+            }
+        }
+        Err(e) => json!({ "ok": false, "error": e.to_string() }),
+    }
+}
+
+/// Switch the working tree to `branch`. A remote-only name (e.g. "feature") makes
+/// git create a local tracking branch automatically (its DWIM behaviour).
+#[tauri::command]
+pub fn git_checkout(cwd: String, branch: String) -> Value {
+    if branch.trim().is_empty() {
+        return json!({ "ok": false, "error": "no branch given" });
+    }
+    git_action(&cwd, &["checkout", &branch])
+}
+
+/// Create a new branch off the current HEAD and switch to it.
+#[tauri::command]
+pub fn git_create_branch(cwd: String, name: String) -> Value {
+    let name = name.trim();
+    if name.is_empty() {
+        return json!({ "ok": false, "error": "no branch name given" });
+    }
+    git_action(&cwd, &["checkout", "-b", name])
+}
+
+/// Fetch all remotes and prune deleted remote branches.
+#[tauri::command]
+pub fn git_fetch(cwd: String) -> Value {
+    git_action(&cwd, &["fetch", "--all", "--prune"])
+}
+
+/// Pull the current branch (fast-forward or merge per the repo's config).
+#[tauri::command]
+pub fn git_pull(cwd: String) -> Value {
+    git_action(&cwd, &["pull"])
+}
+
+/// Push the current branch. If it has no upstream yet, set one on `origin` so the
+/// first push from a new branch just works.
+#[tauri::command]
+pub fn git_push(cwd: String) -> Value {
+    let first = git_action(&cwd, &["push"]);
+    if first.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return first;
+    }
+    let err = first.get("error").and_then(|v| v.as_str()).unwrap_or("");
+    if err.contains("no upstream") || err.contains("set-upstream") || err.contains("has no upstream") {
+        return git_action(&cwd, &["push", "-u", "origin", "HEAD"]);
+    }
+    first
+}
+
+/* ------------------------------ claude usage ----------------------------- */
+/* Estimate Claude Code subscription usage by summing *weighted* tokens from the
+ * local session transcripts (~/.claude/projects/**/*.jsonl) into a rolling
+ * 5-hour window and a 7-day window — the same method the official-style status
+ * line uses. Output is weighted so cheap cache-reads don't dominate fresh output
+ * (mirrors Anthropic's rough cost ratios). The CLI exposes no per-plan limits, so
+ * the frontend turns these totals into percentages against user-calibrated caps. */
+
+const W_INPUT: f64 = 1.0;
+const W_OUTPUT: f64 = 5.0;
+const W_CACHE_CREATE: f64 = 1.25;
+const W_CACHE_READ: f64 = 0.1;
+
+fn claude_home() -> Option<std::path::PathBuf> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
+    Some(std::path::Path::new(&home).join(".claude"))
+}
+
+/// Recursively collect `*.jsonl` paths under `dir` whose mtime is newer than
+/// `min_mtime` (unix secs) — old session files can't hold tokens inside the
+/// 7-day window, so skipping them keeps the scan quick.
+fn collect_recent_jsonl(dir: &std::path::Path, min_mtime: f64, out: &mut Vec<std::path::PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_dir() {
+            collect_recent_jsonl(&path, min_mtime, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            if mtime >= min_mtime {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// Weighted token usage for the current 5-hour session block and the weekly
+/// window. `block_start` is the live session's start (reset = start + 5h);
+/// `week_from` is the start of the counted weekly window. `available:false`
+/// when there's no `~/.claude/projects` to read.
+///
+/// `weekly_reset` (unix secs) is the user-calibrated weekly reset anchor — when
+/// present we count the week from the most recent past reset, matching Claude's
+/// fixed weekly cycle; otherwise we fall back to a trailing 7 days.
+#[tauri::command]
+pub fn claude_usage(weekly_reset: Option<f64>) -> Value {
+    let projects = match claude_home() {
+        Some(h) => h.join("projects"),
+        None => return json!({ "available": false }),
+    };
+    if !projects.is_dir() {
+        return json!({ "available": false });
+    }
+
+    let now = chrono::Utc::now().timestamp() as f64;
+    // Look back far enough to cover a full weekly window (anchored up to ~7 days
+    // back) plus slack for reconstructing the 5-hour blocks.
+    let scan_from = now - 8.0 * 86400.0;
+
+    let mut files = Vec::new();
+    collect_recent_jsonl(&projects, scan_from, &mut files);
+
+    // (timestamp, weighted-tokens) for every usage row in range.
+    let mut entries: Vec<(f64, f64)> = Vec::new();
+    for path in files {
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        for line in content.lines() {
+            // Cheap pre-filter: only the assistant turns carry a usage block.
+            if !line.contains("\"usage\"") {
+                continue;
+            }
+            let entry: Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let usage = match entry.get("message").and_then(|m| m.get("usage")) {
+                Some(u) if u.is_object() => u,
+                _ => continue,
+            };
+            let ts = match entry.get("timestamp").and_then(|t| t.as_str()) {
+                Some(s) => match chrono::DateTime::parse_from_rfc3339(s) {
+                    Ok(dt) => dt.timestamp() as f64,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+            if ts < scan_from {
+                continue;
+            }
+            let tok = |k: &str| usage.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let weighted = tok("input_tokens") * W_INPUT
+                + tok("output_tokens") * W_OUTPUT
+                + tok("cache_creation_input_tokens") * W_CACHE_CREATE
+                + tok("cache_read_input_tokens") * W_CACHE_READ;
+            entries.push((ts, weighted));
+        }
+    }
+    entries.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // --- 5-hour session block (matches Claude's "resets in …"): a block runs 5h
+    // from its first turn, floored to the hour; a >=5h gap opens a new block. ---
+    const FIVE_H: f64 = 5.0 * 3600.0;
+    let floor_hour = |t: f64| (t / 3600.0).floor() * 3600.0;
+    let mut block_start: Option<f64> = None;
+    let mut last_ts = 0.0f64;
+    for &(ts, _) in &entries {
+        match block_start {
+            None => block_start = Some(floor_hour(ts)),
+            Some(bs) => {
+                if ts - bs >= FIVE_H || ts - last_ts >= FIVE_H {
+                    block_start = Some(floor_hour(ts));
+                }
+            }
+        }
+        last_ts = ts;
+    }
+    // The block is only "live" if its 5-hour window hasn't already elapsed.
+    let active_start = block_start.filter(|bs| now < bs + FIVE_H);
+    let h5: f64 = match active_start {
+        Some(bs) => entries.iter().filter(|(t, _)| *t >= bs).map(|(_, w)| w).sum(),
+        None => 0.0,
+    };
+
+    // --- Weekly window: from the calibrated reset anchor when we have one (so the
+    // sum matches Claude's fixed weekly cycle), else a trailing 7 days. ---
+    let week_from = weekly_reset
+        .filter(|r| *r <= now && *r >= scan_from)
+        .unwrap_or(now - 7.0 * 86400.0);
+    let d7: f64 = entries.iter().filter(|(t, _)| *t >= week_from).map(|(_, w)| w).sum();
+
+    json!({
+        "available": true,
+        "h5": h5,
+        "d7": d7,
+        "blockStart": active_start,
+        "weekFrom": week_from,
+        "now": now,
+    })
 }
 
 /* --------------------- per-thread actions (compact/hint) ----------------- */
@@ -542,6 +940,41 @@ pub fn read_claude_md(state: State<'_, AppState>, id: String) -> CmdResult {
     let markdown = std::fs::read_to_string(&target).unwrap_or_default();
     let body = markdown.strip_prefix('\u{feff}').unwrap_or(&markdown);
     Ok(json!({ "markdown": body.replace("\r\n", "\n"), "exists": target.exists() }))
+}
+
+/// Does this project folder already have a CLAUDE.md? Lets the welcome screen
+/// decide whether its button reads "Initialize" or "Reinitialize" — no thread
+/// needed, just the project path.
+#[tauri::command]
+pub fn claude_md_exists(cwd: String) -> Value {
+    let exists = std::path::Path::new(&cwd).join("CLAUDE.md").exists();
+    json!({ "exists": exists })
+}
+
+/* ---------------------------- Discord presence --------------------------- */
+
+/// Turn Discord Rich Presence on or off. Off by default; the frontend persists
+/// the user's choice and calls this on boot and whenever the toggle is flipped.
+#[tauri::command]
+pub fn set_discord_enabled(state: State<'_, AppState>, enabled: bool) -> Value {
+    state.discord.set_enabled(enabled);
+    json!({ "ok": true })
+}
+
+/// Update the project shown on the Discord card (`null` on the picker screen).
+/// Only the project name is sent — never chat content or paths.
+#[tauri::command]
+pub fn discord_set_project(state: State<'_, AppState>, name: Option<String>) -> Value {
+    state.discord.set_project(name);
+    json!({ "ok": true })
+}
+
+/// Choose whether the project NAME is shown on the Discord card. When off,
+/// presence still shows but with a generic label instead of the folder name.
+#[tauri::command]
+pub fn discord_set_share_name(state: State<'_, AppState>, enabled: bool) -> Value {
+    state.discord.set_share_name(enabled);
+    json!({ "ok": true })
 }
 
 /* ------------------------------- helpers --------------------------------- */

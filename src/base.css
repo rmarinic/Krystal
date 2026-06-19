@@ -162,16 +162,22 @@ aside.sidebar {
   font-size: 13px;
   border: 1px solid transparent;
   line-height: 1.4;
+  transition: background .15s ease, border-color .15s ease,
+              transform .15s ease, box-shadow .22s ease;
 }
 .sidebar-list a:hover,
 .archive-list a:hover {
   background: var(--bg-card);
   border-color: var(--border);
+  transform: translateX(3px);
 }
 .sidebar-list .current a {
   background: var(--bg-card);
   border-color: rgba(108,199,142,0.35);
-  box-shadow: inset 2px 0 0 var(--accent-2);
+  box-shadow: inset 3px 0 0 var(--accent-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-list a:hover, .archive-list a:hover { transform: none; }
 }
 
 .sidebar-list .time,

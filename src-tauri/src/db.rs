@@ -1,9 +1,12 @@
 //! SQLite store for Krystal (threads, messages, favorites).
 //!
 //! A faithful Rust port of the original `db.js`. Single file at
-//! <app_data_dir>/kristina.db. On first run it migrates any existing
+//! <app_data_dir>/krystal.db. On first run it migrates any existing
 //! data/threads.json sitting next to it into the database, then leaves the
 //! JSON as a backup. One-person local app — no auth, no concurrency concerns.
+//!
+//! Pre-rename installs stored data at `com.kristina.claudecode/kristina.db`;
+//! `migrate_legacy_store` copies that across on first launch after the rename.
 
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -90,6 +93,33 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     migrate_json(&conn, &json_file);
     seed_projects(&conn);
     Ok(conn)
+}
+
+/// One-time migration for the pre-rename install. Older builds stored data at
+/// `%APPDATA%/com.kristina.claudecode/kristina.db`; the Krystal rename changed
+/// both the identifier (so the data dir moved) and the DB filename. If the new
+/// DB doesn't exist yet but the old one does, checkpoint and copy it across so
+/// existing chats carry over seamlessly.
+pub fn migrate_legacy_store(new_dir: &Path, new_db: &Path) {
+    if new_db.exists() {
+        return; // already on the new store — nothing to do
+    }
+    // The old data dir is a sibling of the new one under %APPDATA%.
+    let old_db = match new_dir.parent() {
+        Some(appdata) => appdata.join("com.kristina.claudecode").join("kristina.db"),
+        None => return,
+    };
+    if !old_db.exists() {
+        return; // fresh install, no legacy data
+    }
+    // Fold any WAL contents back into the main file so a single copy is complete.
+    if let Ok(conn) = Connection::open(&old_db) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+    match std::fs::copy(&old_db, new_db) {
+        Ok(_) => println!("  migrated existing chats from {}", old_db.display()),
+        Err(e) => eprintln!("  could not migrate legacy database: {e}"),
+    }
 }
 
 /// Folder display name = the last path segment (handles trailing slashes).
