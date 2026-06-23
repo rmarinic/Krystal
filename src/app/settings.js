@@ -93,6 +93,7 @@ const SETTINGS_TABS = [
     { key: 'linkOpen', type: 'choice', choices: ['ask', 'browser', 'app'] },
     { key: 'gitStatus' },
     { key: 'logoLife' },
+    { key: 'claudeUpdate', type: 'action' },
   ] },
   { id: 'integrations', rows: [
     { key: 'discord', get: discordEnabled, set: setDiscord },
@@ -103,7 +104,71 @@ const SETTINGS_TABS = [
 ];
 let settingsTab = 'general';
 
+/* Claude Code self-update row: shows the installed CLI version and a button that
+ * runs `claude update` in the background (same as the terminal), streaming the
+ * updater's log lines live. Lives in General so it's easy to find. */
+function buildClaudeUpdateRow() {
+  const item = document.createElement('div');
+  item.className = 'settings-row col claude-update';
+  item.innerHTML =
+    `<div class="settings-text">` +
+      `<div class="settings-name">${escapeHtml(tr('settings.claudeUpdate.name'))}</div>` +
+      `<div class="settings-desc">${escapeHtml(tr('settings.claudeUpdate.desc'))}</div>` +
+    `</div>` +
+    `<div class="cu-status" aria-live="polite"></div>` +
+    `<pre class="cu-log" hidden></pre>` +
+    `<div class="cu-actions">` +
+      `<button class="cu-btn" type="button">${escapeHtml(tr('settings.claudeUpdate.btn'))}</button>` +
+    `</div>`;
+
+  const statusEl = item.querySelector('.cu-status');
+  const logEl = item.querySelector('.cu-log');
+  const btn = item.querySelector('.cu-btn');
+
+  // Best-effort: show the currently-installed version under the description.
+  api.preflight().then((pf) => {
+    if (pf && pf.version) statusEl.textContent = tr('settings.claudeUpdate.current', { version: pf.version });
+  }).catch(() => {});
+
+  btn.onclick = async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('busy');
+    statusEl.textContent = tr('settings.claudeUpdate.working');
+    logEl.hidden = false;
+    logEl.textContent = '';
+    replayClass(logEl, 'cu-log-in');
+
+    const channel = new Channel();
+    channel.onmessage = (msg) => {
+      if (!msg || msg.type !== 'log') return;
+      logEl.textContent += (logEl.textContent ? '\n' : '') + msg.line;
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    try {
+      const res = await api.updateClaude(channel);
+      if (res && res.updated && res.version) {
+        statusEl.textContent = tr('settings.claudeUpdate.updated', { version: res.version });
+      } else if (res && res.version) {
+        statusEl.textContent = tr('settings.claudeUpdate.upToDate', { version: res.version });
+      } else {
+        statusEl.textContent = tr('settings.claudeUpdate.done');
+      }
+    } catch (err) {
+      statusEl.textContent = tr('settings.claudeUpdate.failed', { err: String((err && err.message) || err) });
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('busy');
+    }
+  };
+
+  return item;
+}
+
 function buildSettingRow(row) {
+  if (row.key === 'claudeUpdate') return buildClaudeUpdateRow();
+
   const item = document.createElement('div');
   item.className = 'settings-row' + (row.sub ? ' sub' : '') + (row.type === 'choice' ? ' col' : '');
   const text =

@@ -82,6 +82,29 @@ pub async fn install_claude(state: State<'_, AppState>, on_event: Channel<Value>
     }))
 }
 
+/// Update the Claude Code CLI in place (the same as running `claude update` in a
+/// terminal), streaming progress to `on_event`. Re-resolves afterwards and
+/// reports the before/after versions so the UI can say whether anything changed.
+#[tauri::command]
+pub async fn update_claude(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
+    let bin = state.claude_bin();
+    let before = claude::claude_version(&bin);
+    claude::update_claude_code(&bin, &on_event).await?;
+    // Re-resolve in case the update moved the binary, and adopt the new path.
+    let resolved = claude::resolve_claude();
+    let after = claude::claude_version(&resolved);
+    if after.is_some() {
+        *state.claude_bin.lock().unwrap() = resolved.clone();
+    }
+    Ok(json!({
+        "ok": after.is_some(),
+        "before": before,
+        "version": after,
+        "updated": before != after,
+        "claudeBin": resolved,
+    }))
+}
+
 /// Open a real terminal running interactive `claude`, which walks the user
 /// through Anthropic's normal browser sign-in. The UI re-checks via `preflight`.
 #[tauri::command]

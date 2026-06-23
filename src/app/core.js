@@ -151,6 +151,8 @@ const api = {
   openExternal(url) { return invoke('open_external', { url }); },
   claudeMdExists(cwd) { return invoke('claude_md_exists', { cwd }); },
   claudeUsage(weeklyReset) { return invoke('claude_usage', { weeklyReset }); },
+  preflight() { return invoke('preflight'); },
+  updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
 };
 
 function basename(p) { return p.split(/[\\/]/).pop(); }

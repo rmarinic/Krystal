@@ -248,6 +248,60 @@ pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String>
     }
 }
 
+/// Update Claude Code in place by running `<bin> update`, streaming every output
+/// line to the frontend as `{type:"log", line}` (same shape as the installer) so
+/// the Settings panel can show live progress. This is exactly what running
+/// `claude update` in a terminal does — it checks for a newer release and, if
+/// there is one, downloads and applies it. Resolves Ok on a clean exit.
+pub async fn update_claude_code(bin: &str, channel: &Channel<Value>) -> Result<(), String> {
+    let _ = channel.send(json!({ "type": "log", "line": "Checking for Claude Code updates…" }));
+    let mut cmd = Command::new(bin);
+    cmd.arg("update")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("could not start the updater: {e}"))?;
+
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+
+    // Stream stdout and stderr (the updater logs to both) line-by-line.
+    let ch_out = channel.clone();
+    let out_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = ch_out.send(json!({ "type": "log", "line": line }));
+            }
+        }
+    });
+    let ch_err = channel.clone();
+    let err_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = ch_err.send(json!({ "type": "log", "line": line }));
+            }
+        }
+    });
+
+    let status = child.wait().await.map_err(|e| e.to_string())?;
+    let _ = out_task.await;
+    let _ = err_task.await;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "updater exited with code {}",
+            status.code().unwrap_or(-1)
+        ))
+    }
+}
+
 /* ------------------------------ arguments -------------------------------- */
 
 /// Shared base flags for every claude invocation. `sys_prompt` must be a single

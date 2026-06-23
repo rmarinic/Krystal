@@ -325,6 +325,15 @@
       'settings.discord.desc': 'Show on your Discord profile that you are using Krystal. Chat content is never shared.',
       'settings.discordShareName.name': 'Share project name',
       'settings.discordShareName.desc': 'Include the current project name on the Discord card. When off, it just shows that you are using Krystal.',
+      'settings.claudeUpdate.name': 'Claude Code updates',
+      'settings.claudeUpdate.desc': 'Update the Claude Code CLI to the latest version — the same as running “claude update” in a terminal.',
+      'settings.claudeUpdate.btn': 'Check for updates',
+      'settings.claudeUpdate.current': 'Installed version: {version}',
+      'settings.claudeUpdate.working': 'Updating Claude Code…',
+      'settings.claudeUpdate.updated': 'Updated to {version}.',
+      'settings.claudeUpdate.upToDate': 'You’re already on the latest version ({version}).',
+      'settings.claudeUpdate.done': 'Done.',
+      'settings.claudeUpdate.failed': 'Update failed: {err}',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'no changes',
@@ -671,6 +680,15 @@
       'settings.discord.desc': 'Prikaži na svom Discord profilu da koristiš Krystal. Sadržaj razgovora nikad se ne dijeli.',
       'settings.discordShareName.name': 'Dijeli naziv projekta',
       'settings.discordShareName.desc': 'Uključi naziv trenutačnog projekta na Discord kartici. Kad je isključeno, prikazuje samo da koristiš Krystal.',
+      'settings.claudeUpdate.name': 'Ažuriranja Claude Codea',
+      'settings.claudeUpdate.desc': 'Ažuriraj Claude Code CLI na najnoviju verziju — isto kao pokretanje „claude update” u terminalu.',
+      'settings.claudeUpdate.btn': 'Provjeri ažuriranja',
+      'settings.claudeUpdate.current': 'Instalirana verzija: {version}',
+      'settings.claudeUpdate.working': 'Ažuriram Claude Code…',
+      'settings.claudeUpdate.updated': 'Ažurirano na {version}.',
+      'settings.claudeUpdate.upToDate': 'Već imaš najnoviju verziju ({version}).',
+      'settings.claudeUpdate.done': 'Gotovo.',
+      'settings.claudeUpdate.failed': 'Ažuriranje nije uspjelo: {err}',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'nema promjena',

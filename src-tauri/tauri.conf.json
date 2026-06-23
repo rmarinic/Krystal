@@ -25,12 +25,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "category": "Productivity",
     "shortDescription": "Local Claude Code chat",
-    "longDescription": "A local chat-app frontend for Claude Code — talk to Claude over your own documents, fully offline UI, native folder picker."
+    "longDescription": "A local chat-app frontend for Claude Code — talk to Claude over your own documents, fully offline UI, native folder picker.",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
   },
   "plugins": {
     "updater": {

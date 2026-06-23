@@ -55,6 +55,7 @@ fn main() {
             commands::get_config,
             commands::preflight,
             commands::install_claude,
+            commands::update_claude,
             commands::open_login,
             commands::open_external,
             commands::list_projects,
