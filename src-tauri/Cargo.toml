@@ -1,6 +1,6 @@
 [package]
 name = "krystal"
-version = "0.7.0"
+version = "0.8.0"
 description = "Krystal — a local Claude Code chat app (Tauri)"
 authors = ["Krystal"]
 edition = "2021"
