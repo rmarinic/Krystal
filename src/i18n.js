@@ -72,7 +72,7 @@
       'clear.btnTitle': 'Start fresh: Claude forgets this chat',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Message Claude…  (Enter to send, Shift+Enter for newline)',
+      'composer.placeholder': 'Message Claude…  (Enter to send · start with $ to run a shell command)',
       'empty.title': 'Start a conversation',
       'empty.body': 'This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically.',
       'empty.newChat': '▸ New chat',
@@ -152,6 +152,11 @@
       'chip.pending': 'Working… output will appear here.',
       'chip.imgFailed': "Couldn't load image preview.",
       'code.copy': 'Copy',
+      'shell.role': 'Shell',
+      'shell.badge': 'shell mode · runs in the project folder',
+      'shell.running': 'Running…',
+      'shell.noOutput': '(no output)',
+      'shell.exit': 'exited with code {code}',
       'tool.Read': 'Reading a file',
       'tool.Write': 'Writing a file',
       'tool.Edit': 'Editing a file',
@@ -445,7 +450,7 @@
       'clear.btnTitle': 'Počni iznova: Claude zaboravlja ovaj razgovor',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje, Shift+Enter za novi red)',
+      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje · započni s $ za shell naredbu)',
       'empty.title': 'Započni razgovor',
       'empty.body': 'Ovaj projekt je spreman. Pokreni razgovor s “▸ novi razgovor” u bočnoj traci ili otvori jedan s popisa. Claude može sam čitati sve u mapi projekta.',
       'empty.newChat': '▸ Novi razgovor',
@@ -525,6 +530,11 @@
       'chip.pending': 'Radim… izlaz će se pojaviti ovdje.',
       'chip.imgFailed': 'Pregled slike nije moguće učitati.',
       'code.copy': 'Kopiraj',
+      'shell.role': 'Shell',
+      'shell.badge': 'shell način · izvršava se u mapi projekta',
+      'shell.running': 'Izvršavam…',
+      'shell.noOutput': '(nema izlaza)',
+      'shell.exit': 'završeno s kodom {code}',
       'tool.Read': 'Čitam datoteku',
       'tool.Write': 'Pišem datoteku',
       'tool.Edit': 'Uređujem datoteku',

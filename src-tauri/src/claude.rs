@@ -979,3 +979,63 @@ pub async fn run_claude_text(
         })
     }
 }
+
+/// Run a one-off shell command directly (the composer's `$` escape hatch),
+/// capturing combined stdout+stderr and the exit code. Uses PowerShell on
+/// Windows (so `ls`, `cat`, … work as users expect) and `sh -c` elsewhere.
+/// Bounded by a timeout and an output cap so a runaway command can't hang the UI
+/// or bloat the transcript. Returns `(output, exit_code)`.
+pub async fn run_shell_capture(command: &str, cwd: &str) -> Result<(String, i32), String> {
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("powershell");
+        c.args(["-NoProfile", "-NonInteractive", "-Command", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("could not start shell: {e}"))?;
+    let out = match tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(e.to_string()),
+        Err(_) => return Err("command timed out after 120s".into()),
+    };
+
+    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !stderr.trim().is_empty() {
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        combined.push_str(&stderr);
+    }
+    const CAP: usize = 100_000;
+    if combined.len() > CAP {
+        combined.truncate(CAP);
+        combined.push_str("\n… (output truncated)");
+    }
+
+    Ok((combined.trim_end().to_string(), out.status.code().unwrap_or(-1)))
+}

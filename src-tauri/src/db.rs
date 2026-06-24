@@ -505,6 +505,24 @@ pub fn compact(conn: &Connection, id: &str, summary: &str) {
     );
 }
 
+/// Persist a direct shell run (the composer's `$` escape hatch) as a
+/// self-contained shell message so it survives reload. It deliberately does NOT
+/// touch the Claude session, usage or turn count — it runs outside Claude.
+pub fn add_shell_run(conn: &Connection, id: &str, command: &str, output: &str, code: i32) -> Value {
+    let t = now();
+    let seg = json!([{ "type": "shell", "command": command, "output": output, "code": code }]);
+    let segments_json = serde_json::to_string(&seg).unwrap_or_else(|_| "[]".into());
+    // `text` mirrors command + output so search can still find shell runs.
+    let text = format!("$ {command}\n{output}");
+    let _ = conn.execute(
+        "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,ts) VALUES (?1,'assistant',?2,NULL,?3,0,0,?4)",
+        params![id, text, segments_json, t],
+    );
+    let mid = conn.last_insert_rowid();
+    let _ = conn.execute("UPDATE threads SET updated_at=?1 WHERE id=?2", params![t, id]);
+    json!({ "id": mid, "ts": t })
+}
+
 pub fn recent_messages(conn: &Connection, id: &str, n: i64) -> Vec<(String, String)> {
     let mut stmt = conn
         .prepare("SELECT role,text FROM messages WHERE thread_id = ?1 ORDER BY id DESC LIMIT ?2")

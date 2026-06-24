@@ -130,6 +130,7 @@ const api = {
   setMode(id, mode) { return invoke('set_mode', { id, mode }); },
   clear(id) { return invoke('clear_thread', { id }); },
   compact(id) { return invoke('compact_thread', { id }); },
+  runShell(threadId, command) { return invoke('run_shell', { threadId, command }); },
   hint(id) { return invoke('hint_thread', { id }); },
   initAnalyze(id, brief) { return invoke('init_analyze', { id, brief }); },
   initDraft(id, summary, answers, brief) { return invoke('init_draft', { id, summary, answers, brief }); },

@@ -144,7 +144,8 @@
         <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
       </div>
       <div class="composer-row">
-        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send, Shift+Enter for newline)"></textarea>
+        <span class="shell-badge" data-i18n="shell.badge" aria-hidden="true">shell mode · runs in the project folder</span>
+        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · start with $ to run a shell command)"></textarea>
         <button class="send-btn" id="send-btn" title="Send"></button>
       </div>
       <!-- Tiny git status line: current branch + working-tree changes. Hidden

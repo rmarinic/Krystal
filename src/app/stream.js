@@ -4,10 +4,20 @@ function autosize() {
   els.input.style.height = 'auto';
   els.input.style.height = Math.min(els.input.scrollHeight, 200) + 'px';
 }
-els.input.addEventListener('input', autosize);
+els.input.addEventListener('input', () => { autosize(); syncShellMode(); });
 els.input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
+
+/* The `$` escape hatch: a leading `$` switches the composer to "shell mode",
+ * where Enter runs the line as a shell command (in the project folder) instead
+ * of messaging Claude. We light up the composer so the switch is unmistakable. */
+function isShellInput(v) { return /^\s*\$/.test(v || ''); }
+function shellCommandOf(v) { return (v || '').replace(/^\s*\$\s?/, ''); }
+function syncShellMode() {
+  const on = isShellInput(els.input.value) && !state.streaming;
+  els.composer.classList.toggle('shell-mode', on);
+}
 /* The send button doubles as a stop button while a turn streams (when the
  * feature is enabled). Inline SVGs so syncComposer can swap them per state. */
 const SEND_SVG =
@@ -229,6 +239,7 @@ function syncComposer() {
   els.sendBtn.classList.toggle('is-stop', canStop);   // CSS morphs the icon
   els.sendBtn.title = tr(canStop ? 'composer.stopTitle' : 'composer.sendTitle');
   els.sendBtn.disabled = canStop ? false : !state.activeId;
+  syncShellMode();   // a streaming turn suppresses shell mode; refresh the badge
   refreshActivityBtn();
 }
 
@@ -327,8 +338,12 @@ function handleLiveEvent(live, msg) {
 }
 
 async function send() {
-  const text = els.input.value.trim();
+  const raw = els.input.value;
+  const text = raw.trim();
   if (!text || state.streaming || !state.activeId) return;
+
+  // `$ …` runs a shell command directly, outside Claude.
+  if (isShellInput(raw)) { runShellCommand(shellCommandOf(raw).trim()); return; }
 
   const threadId = state.activeId;   // capture: the active view may change mid-stream
 
@@ -368,6 +383,51 @@ async function send() {
   } catch (e) {
     if (live.typer) live.typer.error(String(e && e.message || e));
     finishLive(live);
+  } finally {
+    if (threadId === state.activeId) els.input.focus();
+  }
+}
+
+/* Build an empty shell-run bubble (mirrors how a persisted shell message reloads:
+ * an assistant `.shell` message with no star and a terminal label). */
+function appendShellRun() {
+  const div = document.createElement('div');
+  div.className = 'msg assistant shell';
+  div.innerHTML = `<div class="role">${escapeHtml(tr('shell.role'))}</div><div class="bubble"></div>`;
+  els.feed.appendChild(div);
+  return { div, bubble: div.querySelector('.bubble') };
+}
+
+/* Run a `$` command directly in the project folder. Shows a running card, then
+ * swaps in the result. The backend persists it regardless of the on-screen
+ * thread, so switching away mid-run still keeps the result (it reloads later). */
+async function runShellCommand(command) {
+  if (!command || !state.activeId) return;
+  const threadId = state.activeId;
+
+  stickToBottom = true;
+  els.input.value = '';
+  autosize();
+  syncShellMode();
+
+  const { div, bubble } = appendShellRun();
+  const running = renderShellCard({ command, output: tr('shell.running'), code: 0 });
+  running.classList.add('running');
+  bubble.appendChild(running);
+  scrollFeed();
+
+  const paint = (seg) => {
+    if (threadId !== state.activeId) return;   // user switched threads — let reload show it
+    bubble.innerHTML = '';
+    bubble.appendChild(renderShellCard(seg));
+    scrollFeed();
+  };
+  try {
+    const r = await api.runShell(threadId, command);
+    if (r && r.id != null && threadId === state.activeId) div.dataset.mid = r.id;
+    paint(r);
+  } catch (e) {
+    paint({ command, output: String((e && e.message) || e), code: -1 });
   } finally {
     if (threadId === state.activeId) els.input.focus();
   }

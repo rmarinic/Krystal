@@ -89,6 +89,7 @@ fn main() {
             commands::git_push,
             commands::claude_usage,
             commands::compact_thread,
+            commands::run_shell,
             commands::hint_thread,
             commands::init_analyze,
             commands::init_draft,

@@ -462,6 +462,35 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   .action-chip .chip-img img { transition: none; }
 }
 
+/* ---- Direct shell run (the composer's `$` escape hatch) ---- */
+.msg.assistant.shell .role { color: #56c7d6; }
+.shell-card {
+  width: fit-content; max-width: 100%;
+  border: 1px solid var(--border-2); border-left: 3px solid #56c7d6;
+  border-radius: var(--radius-sm); background: var(--code-bg); overflow: hidden;
+}
+.shell-card.err { border-left-color: #e07a5a; }
+.shell-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+}
+.shell-head .shell-ico { color: #56c7d6; font-weight: 700; flex: 0 0 auto; }
+.shell-card.err .shell-head .shell-ico { color: #e07a5a; }
+.shell-cmd { white-space: pre-wrap; word-break: break-all; }
+.shell-out {
+  position: relative; margin: 0; max-height: 360px; overflow: auto;
+  padding: 10px 12px; background: transparent;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: var(--fg-muted); white-space: pre-wrap; word-break: break-word;
+}
+.shell-out.err { color: #e0a99e; }
+.shell-card.running .shell-out { color: var(--fg-dim); font-style: italic; }
+.shell-code {
+  padding: 6px 12px; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10.5px; color: #e07a5a;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .action-chip .chip-details,
   .action-chip .chip-caret,
@@ -670,6 +699,41 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .composer-row:focus-within {
   border-color: var(--accent-2);
   box-shadow: 0 0 0 1px rgba(108,199,142,0.30), 0 0 26px rgba(108,199,142,0.14);
+}
+
+/* ---- Shell mode: a leading `$` switches the composer to run a shell command.
+   We light the whole input up in a distinct cyan so the switch is obvious. ---- */
+.composer-row { position: relative; }
+.shell-badge {
+  position: absolute; top: -11px; left: 14px; z-index: 2;
+  display: none; align-items: center;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: #062227; background: #56c7d6;
+  border-radius: 999px; padding: 3px 10px;
+  box-shadow: 0 2px 12px rgba(86,199,214,0.4);
+}
+.composer.shell-mode .shell-badge {
+  display: inline-flex;
+  animation: shell-badge-in .22s cubic-bezier(.2,.9,.3,1.25);
+}
+.composer.shell-mode .composer-row {
+  border-color: #56c7d6;
+  box-shadow: 0 0 0 1px rgba(86,199,214,0.35), 0 0 26px rgba(86,199,214,0.16);
+}
+.composer.shell-mode .composer-row::before {
+  content: "$"; color: #56c7d6; text-shadow: 0 0 8px rgba(86,199,214,0.55);
+}
+.composer.shell-mode .send-btn:not(.is-stop) { background: #56c7d6; color: #062227; }
+.composer.shell-mode .send-btn:not(.is-stop):hover:not(:disabled) {
+  background: #6ed4e1; box-shadow: 0 4px 14px rgba(86,199,214,0.42);
+}
+@keyframes shell-badge-in {
+  from { opacity: 0; transform: translateY(4px) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer.shell-mode .shell-badge { animation: none; }
 }
 
 /* Section labels read like terminal headers */

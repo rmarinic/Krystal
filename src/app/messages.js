@@ -29,6 +29,41 @@ function renderPlanCard(seg) {
   return card;
 }
 
+/* A direct shell run (the composer's `$` escape hatch): the command line + its
+ * captured output, rendered as a self-contained terminal-style card. Persisted
+ * as a `{type:'shell'}` segment so it reloads identically. */
+function renderShellCard(seg) {
+  const err = seg.code != null && seg.code !== 0;
+  const card = document.createElement('div');
+  card.className = 'shell-card' + (err ? ' err' : '');
+
+  const head = document.createElement('div');
+  head.className = 'shell-head';
+  head.innerHTML = '<span class="shell-ico" aria-hidden="true">›_</span><span class="shell-cmd"></span>';
+  head.querySelector('.shell-cmd').textContent = seg.command || '';
+  card.appendChild(head);
+
+  const pre = document.createElement('pre');
+  pre.className = 'shell-out' + (err ? ' err' : '');
+  pre.textContent = (seg.output && seg.output.length) ? seg.output : tr('shell.noOutput');
+  addCopyButton(pre);
+  card.appendChild(pre);
+
+  if (err) {
+    const code = document.createElement('div');
+    code.className = 'shell-code';
+    code.textContent = tr('shell.exit', { code: seg.code });
+    card.appendChild(code);
+  }
+  return card;
+}
+
+/* True if a message is purely shell runs (so it renders as terminal output, not
+ * a "Claude" reply — no star, no Claude label). */
+function isShellSegments(segs) {
+  return !!(segs && segs.length && segs.every((s) => s && s.type === 'shell'));
+}
+
 /* If a tool segment has a rich rendering (a question card, a plan card), build
  * and return it; otherwise return null so the caller falls back to a chip. */
 function specialToolCard(seg) {
@@ -389,7 +424,9 @@ function renderThinkingChip() {
 function renderSegments(bubble, segs) {
   for (const seg of segs) {
     if (!seg) continue;
-    if (seg.type === 'tool') {
+    if (seg.type === 'shell') {
+      bubble.appendChild(renderShellCard(seg));
+    } else if (seg.type === 'tool') {
       bubble.appendChild(specialToolCard(seg) || renderActionChip(seg, false));
     } else if (seg.type === 'text') {
       const d = document.createElement('div');

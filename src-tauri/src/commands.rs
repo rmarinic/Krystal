@@ -861,6 +861,35 @@ pub async fn compact_thread(state: State<'_, AppState>, id: String) -> CmdResult
     Ok(json!({ "ok": true, "summary": text }))
 }
 
+/// Run a shell command directly in the thread's working directory — the `$`
+/// escape hatch in the composer. Runs *outside* Claude (no session, no usage),
+/// persists the result as a shell message, and returns it for immediate render.
+#[tauri::command]
+pub async fn run_shell(state: State<'_, AppState>, thread_id: String, command: String) -> CmdResult {
+    let trimmed = command.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("empty command".into());
+    }
+    let cwd = {
+        let conn = state.db.lock().unwrap();
+        db::get_meta(&conn, &thread_id)
+            .map(|m| m.cwd)
+            .unwrap_or_default()
+    };
+    let (output, code) = claude::run_shell_capture(&trimmed, &cwd).await?;
+    let saved = {
+        let conn = state.db.lock().unwrap();
+        db::add_shell_run(&conn, &thread_id, &trimmed, &output, code)
+    };
+    Ok(json!({
+        "id": saved.get("id"),
+        "ts": saved.get("ts"),
+        "command": trimmed,
+        "output": output,
+        "code": code,
+    }))
+}
+
 const HINT_PROMPT: &str = "You are a warm, plain-spoken usage coach for a NON-TECHNICAL person using a Claude chat app. Below is their recent conversation. If — and only if — you notice a SPECIFIC, concrete way they could get better results (e.g. giving a detail or file Claude clearly needed, being clearer about the goal, or splitting a big request), reply with ONE short friendly tip of 1–2 sentences, no jargon. If they are already communicating well, reply with exactly: ALL_GOOD. Never invent problems or nitpick.\n\n--- conversation ---\n";
 
 #[tauri::command]

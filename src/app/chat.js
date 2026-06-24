@@ -231,22 +231,23 @@ function showTip({ key, cls = '', icon = '💡', label = 'Tip', body = '', actio
 }
 
 function appendMessage(role, text, files, meta) {
+  const segs = (role === 'assistant' && meta && Array.isArray(meta.segments)) ? meta.segments : null;
+  const shell = isShellSegments(segs);   // a direct `$` shell run, not a Claude reply
   const div = document.createElement('div');
-  div.className = 'msg ' + role;
+  div.className = 'msg ' + role + (shell ? ' shell' : '');
   if (meta && meta.id) div.dataset.mid = meta.id;
-  const roleLabel = role === 'user' ? tr('msg.you') : tr('msg.claude');
+  const roleLabel = shell ? tr('shell.role') : (role === 'user' ? tr('msg.you') : tr('msg.claude'));
   let chips = '';
   if (files && files.length) {
     chips = '<div class="file-chips">' + files.map((f) =>
       `<span class="file-chip"><span class="name">${escapeHtml(basename(f))}</span></span>`).join('') + '</div>';
   }
-  const star = role === 'assistant'
+  const star = (role === 'assistant' && !shell)
     ? `<button class="star${meta && meta.favorite ? ' on' : ''}"${meta && meta.id ? '' : ' disabled'} title="${tr('msg.saveReply')}">★</button>`
     : '';
   div.innerHTML = `<div class="role">${roleLabel}${star}</div>${chips}<div class="bubble"></div>`;
   const bubble = div.querySelector('.bubble');
   if (role === 'assistant') {
-    const segs = meta && Array.isArray(meta.segments) ? meta.segments : null;
     if (segs && segs.length) {
       renderSegments(bubble, segs);           // full transcript: text + action chips
     } else if (text) {
