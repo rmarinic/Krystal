@@ -19,3 +19,7 @@ api.appVersion().then((v) => {
   const el = document.getElementById('app-version');
   if (el && v) el.textContent = 'v' + v;
 }).catch(() => {});
+
+// Quietly check whether the Claude Code CLI has a newer release and, if so, offer
+// a one-click update. Delayed a touch so it never competes with the intro.
+setTimeout(() => { checkClaudeCodeUpdate().catch(() => {}); }, 2500);

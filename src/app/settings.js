@@ -168,6 +168,94 @@ function buildClaudeUpdateRow() {
   return item;
 }
 
+/* ---- Auto-check for a newer Claude Code CLI on launch ----
+ * The Settings row above is the manual path; this is the automatic one. On boot
+ * we ask npm for the latest published Claude Code version, compare it to what's
+ * installed, and — only when there's something newer the user hasn't already
+ * waved off — slide in a tip offering a one-click update. Best-effort: any
+ * failure (offline, blocked, not installed) is silent, never a nag. */
+const CLAUDE_UPD_DISMISS_KEY = 'krystal.claudeUpdateDismissed';
+
+// Compare dotted numeric versions; true when `latest` is strictly newer.
+function isNewerVersion(latest, current) {
+  if (!latest || !current) return false;
+  const norm = (v) => String(v).trim().replace(/^v/i, '').split(/[.+-]/);
+  const a = norm(latest), b = norm(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = parseInt(a[i] || '0', 10), y = parseInt(b[i] || '0', 10);
+    if (Number.isNaN(x) || Number.isNaN(y)) break;   // hit a non-numeric tag — stop comparing
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+// Ask npm for the latest published Claude Code version (best-effort, time-boxed).
+async function latestClaudeVersion() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch('https://registry.npmjs.org/@anthropic-ai/claude-code/latest', { signal: ctrl.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.version) || null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Boot-time offer: if a newer Claude Code is available and the user hasn't
+ * already dismissed this exact version, gently prompt for a one-click update. */
+async function checkClaudeCodeUpdate() {
+  let pf;
+  try { pf = await api.preflight(); } catch (_) { return; }
+  if (!pf || !pf.installed || !pf.version) return;          // not installed → onboarding owns that
+  const latest = await latestClaudeVersion();
+  if (!latest || !isNewerVersion(latest, pf.version)) return;
+  let dismissed = null;
+  try { dismissed = localStorage.getItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
+  if (dismissed === latest) return;                          // already said "later" for this version
+
+  showTip({
+    key: 'claudeUpd', icon: '⬆️', label: tr('claudeUpd.label'),
+    body: escapeHtml(tr('claudeUpd.body', { latest, current: pf.version })),
+    actions: [
+      { text: tr('claudeUpd.update'), run: (close) => { close(); runClaudeCodeUpdate(); } },
+      { text: tr('claudeUpd.later'), ghost: true, run: (close) => {
+        try { localStorage.setItem(CLAUDE_UPD_DISMISS_KEY, latest); } catch (_) {}
+        close();
+      } },
+    ],
+  });
+}
+
+/* Run `claude update` with the polished progress overlay, streaming the updater's
+ * latest log line as the sub-caption. Reuses the compact/clear overlay helpers. */
+async function runClaudeCodeUpdate() {
+  showProgressOverlay({ glyph: '⬆️', title: tr('claudeUpd.overlayTitle'), sub: tr('claudeUpd.overlaySub') });
+  const channel = new Channel();
+  channel.onmessage = (msg) => {
+    if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
+  };
+  try {
+    const res = await api.updateClaude(channel);
+    finishProgressOverlay(tr('claudeUpd.overlayDone'));
+    if (res && res.updated && res.version) {
+      showTip({ key: 'status', icon: '✅', label: tr('claudeUpd.doneLabel'),
+        body: escapeHtml(tr('claudeUpd.doneBody', { version: res.version })) });
+    } else if (res && res.version) {
+      showTip({ key: 'status', icon: '👍', label: tr('claudeUpd.doneLabel'),
+        body: escapeHtml(tr('claudeUpd.upToDate', { version: res.version })) });
+    }
+    try { localStorage.removeItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
+  } catch (err) {
+    hideProgressOverlay();
+    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.failLabel'),
+      body: escapeHtml(String((err && err.message) || err)) });
+  }
+}
+
 /* Settings → Activity tab: the chat turns the app currently has running in the
  * background, each verified against the OS so stale ones (process already gone)
  * are flagged, plus a single Stop-all. Re-queried every time the tab is shown. */
