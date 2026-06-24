@@ -83,6 +83,7 @@
       /* ---- usage meter ---- */
       'meter.used': '≈{ctx} of {win} used <span class="cost">· {cost} so far</span>',
       'meter.new': 'new chat <span class="cost">· {win} window</span>',
+      'meter.compacted': 'compacted chat <button class="view-summary" type="button">· view summary</button> <span class="cost">· {win} window</span>',
 
       /* ---- context tips ---- */
       'ctx.warnLabel': 'Heads up',
@@ -111,6 +112,7 @@
       'compact.overlayTitle': 'Compacting…',
       'compact.overlaySub': 'Keeping a summary, dropping the bulk.',
       'compact.overlayDone': 'All tidy ✨',
+      'compact.summaryLabel': 'Compaction summary',
       'clear.overlayTitle': 'Clearing…',
       'clear.overlaySub': 'Wiping this chat for a fresh start.',
       'clear.overlayDone': 'Fresh start ✨',
@@ -148,6 +150,8 @@
       'chip.outputLabel': 'Output',
       'chip.noOutput': 'No output captured.',
       'chip.pending': 'Working… output will appear here.',
+      'chip.imgFailed': "Couldn't load image preview.",
+      'code.copy': 'Copy',
       'tool.Read': 'Reading a file',
       'tool.Write': 'Writing a file',
       'tool.Edit': 'Editing a file',
@@ -452,6 +456,7 @@
       /* ---- usage meter ---- */
       'meter.used': '≈{ctx} od {win} iskorišteno <span class="cost">· {cost} dosad</span>',
       'meter.new': 'novi razgovor <span class="cost">· prozor {win}</span>',
+      'meter.compacted': 'sažet razgovor <button class="view-summary" type="button">· prikaži sažetak</button> <span class="cost">· prozor {win}</span>',
 
       /* ---- context tips ---- */
       'ctx.warnLabel': 'Pažnja',
@@ -480,6 +485,7 @@
       'compact.overlayTitle': 'Sažimanje…',
       'compact.overlaySub': 'Zadržavam sažetak, izbacujem višak.',
       'compact.overlayDone': 'Sve pospremljeno ✨',
+      'compact.summaryLabel': 'Sažetak sažimanja',
       'clear.overlayTitle': 'Čišćenje…',
       'clear.overlaySub': 'Brišem razgovor za novi početak.',
       'clear.overlayDone': 'Novi početak ✨',
@@ -517,6 +523,8 @@
       'chip.outputLabel': 'Izlaz',
       'chip.noOutput': 'Nema zabilježenog izlaza.',
       'chip.pending': 'Radim… izlaz će se pojaviti ovdje.',
+      'chip.imgFailed': 'Pregled slike nije moguće učitati.',
+      'code.copy': 'Kopiraj',
       'tool.Read': 'Čitam datoteku',
       'tool.Write': 'Pišem datoteku',
       'tool.Edit': 'Uređujem datoteku',

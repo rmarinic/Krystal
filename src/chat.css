@@ -302,10 +302,29 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
   border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; color: var(--fg);
 }
 .msg.assistant .bubble pre {
+  position: relative;
   margin: 14px 0; background: var(--code-bg); border: 1px solid var(--border);
   border-radius: var(--radius-sm); overflow-x: auto;
 }
 .msg.assistant .bubble pre code { display: block; padding: 14px 16px; background: transparent; border: none; }
+
+/* Hover "copy" button on a code block. Sits top-right, fades in on hover so it
+   stays out of the way while reading; flips to a check on a successful copy. */
+.code-copy {
+  position: absolute; top: 7px; right: 7px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  color: var(--fg-dim); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity .15s ease, transform .15s ease, color .15s ease, border-color .15s ease;
+}
+pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
+.code-copy:hover { color: var(--fg); border-color: var(--border-2); }
+.code-copy.copied { color: var(--accent-3); border-color: rgba(108,199,142,0.4); opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .code-copy { transition: opacity .15s ease; transform: none; }
+}
 .msg.assistant .bubble table { border-collapse: collapse; margin: 14px 0; width: 100%; }
 .msg.assistant .bubble th, .msg.assistant .bubble td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
 .msg.assistant .bubble th { background: var(--bg-elev); font-weight: 600; }
@@ -425,6 +444,23 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 }
 .action-chip .diff-line.del { color: #e0857a; background: rgba(224,122,90,0.08); }
 .action-chip .diff-line.add { color: var(--accent-3); background: rgba(108,199,142,0.08); }
+
+/* Inline image preview when a tool read/wrote an image file. */
+.action-chip .chip-img {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; min-height: 40px;
+  font-size: 11.5px; color: var(--fg-dim);
+}
+.action-chip .chip-img img {
+  max-width: 100%; max-height: 340px; border-radius: 5px; display: block;
+  opacity: 0; transition: opacity .2s ease;
+}
+.action-chip .chip-img.loaded img { opacity: 1; }
+.action-chip .chip-img.failed { font-style: italic; }
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-img img { transition: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .action-chip .chip-details,
@@ -753,6 +789,13 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
   white-space: nowrap;
 }
 .meter-label .cost { color: var(--fg-dim); }
+/* "view summary" affordance shown after a compaction — a quiet inline link. */
+.meter-label .view-summary {
+  font: inherit; color: var(--accent-3); background: none; border: none;
+  padding: 0; cursor: pointer; transition: color .15s ease;
+}
+.meter-label .view-summary:hover { color: var(--accent-2); text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { .meter-label .view-summary { transition: none; } }
 
 /* ============================================================
  * Side tips (context-rot nudges + hint results)
@@ -780,6 +823,10 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 .tip.warn { border-left-color: #e0c35a; }
 .tip.high { border-left-color: #e07a5a; }
 .tip.hint { border-left-color: var(--accent-3); }
+.tip.summary { border-left-color: var(--accent-2); }
+/* The kept compaction brief can be long — let it scroll inside the card. */
+.tip.summary .tip-body { max-height: 50vh; overflow: auto; }
+.tip.summary .tip-body pre { max-height: none; }
 
 .tip-head {
   display: flex; align-items: center; gap: 8px; margin-bottom: 7px;

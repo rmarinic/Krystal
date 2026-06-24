@@ -155,6 +155,57 @@ pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Read a local image file and return it as a `data:` URL so the frontend can
+/// preview it inline (e.g. when Claude reads an image). Returns an empty string
+/// for anything that isn't a readable, sensibly-sized image — the UI shows a
+/// "couldn't load" note in that case. Read on demand (chip expand), not eagerly.
+#[tauri::command]
+pub fn read_image(path: String) -> String {
+    const MAX: u64 = 12 * 1024 * 1024; // 12 MB cap — these are inline previews, not downloads
+    let p = std::path::Path::new(&path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        _ => return String::new(),
+    };
+    match std::fs::metadata(p) {
+        Ok(m) if m.is_file() && m.len() <= MAX => {}
+        _ => return String::new(),
+    }
+    match std::fs::read(p) {
+        Ok(bytes) => format!("data:{};base64,{}", mime, base64_encode(&bytes)),
+        Err(_) => String::new(),
+    }
+}
+
+/// Minimal standard-base64 encoder (no padding shortcuts) — keeps the image
+/// preview dependency-free rather than pulling in a crate for one call site.
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = *chunk.get(1).unwrap_or(&0) as usize;
+        let b2 = *chunk.get(2).unwrap_or(&0) as usize;
+        out.push(T[b0 >> 2] as char);
+        out.push(T[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+        out.push(if chunk.len() > 1 { T[((b1 & 0x0f) << 2) | (b2 >> 6)] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[b2 & 0x3f] as char } else { '=' });
+    }
+    out
+}
+
 /* ------------------------------- threads --------------------------------- */
 
 #[tauri::command]

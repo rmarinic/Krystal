@@ -24,7 +24,7 @@ function renderPlanCard(seg) {
   const body = document.createElement('div');
   body.className = 'plan-body';
   body.innerHTML = renderMarkdown(seg.plan || '');
-  body.querySelectorAll('pre code').forEach((b) => window.hljs && hljs.highlightElement(b));
+  decorateCode(body);
   card.appendChild(body);
   return card;
 }
@@ -232,6 +232,7 @@ function toggleChip(el) {
   const open = !el.classList.contains('open');
   if (open) {
     el.classList.add('open');
+    loadChipImages(el);                              // fetch any image previews now
     details.hidden = false;
     details.style.maxHeight = '0px';
     void details.offsetHeight;                       // reflow so the next change animates
@@ -247,6 +248,46 @@ function toggleChip(el) {
   }
 }
 
+// Tools whose `detail` is a file path — the ones whose target can be an image.
+const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/* An inline image preview for a chip that touched an image file. The actual
+ * pixels load lazily (on first expand, via `loadChipImages`) so reading an image
+ * doesn't fetch it until the user opens the chip. */
+function buildImagePreview(path) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chip-img';
+  wrap.dataset.imgPath = path;                 // cleared once loaded
+  const img = document.createElement('img');
+  img.alt = basename(path);
+  img.loading = 'lazy';
+  wrap.appendChild(img);
+  return wrap;
+}
+
+/* Load any not-yet-fetched image previews inside a chip (called on first open).
+ * Reads the file through the backend as a data URL — no asset-scope config. */
+function loadChipImages(chip) {
+  chip.querySelectorAll('.chip-img[data-img-path]').forEach((wrap) => {
+    const path = wrap.dataset.imgPath;
+    delete wrap.dataset.imgPath;               // load once
+    const img = wrap.querySelector('img');
+    api.readImage(path).then((src) => {
+      if (src) {
+        img.onload = () => maybeFollow();
+        img.src = src;
+        wrap.classList.add('loaded');
+      } else {
+        wrap.classList.add('failed');
+        wrap.textContent = tr('chip.imgFailed');
+      }
+    }).catch(() => {
+      wrap.classList.add('failed');
+      wrap.textContent = tr('chip.imgFailed');
+    });
+  });
+}
+
 /* Populate a chip's details from its segment: the full target/command, a diff
  * for edits, the written content, then the tool's captured output. */
 function fillChipDetails(details, seg) {
@@ -257,6 +298,11 @@ function fillChipDetails(details, seg) {
     d.className = 'chip-detail-line';
     d.textContent = (seg.name === 'Bash' ? '$ ' : '') + seg.detail;
     details.appendChild(d);
+    any = true;
+  }
+  // If this action touched an image file, preview it inline.
+  if (FILE_TOOLS.has(seg.name) && isImagePath(seg.detail)) {
+    details.appendChild(buildImagePreview(seg.detail));
     any = true;
   }
   if (Array.isArray(seg.edits) && seg.edits.length) {
@@ -349,7 +395,7 @@ function renderSegments(bubble, segs) {
       const d = document.createElement('div');
       d.className = 'seg-text';
       d.innerHTML = renderMarkdown(seg.text || '');
-      d.querySelectorAll('pre code').forEach((b) => window.hljs && hljs.highlightElement(b));
+      decorateCode(d);
       bubble.appendChild(d);
     }
   }

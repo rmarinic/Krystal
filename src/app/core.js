@@ -102,6 +102,7 @@ let state = {
   view: 'threads',       // 'threads' | 'search' | 'saved'
   results: [],           // current search/favorite results
   lastUsage: null,       // most recent usage, for re-scaling the meter
+  seed: null,            // compaction summary of the active thread (until the next turn folds it in)
 };
 
 /* Context-rot thresholds as a FRACTION of the active model's context window
@@ -155,6 +156,7 @@ const api = {
   claudeUsage(weeklyReset) { return invoke('claude_usage', { weeklyReset }); },
   preflight() { return invoke('preflight'); },
   appVersion() { return invoke('app_version'); },
+  readImage(path) { return invoke('read_image', { path }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
 };
 
@@ -169,4 +171,64 @@ function renderMarkdown(md) {
   return window.DOMPurify ? DOMPurify.sanitize(html) : html;
 }
 function scrollFeed() { els.feed.scrollTop = els.feed.scrollHeight; }
+
+/* ----------------------------- code blocks ------------------------------- */
+
+const COPY_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+/* Copy text to the clipboard, with a fallback for the rare no-clipboard case. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
+
+/* Add a hover "copy" button to a <pre> code block (idempotent — once per block). */
+function addCopyButton(pre) {
+  if (!pre || pre.querySelector('.code-copy')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'code-copy';
+  btn.title = tr('code.copy');
+  btn.setAttribute('aria-label', tr('code.copy'));
+  btn.innerHTML = COPY_ICON;
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const code = pre.querySelector('code');
+    const ok = await copyText((code || pre).textContent || '');
+    if (!ok) return;
+    btn.classList.add('copied');
+    btn.innerHTML = CHECK_ICON;
+    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON; }, 1400);
+  });
+  pre.appendChild(btn);
+}
+
+/* Highlight every fenced code block in `scope` and give each a copy button.
+   The single place all rendered assistant markdown passes through (live stream
+   + reload), so highlighting and the copy affordance stay consistent. */
+function decorateCode(scope) {
+  scope.querySelectorAll('pre code').forEach((code) => {
+    if (window.hljs) hljs.highlightElement(code);
+    addCopyButton(code.parentElement);
+  });
+}
+
+/* True for paths that point at an image we can preview inline. */
+const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+function isImagePath(p) { return !!p && IMG_EXT_RE.test(p.trim()); }
 

@@ -38,6 +38,7 @@ async function openThread(id, focusMid) {
   els.cwd.textContent = t.cwd;
   if (modelSel) modelSel.set(t.model || (state.models[0] && state.models[0].id) || '');
   if (modeSel) modeSel.set(t.mode || (state.modes[0] && state.modes[0].id) || 'auto');
+  state.seed = t.seed || null;              // compaction summary, if this thread was just compacted
   els.feed.innerHTML = '';
   for (const m of t.messages) appendMessage(m.role, m.text, m.files, m);
   updateUsage(t.usage, { silent: true });   // set meter without popping a tip on open
@@ -135,14 +136,35 @@ function updateUsage(usage, opts = {}) {
   // completing), not on silent loads/model switches.
   if (!opts.silent && pct > lastMeterPct && pct > 0) replayClass(els.meterFill, 'grew', 1000);
   lastMeterPct = pct;
-  els.meterLabel.innerHTML = ctx
-    ? tr('meter.used', { ctx: fmtK(ctx), win: fmtK(win), cost: fmtCost(cost) })
-    : tr('meter.new', { win: fmtK(win) });
+  if (ctx) {
+    els.meterLabel.innerHTML = tr('meter.used', { ctx: fmtK(ctx), win: fmtK(win), cost: fmtCost(cost) });
+  } else if (state.seed) {
+    // Fresh after a compaction: say so, and offer to read the kept summary.
+    els.meterLabel.innerHTML = tr('meter.compacted', { win: fmtK(win) });
+    const link = els.meterLabel.querySelector('.view-summary');
+    if (link) link.onclick = showCompactSummary;
+  } else {
+    els.meterLabel.innerHTML = tr('meter.new', { win: fmtK(win) });
+  }
 
   if (!opts.silent && level !== 'ok' && state.tipLevelShown !== level) {
     state.tipLevelShown = level;
     showContextTip(level);
   }
+}
+
+/* Show the summary kept by the last compaction as a side-tip the user can read,
+ * so "compacted chat" isn't a dead end — they can see exactly what was kept. */
+function showCompactSummary() {
+  if (!state.seed) return;
+  const close = showTip({
+    key: 'summary', cls: 'summary', icon: '🧹', label: tr('compact.summaryLabel'),
+    body: renderMarkdown(state.seed),
+  });
+  // Highlight + copy-enable any code in the kept brief, just like a normal reply.
+  const card = els.tips.querySelector('.tip.summary .tip-body');
+  if (card) decorateCode(card);
+  return close;
 }
 
 function showContextTip(level) {
@@ -229,7 +251,7 @@ function appendMessage(role, text, files, meta) {
       renderSegments(bubble, segs);           // full transcript: text + action chips
     } else if (text) {
       bubble.innerHTML = renderMarkdown(text); // older messages saved before chips
-      if (window.hljs) bubble.querySelectorAll('pre code').forEach((b) => hljs.highlightElement(b));
+      decorateCode(bubble);
     }
     const starBtn = div.querySelector('.star');
     if (starBtn) starBtn.onclick = () => toggleStar(div, starBtn);

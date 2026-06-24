@@ -96,7 +96,7 @@ function makeTyper(bubble) {
     if (shown.trim()) {
       textEl.classList.remove('streaming');
       textEl.innerHTML = renderMarkdown(shown);
-      textEl.querySelectorAll('pre code').forEach((b) => window.hljs && hljs.highlightElement(b));
+      decorateCode(textEl);
     } else {
       textEl.remove();          // drop an empty text block (e.g. tool-only turn)
     }
@@ -129,7 +129,7 @@ function makeTyper(bubble) {
         const d = document.createElement('div');
         d.className = 'seg-text';
         d.innerHTML = renderMarkdown(finalText);
-        d.querySelectorAll('pre code').forEach((b) => window.hljs && hljs.highlightElement(b));
+        decorateCode(d);
         bubble.appendChild(d);
       }
       if (errMsg) {
@@ -335,6 +335,7 @@ async function send() {
   // render the user message + clear composer. Sending re-engages auto-follow
   // (you want to watch the new reply), even if you'd scrolled up earlier.
   stickToBottom = true;
+  state.seed = null;                 // this turn folds the compaction summary back in
   appendMessage('user', text, null);
   els.input.value = '';
   autosize();

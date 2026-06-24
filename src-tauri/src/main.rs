@@ -79,6 +79,7 @@ fn main() {
             commands::stop_all_chats,
             commands::exe_path,
             commands::app_version,
+            commands::read_image,
             commands::git_status,
             commands::git_branches,
             commands::git_checkout,
