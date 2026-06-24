@@ -50,9 +50,8 @@ pub fn capability_prompt(caps: Caps) -> String {
         "You are helping the user with the files and work in the current project folder.".into(),
         "Read CLAUDE.md (if present) for what this project is about, and reply in the language the user writes in.".into(),
         "When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.".into(),
-        "When you want the user to pick between a few clear options, use the AskUserQuestion tool — this app renders it as clickable cards with a text box for a custom answer.".into(),
-        "In THIS app the AskUserQuestion tool ALWAYS returns the error 'Answer questions?' the instant you call it; that is EXPECTED and only means the cards were shown — never treat it as a failure or say the tool didn't work.".into(),
-        "After calling AskUserQuestion, write at most one short line inviting the user to choose above, then STOP and wait — their selection (or typed answer) arrives as their very next message, so just continue naturally from it.".into(),
+        "When you want the user to choose between a few clear options, present a choice card instead of asking in prose: output a fenced code block tagged krystal-ask whose body is valid JSON of the form {\"questions\":[{\"question\":\"…\",\"header\":\"short label\",\"multiSelect\":false,\"options\":[{\"label\":\"…\",\"description\":\"…\"}]}]} — this app renders it as clickable cards with a custom-answer box.".into(),
+        "Emit that block as the very last thing in your reply and then STOP; the user's selection (or typed answer) arrives as their next message, so just continue naturally from it. Use it only for genuine forks where the choice changes what you do — never for routine questions.".into(),
     ];
     if caps.pandoc {
         lines.push("Word documents (.docx) ARE supported via pandoc:".into());
@@ -548,6 +547,157 @@ impl ChatResult {
     }
 }
 
+/* ----------------------- ask-question (choice cards) --------------------- */
+
+// Krystal renders multiple-choice "choice cards" from a tool segment carrying a
+// `questions` array. The built-in `AskUserQuestion` tool is gated out of headless
+// (`claude -p`) sessions, so instead we ask the model to emit a fenced
+// ```krystal-ask block of JSON and rebuild that same segment here — keeping the
+// feature working regardless of the CLI version. `AskParser` is a tiny state
+// machine that lifts the block out of the streamed text so its raw JSON never
+// flashes on screen before the card appears.
+const ASK_OPEN: &str = "```krystal-ask";
+const ASK_CLOSE: &str = "```";
+
+/// Stream visible text to the live view and into the persisted transcript.
+fn ask_emit_text(result: &mut ChatResult, channel: &Channel<Value>, t: &str) {
+    if t.is_empty() {
+        return;
+    }
+    result.push_text(t);
+    let _ = channel.send(json!({ "type": "token", "text": t }));
+}
+
+/// Pull the `questions` array out of a ```krystal-ask block body. Accepts either
+/// the full `{"questions":[…]}` object or a bare `[…]` array; returns None if the
+/// body isn't valid JSON or doesn't hold an array of questions.
+fn parse_ask_questions(body: &str) -> Option<Value> {
+    let v: Value = serde_json::from_str(body.trim()).ok()?;
+    v.get("questions")
+        .cloned()
+        .filter(|q| q.is_array())
+        .or_else(|| if v.is_array() { Some(v) } else { None })
+}
+
+/// Turn a captured ```krystal-ask body into the same `{questions}` tool segment the
+/// frontend already knows how to render. On any parse failure, fall back to showing
+/// the raw text so nothing the model wrote is ever lost.
+fn ask_emit_question(result: &mut ChatResult, channel: &Channel<Value>, body: &str) {
+    match parse_ask_questions(body) {
+        Some(q) => {
+            let first = q.as_array().and_then(|a| a.first());
+            let qtext = first
+                .and_then(|f| f.get("question"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let header = first
+                .and_then(|f| f.get("header"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or(qtext);
+            let id = format!("ask-{}", result.segments.len());
+            let msg = json!({
+                "type": "tool",
+                "name": "AskUserQuestion",
+                "id": id,
+                "detail": qtext,
+                "target": take_chars(header, 28),
+                "questions": q,
+            });
+            result.push_tool(msg.clone());
+            let _ = channel.send(msg);
+        }
+        // Not the JSON we expected — show it verbatim rather than dropping it.
+        None => ask_emit_text(result, channel, body),
+    }
+}
+
+#[derive(Default)]
+struct AskParser {
+    /// Text held back: either a short tail that might begin the open marker, or
+    /// the block body accumulating until its closing fence arrives.
+    held: String,
+    in_block: bool,
+}
+
+impl AskParser {
+    /// Feed a chunk of streamed assistant text. Plain prose is forwarded
+    /// immediately; a ```krystal-ask block is withheld, captured, and converted
+    /// into a choice-card segment once its closing fence arrives.
+    fn feed(&mut self, t: &str, result: &mut ChatResult, channel: &Channel<Value>) {
+        self.held.push_str(t);
+        loop {
+            if self.in_block {
+                if let Some(p) = self.held.find(ASK_CLOSE) {
+                    let body = self.held[..p].to_string();
+                    ask_emit_question(result, channel, &body);
+                    self.held = self.held[p + ASK_CLOSE.len()..].to_string();
+                    self.in_block = false;
+                    continue;
+                }
+                return; // still buffering the block body
+            }
+            if let Some(p) = self.held.find(ASK_OPEN) {
+                let before = self.held[..p].to_string();
+                ask_emit_text(result, channel, &before);
+                self.held = self.held[p + ASK_OPEN.len()..].to_string();
+                self.in_block = true;
+                continue;
+            }
+            // No marker yet — emit everything except a short trailing window that
+            // could be the start of one split across the next delta.
+            let keep = ASK_OPEN.len() - 1;
+            if self.held.len() <= keep {
+                return;
+            }
+            let mut cut = self.held.len() - keep;
+            while cut > 0 && !self.held.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            let safe = self.held[..cut].to_string();
+            ask_emit_text(result, channel, &safe);
+            self.held = self.held[cut..].to_string();
+            return;
+        }
+    }
+
+    /// End of a text block / turn: release whatever is still held. An unterminated
+    /// block is shown verbatim (with its opening fence) so nothing is lost.
+    fn flush(&mut self, result: &mut ChatResult, channel: &Channel<Value>) {
+        if self.held.is_empty() {
+            self.in_block = false;
+            return;
+        }
+        let leftover = std::mem::take(&mut self.held);
+        if self.in_block {
+            ask_emit_text(result, channel, &format!("{ASK_OPEN}{leftover}"));
+            self.in_block = false;
+        } else {
+            ask_emit_text(result, channel, &leftover);
+        }
+    }
+}
+
+/// Remove any ```krystal-ask blocks from a finished answer string so the raw JSON
+/// never leaks into a persisted/fallback transcript (the block becomes a card).
+fn strip_ask_blocks(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(p) = rest.find(ASK_OPEN) {
+        out.push_str(&rest[..p]);
+        let after = &rest[p + ASK_OPEN.len()..];
+        match after.find(ASK_CLOSE) {
+            Some(q) => rest = &after[q + ASK_CLOSE.len()..],
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out.trim().to_string()
+}
+
 /// Spawn claude, stream the answer to the frontend over `channel`, and return
 /// the accumulated result. Mirrors `handleChat`'s routeEvent loop.
 pub async fn run_chat_stream(
@@ -589,6 +739,7 @@ pub async fn run_chat_stream(
     let mut result = ChatResult::default();
     // index -> (tool name, accumulating input JSON, tool_use id)
     let mut tool_blocks: HashMap<i64, (String, String, String)> = HashMap::new();
+    let mut ask = AskParser::default();
     let mut lines = BufReader::new(stdout).lines();
 
     while let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? {
@@ -600,8 +751,11 @@ pub async fn run_chat_stream(
             Ok(v) => v,
             Err(_) => continue,
         };
-        route_event(&ev, &mut result, &mut tool_blocks, channel);
+        route_event(&ev, &mut result, &mut tool_blocks, &mut ask, channel);
     }
+    // Release anything the ask-block parser is still holding (e.g. a turn that
+    // ended without a trailing text block to trigger the per-block flush).
+    ask.flush(&mut result, channel);
 
     // If the answer arrived only via the final `result` event (no streamed text
     // deltas), still expose it as one text segment so the transcript isn't empty.
@@ -690,6 +844,7 @@ fn route_event(
     ev: &Value,
     result: &mut ChatResult,
     tool_blocks: &mut HashMap<i64, (String, String, String)>,
+    ask: &mut AskParser,
     channel: &Channel<Value>,
 ) {
     let ty = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -741,8 +896,10 @@ fn route_event(
                         }
                         "text_delta" => {
                             if let Some(t) = delta.and_then(|d| d.get("text")).and_then(|v| v.as_str()) {
-                                result.push_text(t);
-                                let _ = channel.send(json!({ "type": "token", "text": t }));
+                                // Run text through the ask-block parser: plain prose
+                                // streams straight through; a ```krystal-ask block is
+                                // captured and turned into a choice card instead.
+                                ask.feed(t, result, channel);
                             }
                         }
                         "thinking_delta" => {
@@ -801,6 +958,10 @@ fn route_event(
                         // stream the same payload to the live view.
                         result.push_tool(msg.clone());
                         let _ = channel.send(msg);
+                    } else {
+                        // A text (non-tool) block ended: release any tail the
+                        // ask-block parser was holding back.
+                        ask.flush(result, channel);
                     }
                 }
                 _ => {}
@@ -835,7 +996,8 @@ fn route_event(
             }
             if let Some(r) = ev.get("result").and_then(|v| v.as_str()) {
                 if !r.trim().is_empty() {
-                    result.final_text = r.to_string();
+                    // Drop any ```krystal-ask block — it's rendered as a card, not text.
+                    result.final_text = strip_ask_blocks(r);
                 }
             }
             if let Some(u) = ev.get("usage") {
@@ -1038,4 +1200,62 @@ pub async fn run_shell_capture(command: &str, cwd: &str) -> Result<(String, i32)
     }
 
     Ok((combined.trim_end().to_string(), out.status.code().unwrap_or(-1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_removes_a_single_block() {
+        let s = "Here are some options:
+```krystal-ask
+{\"questions\":[]}
+```";
+        assert_eq!(strip_ask_blocks(s), "Here are some options:");
+    }
+
+    #[test]
+    fn strip_keeps_text_on_both_sides() {
+        let s = "before ```krystal-ask
+{}
+``` after";
+        assert_eq!(strip_ask_blocks(s), "before  after");
+    }
+
+    #[test]
+    fn strip_drops_an_unterminated_block() {
+        let s = "intro ```krystal-ask
+{\"questions\": [";
+        assert_eq!(strip_ask_blocks(s), "intro");
+    }
+
+    #[test]
+    fn strip_leaves_ordinary_text_and_code_fences_untouched() {
+        let s = "see ```rust
+fn main() {}
+``` ok";
+        assert_eq!(strip_ask_blocks(s), s.trim());
+    }
+
+    #[test]
+    fn parse_accepts_questions_object() {
+        let body = "{\"questions\":[{\"question\":\"Pick\",\"options\":[{\"label\":\"A\"}]}]}";
+        let q = parse_ask_questions(body).expect("should parse");
+        assert!(q.is_array());
+        assert_eq!(q.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn parse_accepts_bare_array() {
+        let body = "[{\"question\":\"Pick\"}]";
+        assert!(parse_ask_questions(body).is_some());
+    }
+
+    #[test]
+    fn parse_rejects_non_json_and_non_arrays() {
+        assert!(parse_ask_questions("not json").is_none());
+        assert!(parse_ask_questions("{\"questions\": 5}").is_none());
+        assert!(parse_ask_questions("{\"foo\": 1}").is_none());
+    }
 }
