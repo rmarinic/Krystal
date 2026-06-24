@@ -355,6 +355,7 @@ async function send() {
   attachLiveTyper(live);
   scrollFeed();
   syncComposer();
+  if (state.view === 'threads') renderSidebar();   // show the live mark on this row
 
   try {
     // A Channel carries the streamed events from the Rust `chat` command,

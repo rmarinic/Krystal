@@ -141,6 +141,8 @@ const api = {
   discordSetProject(name) { return invoke('discord_set_project', { name }); },
   discordSetShareName(enabled) { return invoke('discord_set_share_name', { enabled }); },
   stopChat(threadId) { return invoke('stop_chat', { threadId }); },
+  activeRuns() { return invoke('active_runs'); },
+  stopAllChats() { return invoke('stop_all_chats'); },
   gitStatus(cwd) { return invoke('git_status', { cwd }); },
   gitBranches(cwd) { return invoke('git_branches', { cwd }); },
   gitCheckout(cwd, branch) { return invoke('git_checkout', { cwd, branch }); },

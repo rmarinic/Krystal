@@ -101,6 +101,8 @@ const SETTINGS_TABS = [
   ] },
   // Custom-rendered tab (Claude usage + calibration); see renderUsagePanel in usage.js.
   { id: 'usage', custom: 'usage' },
+  // Custom-rendered tab: live background chat processes + a stop-all (renderRunsPanel).
+  { id: 'activity', custom: 'runs' },
 ];
 let settingsTab = 'general';
 
@@ -166,6 +168,72 @@ function buildClaudeUpdateRow() {
   return item;
 }
 
+/* Settings → Activity tab: the chat turns the app currently has running in the
+ * background, each verified against the OS so stale ones (process already gone)
+ * are flagged, plus a single Stop-all. Re-queried every time the tab is shown. */
+function runTitle(threadId) {
+  const t = (state.threads || []).find((x) => x.id === threadId);
+  return (t && t.title) || tr('settings.runs.unknown');
+}
+
+function renderRunsList(listEl, runs, stopAllBtn) {
+  if (stopAllBtn) stopAllBtn.disabled = !runs.length;
+  if (!runs.length) {
+    listEl.innerHTML = `<div class="runs-empty">${escapeHtml(tr('settings.runs.empty'))}</div>`;
+    replayClass(listEl, 'list-swap');
+    return;
+  }
+  listEl.innerHTML = runs.map((r) => {
+    const cls = r.alive ? 'alive' : 'stale';
+    const label = r.alive ? tr('settings.runs.alive') : tr('settings.runs.stale');
+    return `<div class="run ${cls}">` +
+        `<span class="run-dot" aria-hidden="true"></span>` +
+        `<span class="run-title">${escapeHtml(runTitle(r.threadId))}</span>` +
+        `<span class="run-pid">PID ${escapeHtml(String(r.pid))}</span>` +
+        `<span class="run-state">${escapeHtml(label)}</span>` +
+      `</div>`;
+  }).join('');
+  replayClass(listEl, 'list-swap');
+}
+
+function renderRunsPanel(panel) {
+  panel.innerHTML =
+    `<div class="settings-row col runs-row">` +
+      `<div class="settings-text">` +
+        `<div class="settings-name">${escapeHtml(tr('settings.runs.name'))}</div>` +
+        `<div class="settings-desc">${escapeHtml(tr('settings.runs.desc'))}</div>` +
+      `</div>` +
+      `<div class="runs-list" aria-live="polite"></div>` +
+      `<div class="runs-actions">` +
+        `<button class="runs-refresh" type="button">${escapeHtml(tr('settings.runs.refresh'))}</button>` +
+        `<button class="runs-stop-all" type="button">${escapeHtml(tr('settings.runs.stopAll'))}</button>` +
+      `</div>` +
+    `</div>`;
+
+  const listEl = panel.querySelector('.runs-list');
+  const refreshBtn = panel.querySelector('.runs-refresh');
+  const stopAllBtn = panel.querySelector('.runs-stop-all');
+
+  async function load() {
+    listEl.classList.add('busy');
+    let runs = [];
+    try { runs = await api.activeRuns(); } catch (_) {}
+    listEl.classList.remove('busy');
+    renderRunsList(listEl, runs || [], stopAllBtn);
+  }
+
+  refreshBtn.onclick = () => { if (!refreshBtn.disabled) load(); };
+  stopAllBtn.onclick = async () => {
+    if (stopAllBtn.disabled) return;
+    stopAllBtn.disabled = true;
+    try { await api.stopAllChats(); } catch (_) {}
+    if (state.view === 'threads') renderSidebar();   // drop the sidebar streaming marks
+    await load();
+  };
+
+  load();
+}
+
 function buildSettingRow(row) {
   if (row.key === 'claudeUpdate') return buildClaudeUpdateRow();
 
@@ -218,6 +286,7 @@ function fillSettingsTab(panel, tabId) {
   panel.innerHTML = '';
   const active = SETTINGS_TABS.find((t) => t.id === tabId) || SETTINGS_TABS[0];
   if (active.custom === 'usage') { renderUsagePanel(panel); return; }   // usage.js
+  if (active.custom === 'runs') { renderRunsPanel(panel); return; }
   for (const row of active.rows) panel.appendChild(buildSettingRow(row));
 }
 

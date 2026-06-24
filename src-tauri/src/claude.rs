@@ -99,6 +99,35 @@ pub fn kill_process_tree(pid: u32) {
     }
 }
 
+/// Is a process with this PID still running? Used to verify the chat-turn PIDs we
+/// track aren't stale (e.g. a turn that died without cleaning up). Best-effort —
+/// shells out like the rest of this module rather than pulling in a winapi dep.
+pub fn pid_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("tasklist");
+        cmd.args(["/NH", "/FI", &format!("PID eq {pid}")])
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        match cmd.output() {
+            // A match prints a row containing the PID; no match prints an
+            // "INFO: No tasks…" line that never contains it.
+            Ok(o) => String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
 /// Directories the official installers drop `claude` into that may NOT be on the
 /// PATH of an already-running process (so we check them explicitly). Covers the
 /// native installer (~/.local/bin, ~/.claude/local) and npm global (%APPDATA%/npm).

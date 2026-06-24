@@ -75,6 +75,8 @@ fn main() {
             commands::toggle_favorite,
             commands::chat,
             commands::stop_chat,
+            commands::active_runs,
+            commands::stop_all_chats,
             commands::git_status,
             commands::git_branches,
             commands::git_checkout,

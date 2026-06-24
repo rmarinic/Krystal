@@ -382,12 +382,58 @@ pub async fn chat(
 /// `claude` process tree. The stream then ends on its own; any text already
 /// produced is still persisted by the `chat` handler.
 #[tauri::command]
-pub fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Value {
+pub async fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Result<Value, String> {
     let pid = state.running.lock().unwrap().get(&thread_id).copied();
     if let Some(pid) = pid {
-        claude::kill_process_tree(pid);
+        // Kill off the main thread: `taskkill /T /F` on the claude → node tree can
+        // take a moment, and a synchronous command blocks the window message loop
+        // — which is what makes the app intermittently freeze ("Not responding")
+        // when interrupting a turn. spawn_blocking keeps the UI responsive.
+        let _ = tokio::task::spawn_blocking(move || claude::kill_process_tree(pid)).await;
     }
-    json!({ "ok": pid.is_some() })
+    Ok(json!({ "ok": pid.is_some() }))
+}
+
+/// List the chat turns the app currently thinks are running, each verified
+/// against the OS so the UI can flag any whose process has already died (stale).
+/// Returns `[{ threadId, pid, alive }]`. Liveness checks run off the main thread.
+#[tauri::command]
+pub async fn active_runs(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let entries: Vec<(String, u32)> = {
+        let map = state.running.lock().unwrap();
+        map.iter().map(|(k, v)| (k.clone(), *v)).collect()
+    };
+    let mut out = Vec::with_capacity(entries.len());
+    for (thread_id, pid) in entries {
+        let alive = tokio::task::spawn_blocking(move || claude::pid_alive(pid))
+            .await
+            .unwrap_or(false);
+        out.push(json!({ "threadId": thread_id, "pid": pid, "alive": alive }));
+    }
+    Ok(out)
+}
+
+/// Interrupt every tracked chat turn at once: clear the registry, then kill each
+/// process tree off the main thread. Returns how many were stopped. Each stream
+/// ends on its own once its process dies (any partial text is still persisted).
+#[tauri::command]
+pub async fn stop_all_chats(state: State<'_, AppState>) -> Result<Value, String> {
+    let pids: Vec<u32> = {
+        let mut map = state.running.lock().unwrap();
+        let pids = map.values().copied().collect();
+        map.clear();
+        pids
+    };
+    let n = pids.len();
+    if !pids.is_empty() {
+        let _ = tokio::task::spawn_blocking(move || {
+            for pid in pids {
+                claude::kill_process_tree(pid);
+            }
+        })
+        .await;
+    }
+    Ok(json!({ "stopped": n }))
 }
 
 /* ------------------------------- git status ------------------------------ */

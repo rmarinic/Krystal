@@ -273,6 +273,7 @@
       'settings.tab.general': 'General',
       'settings.tab.integrations': 'Integrations',
       'settings.tab.usage': 'Usage',
+      'settings.tab.activity': 'Activity',
 
       'usage.intro': 'Estimated from your local Claude Code history — weighted tokens used in the rolling 5-hour and 7-day windows. Calibrate once (below) so the percentages match your plan.',
       'usage.5h.label': 'Session (5 hours)',
@@ -334,6 +335,16 @@
       'settings.claudeUpdate.upToDate': 'You’re already on the latest version ({version}).',
       'settings.claudeUpdate.done': 'Done.',
       'settings.claudeUpdate.failed': 'Update failed: {err}',
+
+      'settings.runs.name': 'Background activity',
+      'settings.runs.desc': 'Chats with a turn still running in the background. Each is checked against your system; any whose process has already ended is marked stale.',
+      'settings.runs.refresh': 'Refresh',
+      'settings.runs.stopAll': 'Stop all',
+      'settings.runs.empty': 'No background activity — every chat is idle.',
+      'settings.runs.alive': 'Running',
+      'settings.runs.stale': 'Stale',
+      'settings.runs.unknown': 'Untitled chat',
+      'sidebar.streamingTitle': 'A reply is streaming in this chat',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'no changes',
@@ -628,6 +639,7 @@
       'settings.tab.general': 'Općenito',
       'settings.tab.integrations': 'Integracije',
       'settings.tab.usage': 'Potrošnja',
+      'settings.tab.activity': 'Aktivnost',
 
       'usage.intro': 'Procjena iz lokalne povijesti Claude Codea — ponderirani tokeni potrošeni u pomičnom prozoru od 5 sati i 7 dana. Kalibriraj jednom (ispod) da se postoci poklope s tvojim planom.',
       'usage.5h.label': 'Sesija (5 sati)',
@@ -689,6 +701,16 @@
       'settings.claudeUpdate.upToDate': 'Već imaš najnoviju verziju ({version}).',
       'settings.claudeUpdate.done': 'Gotovo.',
       'settings.claudeUpdate.failed': 'Ažuriranje nije uspjelo: {err}',
+
+      'settings.runs.name': 'Pozadinska aktivnost',
+      'settings.runs.desc': 'Razgovori kojima potez još traje u pozadini. Svaki se provjerava na tvojem sustavu; oni čiji je proces već završio označeni su kao zastarjeli.',
+      'settings.runs.refresh': 'Osvježi',
+      'settings.runs.stopAll': 'Zaustavi sve',
+      'settings.runs.empty': 'Nema pozadinske aktivnosti — svi su razgovori mirni.',
+      'settings.runs.alive': 'U tijeku',
+      'settings.runs.stale': 'Zastarjelo',
+      'settings.runs.unknown': 'Razgovor bez naslova',
+      'sidebar.streamingTitle': 'U ovom razgovoru pristiže odgovor',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'nema promjena',

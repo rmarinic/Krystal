@@ -31,9 +31,14 @@ function renderSidebar() {
     const li = document.createElement('li');
     if (t.id === state.activeId) li.className = 'current';
     if (t.id === justAddedThreadId) { li.classList.add('just-added'); justAddedThreadId = null; }
+    // A turn streaming in this thread (even from another open view) → live mark.
+    const streaming = state.live && state.live.has(t.id);
+    if (streaming) li.classList.add('streaming');
+    const liveDot = streaming
+      ? `<span class="live-dot" title="${tr('sidebar.streamingTitle')}" aria-hidden="true"></span>` : '';
     li.innerHTML = `
       <a>
-        <span class="time">${timeLabel(t.updatedAt)}</span>
+        <span class="time">${timeLabel(t.updatedAt)}${liveDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>

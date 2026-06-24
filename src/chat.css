@@ -1914,3 +1914,64 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
   .panel-swap, .sidebar-list li.removing, .sidebar-list li.just-added,
   .sidebar-list li.just-added > a, .composer.fresh { animation: none !important; }
 }
+
+/* ===================== Background activity (live runs) ================== */
+
+/* ---- Sidebar: a turn is streaming in this chat ---- */
+.sidebar-list .live-dot {
+  display: inline-block; width: 6px; height: 6px; margin-left: 7px;
+  border-radius: 999px; background: var(--accent-2); vertical-align: middle;
+  box-shadow: 0 0 0 0 rgba(108,199,142,0.5);
+  animation: live-pulse 1.6s ease-out infinite;
+}
+.sidebar-list li.streaming > a { border-color: rgba(108,199,142,0.28); }
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); opacity: 1; }
+  70%  { box-shadow: 0 0 0 5px rgba(108,199,142,0); opacity: .65; }
+  100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); opacity: 1; }
+}
+
+/* ---- Settings → Activity tab ---- */
+.runs-row { gap: 12px; }
+.runs-list { display: flex; flex-direction: column; gap: 7px; }
+.runs-list.busy { opacity: .5; transition: opacity .15s; }
+.runs-empty { padding: 10px 0; font-size: 12.5px; color: var(--fg-dim); }
+.run {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 11px; border-radius: 9px;
+  background: var(--bg-card); border: 1px solid var(--border);
+}
+.run-dot { flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--fg-dim); }
+.run.alive .run-dot { background: var(--accent-2); animation: live-pulse 1.6s ease-out infinite; }
+.run.stale .run-dot { background: #e0935a; }
+.run-title {
+  flex: 1; min-width: 0; font-size: 12.5px; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.run-pid { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+.run-state {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  padding: 2px 7px; border-radius: 999px;
+}
+.run.alive .run-state {
+  color: var(--accent-3); background: rgba(108,199,142,0.1); border: 1px solid rgba(108,199,142,0.28);
+}
+.run.stale .run-state {
+  color: #e0935a; background: rgba(224,147,90,0.1); border: 1px solid rgba(224,147,90,0.3);
+}
+.runs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.runs-refresh, .runs-stop-all {
+  padding: 7px 14px; border-radius: 8px; background: transparent;
+  font-family: var(--sans); font-size: 12.5px; color: var(--fg-muted);
+  border: 1px solid var(--border-2); cursor: pointer;
+  transition: transform .12s, background .15s, border-color .15s, color .15s;
+}
+.runs-refresh:hover:not(:disabled) { border-color: var(--accent-2); color: var(--fg); }
+.runs-stop-all:hover:not(:disabled) { border-color: var(--warn-bd); color: var(--warn); }
+.runs-refresh:active, .runs-stop-all:active { transform: translateY(1px); }
+.runs-refresh:disabled, .runs-stop-all:disabled { opacity: .5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-list .live-dot, .run.alive .run-dot { animation: none; }
+  .runs-list.busy, .runs-refresh, .runs-stop-all { transition: none; }
+}
