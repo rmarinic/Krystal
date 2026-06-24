@@ -154,6 +154,7 @@ const api = {
   claudeMdExists(cwd) { return invoke('claude_md_exists', { cwd }); },
   claudeUsage(weeklyReset) { return invoke('claude_usage', { weeklyReset }); },
   preflight() { return invoke('preflight'); },
+  appVersion() { return invoke('app_version'); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
 };
 

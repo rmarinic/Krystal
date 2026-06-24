@@ -1975,3 +1975,27 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
   .sidebar-list .live-dot, .run.alive .run-dot { animation: none; }
   .runs-list.busy, .runs-refresh, .runs-stop-all { transition: none; }
 }
+
+/* ---- Faint build-version label (bottom-right corner) ---- */
+/* Pinned to the window corner, non-interactive so it never blocks the composer's
+   send button, and sits under every overlay (z-index 4 < 50). Tinted just above
+   the background (--border-2 on --bg) so it barely reads — informational only. */
+.app-version {
+  position: fixed;
+  right: 11px;
+  bottom: 7px;
+  z-index: 4;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--border-2);
+  animation: ver-fade .5s ease both;
+}
+.app-version:empty { display: none; }
+@keyframes ver-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .app-version { animation: none; }
+}

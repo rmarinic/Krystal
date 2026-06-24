@@ -148,6 +148,13 @@ pub fn exe_path() -> String {
         .unwrap_or_default()
 }
 
+/// The app's own version (compile-time, kept in sync with tauri.conf.json by the
+/// release bump). Surfaced as the faint version label in the corner of the UI.
+#[tauri::command]
+pub fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 /* ------------------------------- threads --------------------------------- */
 
 #[tauri::command]

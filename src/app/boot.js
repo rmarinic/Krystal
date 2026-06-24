@@ -13,3 +13,9 @@ if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();
 startUsage();
 showProjectPicker();
+
+// Faint build-version label in the bottom-right corner (purely informational).
+api.appVersion().then((v) => {
+  const el = document.getElementById('app-version');
+  if (el && v) el.textContent = 'v' + v;
+}).catch(() => {});
