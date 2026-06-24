@@ -16,8 +16,29 @@
   const tauri = window.__TAURI__ || {};
   const updater = tauri.updater;
   const process = tauri.process;
+  const core = tauri.core;
   // No updater plugin (e.g. `cargo run` without it) → nothing to do.
   if (!updater || typeof updater.check !== 'function') return;
+
+  const RELEASES_URL = 'https://github.com/rmarinic/Krystal/releases/latest';
+
+  /* Loop-breaker memory. The Tauri/NSIS updater installs to its own fixed
+   * location; if the app is launched from somewhere else (a custom/portable
+   * folder, a stale copy on another drive, a failed-elevation install), the
+   * installed binary is never the one being run, so check() keeps re-offering the
+   * same version on every launch and the install never "sticks". We record which
+   * version we just installed, keyed by THIS exe's path (localStorage is shared
+   * across copies because the WebView2 data dir is identifier-based, so the key
+   * must disambiguate which copy is running). If the same exe launches again and
+   * is STILL behind, we know its updates aren't applying and show a manual-install
+   * notice instead of silently re-installing forever. */
+  const PENDING_KEY = 'krystal.update.pending';   // { [exePath]: { version, at } }
+  const readMap = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || {}; } catch (_) { return {}; } };
+  const writeMap = (m) => { try { localStorage.setItem(PENDING_KEY, JSON.stringify(m)); } catch (_) {} };
+  async function exePath() {
+    try { return (core && typeof core.invoke === 'function') ? (await core.invoke('exe_path')) || '' : ''; }
+    catch (_) { return ''; }
+  }
 
   const tr = (key, vars, fb) =>
     (window.I18N ? window.I18N.t(key, vars, fb) : (fb || key));
@@ -66,18 +87,36 @@
     } catch (_) {
       return;                 // offline / endpoint unreachable / bad manifest
     }
+
+    const me = await exePath();
+
     // check() returns null when up to date. Some plugin versions instead return
     // an object with `available: false` — treat both as "nothing to do".
-    if (!update || update.available === false) return;
+    if (!update || update.available === false) {
+      // This copy is current — clear any stuck record we kept for it.
+      if (me) { const m = readMap(); if (m[me]) { delete m[me]; writeMap(m); } }
+      return;
+    }
 
     cache();
     if (!el.overlay) return;
 
+    const cur = update.currentVersion || '?';
+    const next = update.version || '?';
+
+    // Loop-breaker: we already installed `next` from this exe on a prior launch,
+    // yet it's still reporting an older version — the install isn't reaching the
+    // copy we run. Don't re-install (it would loop); explain it instead.
+    const m = readMap();
+    if (me && m[me] && m[me].version === next && cur !== next) {
+      showStuck(cur, next);
+      return;
+    }
+
     // ---- prompt state -----------------------------------------------------
-    el.version.innerHTML = tr('update.version', {
-      current: update.currentVersion || '?',
-      version: update.version || '?',
-    });
+    el.version.innerHTML = tr('update.version', { current: cur, version: next });
+    el.title.textContent = tr('update.title');
+    el.now.textContent = tr('update.install');
     renderNotes(update.body);
     el.progress.hidden = true;
     el.status.hidden = true;
@@ -86,10 +125,31 @@
     el.overlay.hidden = false;
 
     el.later.onclick = () => { el.overlay.hidden = true; };
-    el.now.onclick = () => { install(update); };
+    el.now.onclick = () => { install(update, me); };
   }
 
-  async function install(update) {
+  /* The update downloaded and installed but the running copy never changed —
+   * re-installing would just loop. Tell the user plainly and point them at the
+   * installer so one manual run puts them on a properly-managed copy. */
+  function showStuck(cur, next) {
+    el.title.textContent = tr('update.stuckTitle');
+    el.version.innerHTML = tr('update.version', { current: cur, version: next });
+    el.notes.textContent = tr('update.stuckBody', { current: cur, version: next });
+    el.notes.hidden = false;
+    el.progress.hidden = true;
+    el.status.hidden = true;
+    el.error.hidden = true;
+    el.actions.hidden = false;
+    el.now.textContent = tr('update.download');
+    el.later.textContent = tr('update.later');
+    el.now.onclick = () => {
+      try { if (core && typeof core.invoke === 'function') core.invoke('open_external', { url: RELEASES_URL }); } catch (_) {}
+    };
+    el.later.onclick = () => { el.overlay.hidden = true; };
+    el.overlay.hidden = false;
+  }
+
+  async function install(update, me) {
     // ---- downloading state ----
     el.actions.hidden = true;
     el.error.hidden = true;
@@ -132,7 +192,11 @@
         }
       });
 
-      // Download + install done — relaunch into the new version.
+      // Download + install done — remember what we just applied for THIS copy, so
+      // if the next launch is still behind we detect the stuck loop (see run()).
+      if (me) { const m = readMap(); m[me] = { version: update.version, at: Date.now() }; writeMap(m); }
+
+      // relaunch into the new version.
       el.status.textContent = tr('update.restarting');
       if (process && typeof process.relaunch === 'function') {
         await process.relaunch();

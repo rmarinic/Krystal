@@ -137,6 +137,17 @@ pub fn open_external(url: String) -> CmdResult {
     Ok(json!({ "ok": true }))
 }
 
+/// Absolute path of the running executable. The self-updater uses it to detect
+/// when the copy being launched isn't the one the installer updates (e.g. the app
+/// runs from a custom/portable folder), so it can break the "re-installs the same
+/// version on every launch" loop instead of looping forever. Empty if unknown.
+#[tauri::command]
+pub fn exe_path() -> String {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /* ------------------------------- threads --------------------------------- */
 
 #[tauri::command]

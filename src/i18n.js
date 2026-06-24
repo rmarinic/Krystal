@@ -234,6 +234,9 @@
       'update.installing': 'Installing — Krystal will restart in a moment…',
       'update.restarting': 'Restarting…',
       'update.failed': 'Update failed: {err}',
+      'update.download': 'Download installer',
+      'update.stuckTitle': 'Couldn’t finish updating automatically',
+      'update.stuckBody': 'Krystal installed v{version} but is still running v{current}. The copy you launch isn’t the one being updated — it’s probably running from a custom or portable folder, or an old shortcut. Download the latest installer and run it once; from then on updates will apply normally.',
 
       /* ---- onboarding / first-run setup ---- */
       'onb.check.title': 'Getting things ready…',
@@ -600,6 +603,9 @@
       'update.installing': 'Instaliram — Krystal će se ponovno pokrenuti…',
       'update.restarting': 'Ponovno pokretanje…',
       'update.failed': 'Ažuriranje nije uspjelo: {err}',
+      'update.download': 'Preuzmi instalacijski program',
+      'update.stuckTitle': 'Automatsko ažuriranje nije dovršeno',
+      'update.stuckBody': 'Krystal je instalirao v{version}, ali još uvijek koristi v{current}. Kopija koju pokrećeš nije ona koja se ažurira — vjerojatno se pokreće iz prilagođene ili prijenosne mape ili putem stare prečice. Preuzmi najnoviji instalacijski program i pokreni ga jednom; nakon toga će se ažuriranja primjenjivati normalno.',
 
       /* ---- onboarding / first-run setup ---- */
       'onb.check.title': 'Pripremam sve…',
