@@ -53,7 +53,7 @@ function openInit() {
   wiz.brief = ''; wiz.summary = ''; wiz.questions = []; wiz.sel = {}; wiz.markdown = '';
   showInitOverlay();
   els.initTitle.textContent = tr('wiz.title');
-  renderBrief();
+  wizRenderBrief();
 }
 
 /* "Edit instructions" — open the project's CLAUDE.md directly for editing,
@@ -123,7 +123,7 @@ function reinitFromEditor() {
 
 // Step 0: let the user say, in a sentence or two, what the project is about
 // BEFORE Claude explores the folder. This is optional but steers the analysis.
-function renderBrief() {
+function wizRenderBrief() {
   setSteps('brief');
   els.initBody.innerHTML = `<p class="init-intro">${escapeHtml(tr('wiz.briefIntro'))}</p>`;
   const ta = document.createElement('textarea');
@@ -148,13 +148,13 @@ async function runAnalyze() {
     wiz.summary = data.summary || '';
     wiz.questions = Array.isArray(data.questions) ? data.questions : [];
     for (const q of wiz.questions) wiz.sel[q.id] = { opts: new Set(), custom: '' };
-    renderQuestions();
+    wizRenderQuestions();
   } catch (e) {
     initError(String(e.message || e), runAnalyze);
   }
 }
 
-function renderQuestions() {
+function wizRenderQuestions() {
   setSteps('questions');
   const parts = [];
   if (wiz.summary) parts.push(`<div class="init-summary">${renderMarkdown(wiz.summary)}</div>`);
@@ -201,7 +201,7 @@ function renderQuestions() {
   els.initFoot.appendChild(footBtn(tr('wiz.writeBtn'), 'primary', generateDraft));
 }
 
-function collectAnswers() {
+function wizCollectAnswers() {
   const out = [];
   for (const q of wiz.questions) {
     const sel = wiz.sel[q.id];
@@ -213,7 +213,7 @@ function collectAnswers() {
 }
 
 async function generateDraft() {
-  const answers = collectAnswers();
+  const answers = wizCollectAnswers();
   if (!answers.length) {
     showTip({ key: 'status', cls: 'warn', icon: '✍️', label: tr('wiz.moreLabel'),
       body: tr('wiz.moreBody') });
@@ -222,11 +222,11 @@ async function generateDraft() {
   initLoading(tr('wiz.writingTitle'), tr('wiz.writingSub'), 'review');
   try {
     const data = await api.initDraft(state.activeId, wiz.summary, answers, wiz.brief);
-    if (data.error) { renderQuestions(); return initError(data.error, generateDraft); }
+    if (data.error) { wizRenderQuestions(); return initError(data.error, generateDraft); }
     wiz.markdown = data.markdown || '';
     renderReview();
   } catch (e) {
-    renderQuestions();
+    wizRenderQuestions();
     initError(String(e.message || e), generateDraft);
   }
 }
@@ -241,7 +241,7 @@ function renderReview() {
   els.initBody.appendChild(ta);
 
   els.initFoot.innerHTML = '';
-  els.initFoot.appendChild(footBtn(tr('wiz.backToQuestions'), 'ghost', renderQuestions));
+  els.initFoot.appendChild(footBtn(tr('wiz.backToQuestions'), 'ghost', wizRenderQuestions));
   els.initFoot.appendChild(footBtn(tr('wiz.rewrite'), '', generateDraft));
   els.initFoot.appendChild(footBtn(tr('wiz.acceptSave'), 'primary', acceptDraft));
 }
