@@ -494,6 +494,50 @@ fn tool_change(name: &str, input: &Value) -> Option<Vec<(&'static str, Value)>> 
 
 /* ------------------------------ spawning --------------------------------- */
 
+/// Temp file holding a spilled `--append-system-prompt` value. Removed on drop
+/// (i.e. once the claude child has exited and the spawn fn returns).
+struct SysPromptFile(Option<PathBuf>);
+
+impl Drop for SysPromptFile {
+    fn drop(&mut self) {
+        if let Some(p) = self.0.take() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+/// Move an inline `--append-system-prompt <value>` onto disk and switch to
+/// `--append-system-prompt-file <path>`.
+///
+/// Why: on Windows the resolved `claude` is usually a `claude.cmd` shim that
+/// forwards its arguments via `%*`, which *re-tokenizes* them. Our system prompt
+/// carries embedded quotes (the `krystal-ask` JSON example) and option-like
+/// tokens (the pandoc hints `-t markdown` / `-o out.docx`); once re-split, a
+/// stray `-t` reaches `claude` as an unknown option and the whole turn fails
+/// with `error: unknown option '-t'`. Keeping the prompt off the command line
+/// sidesteps the shim's quoting entirely. Falls back to the original args if the
+/// file can't be written, so a temp-dir hiccup never blocks a chat.
+fn spill_system_prompt(args: &[String]) -> (Vec<String>, SysPromptFile) {
+    if let Some(i) = args.iter().position(|a| a == "--append-system-prompt") {
+        if let Some(value) = args.get(i + 1) {
+            // Unique per process + call; avoids Date/random (unavailable here)
+            // while staying collision-free across concurrent streams.
+            let seq = SYS_PROMPT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("krystal-sysprompt-{}-{}.txt", std::process::id(), seq));
+            if std::fs::write(&path, value).is_ok() {
+                let mut out = args.to_vec();
+                out[i] = "--append-system-prompt-file".into();
+                out[i + 1] = path.to_string_lossy().into_owned();
+                return (out, SysPromptFile(Some(path)));
+            }
+        }
+    }
+    (args.to_vec(), SysPromptFile(None))
+}
+
+static SYS_PROMPT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn claude_command(bin: &str, args: &[String], cwd: &str) -> Command {
     let mut cmd = Command::new(bin);
     cmd.args(args)
@@ -709,7 +753,8 @@ pub async fn run_chat_stream(
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
 ) -> Result<ChatResult, String> {
-    let mut child = claude_command(bin, args, cwd)
+    let (args, _sys_file) = spill_system_prompt(args);
+    let mut child = claude_command(bin, &args, cwd)
         .spawn()
         .map_err(|e| format!("failed to start claude: {e}"))?;
 
@@ -1082,7 +1127,8 @@ pub async fn run_claude_text(
     cwd: &str,
     prompt: &str,
 ) -> Result<(String, Option<Value>), String> {
-    let mut child = claude_command(bin, args, cwd)
+    let (args, _sys_file) = spill_system_prompt(args);
+    let mut child = claude_command(bin, &args, cwd)
         .spawn()
         .map_err(|e| format!("failed to start claude: {e}"))?;
 
@@ -1257,5 +1303,35 @@ fn main() {}
         assert!(parse_ask_questions("not json").is_none());
         assert!(parse_ask_questions("{\"questions\": 5}").is_none());
         assert!(parse_ask_questions("{\"foo\": 1}").is_none());
+    }
+
+    #[test]
+    fn spill_moves_system_prompt_to_a_file() {
+        let sys = "help {\"q\":\"x\"} pandoc 'f.docx' -t markdown -o out.docx";
+        let args = base_args("claude-haiku-4-5-20251001", sys);
+        let (out, guard) = spill_system_prompt(&args);
+
+        // The inline flag is gone; the file variant carries a real path.
+        assert!(!out.iter().any(|a| a == "--append-system-prompt"));
+        let i = out
+            .iter()
+            .position(|a| a == "--append-system-prompt-file")
+            .expect("file flag present");
+        let path = &out[i + 1];
+        // No option-like token (e.g. the pandoc `-t`) is left on the command line.
+        assert!(!out.iter().any(|a| a == "-t"));
+        // The prompt round-trips verbatim through the file.
+        assert_eq!(std::fs::read_to_string(path).unwrap(), sys);
+
+        let owned = path.clone();
+        drop(guard);
+        assert!(!std::path::Path::new(&owned).exists(), "file cleaned up on drop");
+    }
+
+    #[test]
+    fn spill_is_a_noop_without_a_system_prompt() {
+        let args = vec!["-p".to_string(), "--verbose".to_string()];
+        let (out, _guard) = spill_system_prompt(&args);
+        assert_eq!(out, args);
     }
 }
