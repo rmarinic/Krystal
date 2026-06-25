@@ -4,8 +4,13 @@ function autosize() {
   els.input.style.height = 'auto';
   els.input.style.height = Math.min(els.input.scrollHeight, 200) + 'px';
 }
-els.input.addEventListener('input', () => { autosize(); syncShellMode(); });
+els.input.addEventListener('input', () => {
+  autosize(); syncShellMode();
+  if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete
+});
 els.input.addEventListener('keydown', (e) => {
+  // The # mention popup gets first crack at navigation/selection keys.
+  if (typeof mentionKeydown === 'function' && mentionKeydown(e)) return;
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
@@ -346,6 +351,8 @@ async function send() {
   if (isShellInput(raw)) { runShellCommand(shellCommandOf(raw).trim()); return; }
 
   const threadId = state.activeId;   // capture: the active view may change mid-stream
+  // Resolve any #-referenced chats to thread ids (background context), then reset.
+  const refs = typeof resolveComposerRefs === 'function' ? resolveComposerRefs(text) : [];
 
   // render the user message + clear composer. Sending re-engages auto-follow
   // (you want to watch the new reply), even if you'd scrolled up earlier.
@@ -353,6 +360,7 @@ async function send() {
   state.seed = null;                 // this turn folds the compaction summary back in
   appendMessage('user', text, null);
   els.input.value = '';
+  if (typeof clearComposerRefs === 'function') clearComposerRefs();
   autosize();
   scrollFeed();
 
@@ -379,7 +387,7 @@ async function send() {
     // not by the active view, so the reply always lands in `threadId`.
     const channel = new Channel();
     channel.onmessage = (msg) => handleLiveEvent(live, msg);
-    await invoke('chat', { threadId, text, onEvent: channel });
+    await invoke('chat', { threadId, text, refs, onEvent: channel });
   } catch (e) {
     if (live.typer) live.typer.error(String(e && e.message || e));
     finishLive(live);

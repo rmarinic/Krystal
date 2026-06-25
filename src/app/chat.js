@@ -8,6 +8,7 @@ function showEmpty() {
   els.meterRow.hidden = true;
   els.hintBtn.hidden = true;
   els.activityBtn.hidden = true;
+  showTasksBtn(!!state.project);     // tasks belong to the project, not a chat
   els.title.textContent = tr('header.noConversation');
   els.cwd.textContent = '';
   els.feed.innerHTML = '';
@@ -57,6 +58,7 @@ async function openThread(id, focusMid) {
     state.activity = activityFromSegments(t.messages);
   }
   els.activityBtn.hidden = false;
+  showTasksBtn(true);
   syncComposer();
   refreshGit();
   activityMinH = 0;                 // new chat → re-measure the activity panel size

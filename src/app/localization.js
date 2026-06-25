@@ -51,6 +51,7 @@ document.addEventListener('i18n:changed', () => {
   els.title.title = tr('rename.headerTitle');
   syncComposer();                          // re-translate the send/stop title
   if (!els.settingsOverlay.hidden) renderSettings();
+  relocalizeTasks();                       // re-render the tasks panel if it's open
   if (state.activeId) refreshGit();        // re-translate the "no changes" label
   applyWelcomeInitLabel();                 // keep Initialize/Reinitialize correct
   refreshUsageSurfaces();                  // re-translate the usage chip + picker card

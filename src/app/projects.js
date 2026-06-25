@@ -8,6 +8,7 @@ async function showProjectPicker() {
   state.project = null;
   state.activeId = null;
   state.view = 'threads';
+  showTasksBtn(false);
   els.projectScreen.classList.remove('leaving');
   els.projectScreen.hidden = false;
   syncDiscordProject();

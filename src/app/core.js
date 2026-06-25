@@ -9,8 +9,8 @@
  *
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → search →
- *   messages → stream → wizard → localization → settings → git → links →
- *   logo → boot
+ *   messages → stream → mentions → wizard → localization → settings → tasks →
+ *   git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -43,6 +43,8 @@ const els = {
   composer: $('#composer'),
   input: $('#input'),
   sendBtn: $('#send-btn'),
+  composerRefs: $('#composer-refs'),
+  mentionPop: $('#mention-pop'),
   chatTools: $('#chat-tools'),
   modelPicker: $('#model-picker'),
   modePicker: $('#mode-picker'),
@@ -58,6 +60,12 @@ const els = {
   activityBody: $('#activity-body'),
   activityClose: $('#activity-close'),
   activityFilters: $('#activity-filters'),
+  tasksBtn: $('#tasks-btn'),
+  tasksCount: $('#tasks-count'),
+  tasksOverlay: $('#tasks-overlay'),
+  tasksBody: $('#tasks-body'),
+  tasksFoot: $('#tasks-foot'),
+  tasksClose: $('#tasks-close'),
   search: $('#search'),
   savedToggle: $('#saved-toggle'),
   listHeading: $('#list-heading'),
@@ -139,6 +147,13 @@ const api = {
   search(q, project) { return invoke('search_messages', { q, project }); },
   favorites(project) { return invoke('list_favorites', { project }); },
   toggleFav(mid) { return invoke('toggle_favorite', { messageId: mid }); },
+  tasks(project) { return invoke('list_tasks', { project }); },
+  addTask(project, title, note) { return invoke('add_task', { project, title, note }); },
+  updateTask(id, title, done) { return invoke('update_task', { id, title, done }); },
+  deleteTask(id) { return invoke('delete_task', { id }); },
+  clearDoneTasks(project) { return invoke('clear_done_tasks', { project }); },
+  taskCount(project) { return invoke('task_count', { project }); },
+  generateTasks(cwd, brief, answers) { return invoke('generate_tasks', { cwd, brief, answers }); },
   setDiscordEnabled(enabled) { return invoke('set_discord_enabled', { enabled }); },
   discordSetProject(name) { return invoke('discord_set_project', { name }); },
   discordSetShareName(enabled) { return invoke('discord_set_share_name', { enabled }); },

@@ -364,12 +364,18 @@ pub fn apply_mode(args: &mut Vec<String>, mode: &str) {
 }
 
 /// Assemble the prompt fed over stdin. Mirrors `buildPrompt` in server.js.
-pub fn build_prompt(text: &str, files: &[String], seed: Option<&str>) -> String {
+pub fn build_prompt(text: &str, files: &[String], seed: Option<&str>, references: Option<&str>) -> String {
     let mut p = String::new();
     if let Some(seed) = seed {
         if !seed.is_empty() {
             p.push_str("Summary of our conversation so far (use it to continue seamlessly):\n");
             p.push_str(seed);
+            p.push_str("\n\n---\n\n");
+        }
+    }
+    if let Some(refs) = references {
+        if !refs.is_empty() {
+            p.push_str(refs);
             p.push_str("\n\n---\n\n");
         }
     }

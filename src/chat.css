@@ -736,6 +736,53 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   .composer.shell-mode .shell-badge { animation: none; }
 }
 
+/* ---- Chat references (#mention): pills above the input + the autocomplete ---- */
+.composer-refs {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-width: 880px; margin: 0 auto 8px;
+}
+.composer-ref {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 3px 5px 3px 10px;
+  animation: ref-in .2s cubic-bezier(.2,.9,.3,1.2);
+}
+.composer-ref .ref-ico { font-size: 11px; }
+.composer-ref .ref-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-ref .ref-x {
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.composer-ref .ref-x:hover { color: #ff8a8a; }
+@keyframes ref-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* The # autocomplete floats just above the input row. */
+.mention-pop {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 6;
+  max-height: 260px; overflow-y: auto;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.5);
+}
+.mention-pop.mention-in { animation: mention-in .16s ease; }
+@keyframes mention-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.mention-empty { color: var(--fg-muted); font-size: 13px; padding: 12px 12px; text-align: center; }
+.mention-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  padding: 9px 11px; cursor: pointer; text-align: left; color: var(--fg);
+}
+.mention-item.sel, .mention-item:hover { background: var(--bg-card); }
+.mention-hash { font-family: var(--mono); font-weight: 700; color: var(--accent-2); flex: none; }
+.mention-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-when { flex: none; font-size: 11px; color: var(--fg-dim); font-family: var(--mono); }
+@media (prefers-reduced-motion: reduce) {
+  .composer-ref { animation: none; }
+  .mention-pop.mention-in { animation: none; }
+}
+
 /* Section labels read like terminal headers */
 .sidebar-section h2 { font-family: var(--mono); }
 
@@ -926,14 +973,34 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 /* A small section pinned to the bottom of the sidebar. margin-top:auto
  * pushes it below the thread list; the border/padding only appear when the
  * Insight button is actually visible (no empty box on the empty state). */
-.sidebar-foot { margin-top: auto; }
-.sidebar-foot:has(.hint-btn:not([hidden])) {
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-foot:has(.hint-btn:not([hidden])),
+.sidebar-foot:has(.tasks-btn:not([hidden])) {
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 /* Insight + Activity sit side by side, each ~half the width. */
 .foot-row { display: flex; gap: 8px; }
+/* When both Insight & Activity are hidden (welcome screen), collapse the row so
+ * it doesn't add a stray gap above the Tasks button. */
+.foot-row:not(:has(button:not([hidden]))) { display: none; }
 .foot-row > button { flex: 1 1 0; min-width: 0; }
+
+/* Tasks button — full width, below the Insight/Activity row. A small badge
+ * shows how many tasks are still open. */
+.tasks-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 9px 12px; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.tasks-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.tasks-btn .tasks-count {
+  font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; color: #0a0f0b; background: var(--accent-2);
+  display: inline-flex; align-items: center; justify-content: center;
+}
 
 .hint-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -1025,6 +1092,95 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   border: 2px solid rgba(10,15,11,0.35); border-top-color: #0a0f0b;
   vertical-align: -1px; margin-right: 5px;
   animation: hint-spin .7s linear infinite;
+}
+
+/* ============================================================
+ * Tasks panel — a per-project to-do list (manual + Claude-built).
+ * Reuses the .init-modal shell; these style its body contents.
+ * ============================================================ */
+.tasks-modal { width: min(620px, 100%); }
+
+/* Add-a-task row */
+.task-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.task-add-input {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 9px 12px; font: inherit; font-size: 14px;
+}
+.task-add-input:focus { outline: none; border-color: var(--accent-2); }
+.task-add-input::placeholder { color: var(--fg-dim); }
+.task-add-btn {
+  flex: none; width: 40px; border-radius: var(--radius-sm);
+  border: none; background: var(--accent-2); color: #0a0f0b;
+  font-size: 20px; font-weight: 600; line-height: 1; cursor: pointer;
+  transition: filter .15s;
+}
+.task-add-btn:hover { filter: brightness(1.07); }
+
+/* "Generate from a description" entry point */
+.task-gen-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  color: var(--fg-muted); background: transparent;
+  border: 1px dashed var(--border-2); border-radius: var(--radius-sm);
+  padding: 8px 13px; margin-bottom: 18px; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.task-gen-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+
+/* List */
+.task-empty { color: var(--fg-muted); text-align: center; padding: 30px 12px; line-height: 1.5; }
+.task-list { list-style: none; margin: 0; padding: 0; }
+.task-item {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 11px 4px; border-bottom: 1px solid var(--border);
+}
+.task-item:last-child { border-bottom: none; }
+.task-item.fresh { animation: task-in .32s cubic-bezier(.2,.9,.3,1.1); }
+.task-item.removing { opacity: 0; transform: translateX(8px); transition: opacity .16s ease, transform .16s ease; }
+@keyframes task-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Checkbox */
+.task-check {
+  flex: none; width: 20px; height: 20px; margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border-2); border-radius: 6px;
+  background: transparent; color: #0a0f0b; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.task-check:hover { border-color: var(--accent-2); }
+.task-item.done .task-check { background: var(--accent-2); border-color: transparent; }
+
+/* Text */
+.task-main { flex: 1 1 auto; min-width: 0; }
+.task-title { font-size: 14px; line-height: 1.45; word-break: break-word; }
+.task-item.done .task-title { color: var(--fg-dim); text-decoration: line-through; }
+.task-note { font-size: 12px; color: var(--fg-dim); margin-top: 3px; line-height: 1.45; word-break: break-word; }
+.task-edit-input {
+  width: 100%; background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--accent-2); border-radius: var(--radius-sm);
+  padding: 6px 9px; font: inherit; font-size: 14px;
+}
+.task-edit-input:focus { outline: none; }
+
+/* Row icons (edit / delete) — appear on hover, stay reachable on touch */
+.task-icon {
+  flex: none; width: 26px; height: 26px; border-radius: 7px;
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 16px; line-height: 1; cursor: pointer; opacity: 0;
+  transition: opacity .15s, color .15s, background .15s;
+}
+.task-item:hover .task-icon, .task-item:focus-within .task-icon { opacity: 1; }
+.task-edit:hover { color: var(--fg); background: var(--bg-card); }
+.task-del:hover { color: #ff8a8a; background: rgba(255,90,90,0.1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .task-item.fresh { animation: none; }
+  .task-item.removing { transition: none; }
 }
 
 /* ----------------------- AskUserQuestion choice card --------------------- */

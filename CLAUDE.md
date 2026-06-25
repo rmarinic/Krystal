@@ -28,9 +28,11 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - `src/app/search.js` — sidebar search box + Saved (favorites) toggle.
 - `src/app/messages.js` — assistant transcript building blocks: action chips (expand/diff/output), plan & AskUserQuestion cards, `renderSegments`.
 - `src/app/stream.js` — composer input/autosize, the typewriter (`makeTyper`), concurrent per-thread streaming (`state.live`), `send`/stop.
+- `src/app/mentions.js` — `#`-reference another chat from the composer: a `#` autocomplete over the project's chats, reference pills above the input, and `resolveComposerRefs` → thread ids passed as `refs` to the `chat` command (backend folds the referenced transcripts into the prompt as background context).
 - `src/app/wizard.js` — Initialize wizard state machine (brief → analyze → questions → review → save) + the CLAUDE.md editor.
 - `src/app/localization.js` — EN/HR flag toggle; re-renders dynamic surfaces on language change.
 - `src/app/settings.js` — Discord presence + the Settings modal (tabs, feature switches, persisted in localStorage).
+- `src/app/tasks.js` — per-project to-do list: sidebar-foot Tasks button (open-count badge) + Tasks modal (add/rename/complete/delete/clear-done), plus a "generate from a description" flow that may ask clarifying questions then has Claude draft the tasks (`generate_tasks` backend command; stored in the SQLite `tasks` table keyed by project path).
 - `src/app/git.js` — git status line + branch picker (switch/create/fetch/pull/push).
 - `src/app/links.js` — intercepts reply links; opens via browser / ask-each-time / in-app viewer.
 - `src/app/logo.js` — RYSTAL wordmark per-letter split, logo intro + idle "living logo" glow.
