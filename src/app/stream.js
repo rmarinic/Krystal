@@ -331,6 +331,9 @@ function handleLiveEvent(live, msg) {
     // header if this thread is on screen, and the sidebar regardless.
     if (live.threadId === state.activeId) els.title.textContent = msg.title;
     if (state.view === 'threads') loadThreads();
+  } else if (event === 'tasks') {
+    // Claude added/edited tasks via the snapshot file this turn — refresh the UI.
+    if (typeof onTasksSynced === 'function') onTasksSynced(msg);
   } else if (event === 'error') {
     // A turn the user stopped exits non-zero; settle it quietly instead of
     // painting a red error chip (any partial text is already kept).

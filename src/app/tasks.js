@@ -417,6 +417,17 @@ async function applyGenerated(tasks) {
     body: escapeHtml(tr('tasks.addedBody', { n: clean.length })) });
 }
 
+/* Claude edited the task list (via the snapshot file) during a chat turn. Update
+ * the badge from the counts it reported, and reload the panel if it's open so the
+ * change shows immediately. A little pulse on the button flags that it moved. */
+function onTasksSynced() {
+  // Re-query the current project's count (rather than trust the event) so the
+  // badge stays correct even if focus moved while a background turn finished.
+  refreshTaskCount();
+  if (els.tasksBtn && !els.tasksBtn.hidden) replayClass(els.tasksBtn, 'tasks-bump', 700);
+  if (els.tasksOverlay && !els.tasksOverlay.hidden && taskUI.view === 'list') loadTasks();
+}
+
 /* Re-render the open panel after a language switch (keeps the current view). */
 function relocalizeTasks() {
   if (els.tasksOverlay.hidden) return;

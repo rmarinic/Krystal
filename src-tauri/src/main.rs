@@ -48,6 +48,7 @@ fn main() {
                 claude_bin: std::sync::Mutex::new(claude_bin.clone()),
                 discord: discord::Presence::new(),
                 running: std::sync::Mutex::new(std::collections::HashMap::new()),
+                data_dir: dir.clone(),
             });
             Ok(())
         })

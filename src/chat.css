@@ -1000,6 +1000,16 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px;
   border-radius: 8px; color: #0a0f0b; background: var(--accent-2);
   display: inline-flex; align-items: center; justify-content: center;
+  transition: transform .2s cubic-bezier(.2,.9,.3,1.25);
+}
+/* A gentle pulse when Claude changes the list from chat, so the move is noticed. */
+.tasks-btn.tasks-bump { animation: tasks-bump .6s ease; }
+@keyframes tasks-bump {
+  0%, 100% { border-color: var(--border-2); }
+  30% { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(108,199,142,0.16); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tasks-btn.tasks-bump { animation: none; }
 }
 
 .hint-btn {

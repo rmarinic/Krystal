@@ -78,13 +78,29 @@ aside.sidebar {
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
+  /* The whole column is fixed-height; only the chat list inside scrolls, so the
+     header, search and foot buttons (Insight/Activity/Tasks) stay pinned. */
+  overflow: hidden;
   background: var(--bg-elev);
   border-right: 1px solid var(--border);
   padding: 22px 14px 24px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+/* Header & search keep their size; the section flexes to fill and scrolls. */
+.sidebar-header, .sidebar-search, .sidebar-foot { flex: 0 0 auto; }
+.sidebar-section {
+  flex: 1 1 auto;
+  min-height: 0;            /* let the inner list actually shrink + scroll */
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-section .section-head { flex: 0 0 auto; }
+.sidebar-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-header {

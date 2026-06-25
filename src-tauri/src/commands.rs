@@ -25,6 +25,9 @@ pub struct AppState {
     /// PIDs of in-flight `claude` chat processes, keyed by thread id, so a
     /// `stop_chat` can interrupt a turn mid-stream.
     pub running: std::sync::Mutex<std::collections::HashMap<String, u32>>,
+    /// App data directory — where the DB lives and where we drop the per-project
+    /// task-list snapshots Claude can read on demand.
+    pub data_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -516,7 +519,16 @@ pub async fn chat(
     }
     .ok_or("unknown thread")?;
 
-    let sys = state.sys_prompt();
+    // Let Claude KNOW a task list exists (a cheap one-liner) and drop a fresh
+    // markdown snapshot it can read — and optionally edit — on demand, without
+    // injecting the tasks into context unless the conversation calls for them.
+    let task_awareness = prepare_task_awareness(&state.data_dir, &state.db, &meta.cwd);
+    let mut sys = state.sys_prompt();
+    if let Some(t) = &task_awareness {
+        sys.push(' ');
+        sys.push_str(&t.note);
+    }
+
     let mut args = claude::base_args(&meta.model, &sys);
     claude::apply_mode(&mut args, &meta.mode);   // Auto = full power; Plan = research only
     if let Some(sid) = &meta.session_id {
@@ -603,6 +615,16 @@ pub async fn chat(
         "usage": usage,
         "assistantId": assistant_id,
     }));
+
+    // If Claude edited the task snapshot this turn, fold those changes back into
+    // the database and nudge the UI to refresh its list + badge.
+    if let Some(t) = &task_awareness {
+        if let Some((open, total)) =
+            reconcile_task_snapshot(&state.db, &state.data_dir, &meta.cwd, &t.path, &t.written)
+        {
+            let _ = on_event.send(json!({ "type": "tasks", "open": open, "total": total }));
+        }
+    }
 
     // First-turn auto-naming resolves on its own clock (a cheap Haiku call run
     // alongside the stream). When it lands, persist it and nudge the UI with a
@@ -1372,6 +1394,231 @@ fn build_reference_context(conn: &rusqlite::Connection, refs: &[String], current
         blocks.join("\n\n")
     ))
 }
+
+/* ------------------------------ task awareness --------------------------- */
+
+/// Stable, filesystem-safe key for a project path (FNV-1a) so each project's
+/// snapshot overwrites its own file.
+fn project_key(path: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in path.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn base_name_of(path: &str) -> String {
+    let t = path.trim_end_matches(['/', '\\']);
+    let n = t.rsplit(['/', '\\']).next().unwrap_or(t);
+    if n.is_empty() { path.to_string() } else { n.to_string() }
+}
+
+const TASK_SNAPSHOT_LEGEND: &str =
+    "<!-- HOW TO EDIT (saved back into the app automatically after your reply):\n     • toggle done: change [ ] to [x] or back\n     • rename / re-note: edit the text after the (id:N) marker\n     • add a task: add a new line  - [ ] My new task — optional note\n     • delete a task: remove its whole line\n     Keep the (id:N) marker on existing tasks — it's how edits are matched.\n     Only edit this when the user asks you to manage tasks. -->";
+
+/// Render the project's tasks as the markdown Claude reads/edits.
+fn render_task_markdown(project: &str, tasks: &[Value]) -> String {
+    let mut md = format!("# Task list — {}\n\n{}\n\n", base_name_of(project), TASK_SNAPSHOT_LEGEND);
+    for t in tasks {
+        let id = t.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+        let done = t.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
+        let title = t.get("title").and_then(|x| x.as_str()).unwrap_or("");
+        let note = t
+            .get("note")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        md.push_str(if done { "- [x] " } else { "- [ ] " });
+        md.push_str(&format!("(id:{id}) {title}"));
+        if let Some(note) = note {
+            md.push_str(" — ");
+            md.push_str(note);
+        }
+        md.push('\n');
+    }
+    md
+}
+
+/// Write the project's tasks to a markdown file under `<data_dir>/task-lists/`
+/// that Claude can `Read` (and edit) on demand. Returns the path + written text.
+fn write_task_snapshot(data_dir: &std::path::Path, project: &str, tasks: &[Value]) -> Option<(std::path::PathBuf, String)> {
+    let dir = data_dir.join("task-lists");
+    std::fs::create_dir_all(&dir).ok()?;
+    let file = dir.join(format!("{}.md", project_key(project)));
+    let md = render_task_markdown(project, tasks);
+    std::fs::write(&file, &md).ok()?;
+    Some((file, md))
+}
+
+/// A task line parsed back out of the snapshot. `id` is `None` for a line Claude
+/// added (no `(id:N)` marker yet).
+struct ParsedTask {
+    id: Option<i64>,
+    done: bool,
+    title: String,
+    note: Option<String>,
+}
+
+/// Parse the snapshot markdown back into task rows. Lines that aren't `- [ ] …`
+/// checkboxes (the header, the legend, blanks) are ignored.
+fn parse_task_markdown(md: &str) -> Vec<ParsedTask> {
+    let mut out = Vec::new();
+    for raw in md.lines() {
+        let line = raw.trim();
+        // Match "- [ ] rest" / "- [x] rest" (also tolerate * bullets).
+        let rest = line
+            .strip_prefix("- [")
+            .or_else(|| line.strip_prefix("* ["));
+        let rest = match rest {
+            Some(r) => r,
+            None => continue,
+        };
+        let (mark, after) = match rest.split_once(']') {
+            Some((m, a)) => (m.trim(), a.trim()),
+            None => continue,
+        };
+        let done = mark.eq_ignore_ascii_case("x");
+        // Optional "(id:N)" marker.
+        let (id, body) = if let Some(b) = after.strip_prefix("(id:") {
+            if let Some((num, tail)) = b.split_once(')') {
+                (num.trim().parse::<i64>().ok(), tail.trim().to_string())
+            } else {
+                (None, after.to_string())
+            }
+        } else {
+            (None, after.to_string())
+        };
+        // Split "title — note" on the first em-dash separator.
+        let (title, note) = match body.split_once(" — ") {
+            Some((t, n)) => (t.trim().to_string(), {
+                let n = n.trim();
+                if n.is_empty() { None } else { Some(n.to_string()) }
+            }),
+            None => (body.trim().to_string(), None),
+        };
+        if title.is_empty() {
+            continue;
+        }
+        out.push(ParsedTask { id, done, title, note });
+    }
+    out
+}
+
+/// After a chat turn, fold any edits Claude made to the snapshot back into the
+/// database (toggles, renames, additions, deletions). No-op (returns `None`) when
+/// the file is byte-for-byte what we wrote — so reads never mutate anything.
+/// On a real change it re-writes the snapshot (so new tasks gain id markers) and
+/// returns the fresh (open, total) counts for the UI.
+fn reconcile_task_snapshot(
+    db: &std::sync::Mutex<rusqlite::Connection>,
+    data_dir: &std::path::Path,
+    project: &str,
+    path: &std::path::Path,
+    written: &str,
+) -> Option<(usize, usize)> {
+    let current = std::fs::read_to_string(path).ok()?;
+    if current == written {
+        return None; // Claude didn't touch it
+    }
+    let parsed = parse_task_markdown(&current);
+
+    let conn = db.lock().unwrap();
+    let existing = db::list_tasks(&conn, project);
+    let existing_ids: std::collections::HashSet<i64> =
+        existing.iter().filter_map(|t| t.get("id").and_then(|x| x.as_i64())).collect();
+
+    let mut changed = false;
+    let mut seen = std::collections::HashSet::new();
+    for p in &parsed {
+        match p.id {
+            Some(id) if existing_ids.contains(&id) => {
+                seen.insert(id);
+                // Update in place if anything differs.
+                let cur = existing.iter().find(|t| t.get("id").and_then(|x| x.as_i64()) == Some(id));
+                let differs = cur.map(|c| {
+                    let ct = c.get("title").and_then(|x| x.as_str()).unwrap_or("");
+                    let cn = c.get("note").and_then(|x| x.as_str()).unwrap_or("");
+                    let cd = c.get("done").and_then(|x| x.as_bool()).unwrap_or(false);
+                    ct != p.title || cn != p.note.as_deref().unwrap_or("") || cd != p.done
+                }).unwrap_or(true);
+                if differs {
+                    db::set_task(&conn, id, &p.title, p.note.as_deref(), p.done);
+                    changed = true;
+                }
+            }
+            _ => {
+                // New line (no/unknown id) → insert.
+                if let Some(t) = db::add_task(&conn, project, &p.title, p.note.as_deref()) {
+                    if p.done {
+                        if let Some(nid) = t.get("id").and_then(|x| x.as_i64()) {
+                            db::update_task(&conn, nid, None, Some(true));
+                        }
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+    // Delete tasks whose line Claude removed.
+    for id in &existing_ids {
+        if !seen.contains(id) {
+            db::delete_task(&conn, *id);
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+    // Re-snapshot from the fresh DB so new tasks carry id markers next time.
+    let fresh = db::list_tasks(&conn, project);
+    let total = fresh.len();
+    let open = fresh
+        .iter()
+        .filter(|t| !t.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
+        .count();
+    drop(conn);
+    let _ = write_task_snapshot(data_dir, project, &fresh);
+    Some((open, total))
+}
+
+/// Everything the chat turn needs to make Claude task-aware: the system-prompt
+/// note, plus the snapshot path + exact bytes written (to detect edits afterward).
+struct TaskAwareness {
+    note: String,
+    path: std::path::PathBuf,
+    written: String,
+}
+
+/// Build the awareness note and drop a fresh snapshot. `None` when the project
+/// has no tasks (nothing to be aware of).
+fn prepare_task_awareness(
+    data_dir: &std::path::Path,
+    db: &std::sync::Mutex<rusqlite::Connection>,
+    project: &str,
+) -> Option<TaskAwareness> {
+    let tasks = {
+        let conn = db.lock().unwrap();
+        db::list_tasks(&conn, project)
+    };
+    if tasks.is_empty() {
+        return None;
+    }
+    let total = tasks.len();
+    let open = tasks
+        .iter()
+        .filter(|t| !t.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
+        .count();
+    let (path, written) = write_task_snapshot(data_dir, project, &tasks)?;
+    let note = format!(
+        "TASK LIST: this project has a to-do list the user manages in the Krystal app — currently {total} task(s), {open} still open. Do NOT pull it into context for unrelated work or assume its contents. When the conversation calls for it (the user mentions the task list, asks what's next, or asks you to add/update/complete tasks) use this file: {}. READ it to see the list. You may also EDIT that file to manage tasks WHEN THE USER ASKS — toggle [ ]/[x] to (un)complete, edit the text to rename, add a `- [ ] New task` line to add, or delete a line to remove; keep each existing task's `(id:N)` marker. Your edits are saved back into the app automatically after your reply. Never touch it for unrelated work.",
+        path.display()
+    );
+    Some(TaskAwareness { note, path, written })
+}
+
+/// Strip a leading/trailing ```markdown fence around a draft, if present.
 
 /// Strip a leading/trailing ```markdown fence around a draft, if present.
 fn strip_md_fence(s: &str) -> String {

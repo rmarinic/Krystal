@@ -751,6 +751,15 @@ pub fn delete_task(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM tasks WHERE id = ?1", [id]);
 }
 
+/// Overwrite a task's title, note and done state in one go — used when syncing
+/// Claude's edits to the markdown snapshot back into the database.
+pub fn set_task(conn: &Connection, id: i64, title: &str, note: Option<&str>, done: bool) {
+    let _ = conn.execute(
+        "UPDATE tasks SET title = ?1, note = ?2, done = ?3, updated_at = ?4 WHERE id = ?5",
+        params![title, note, done as i64, now(), id],
+    );
+}
+
 /// Remove every completed task in a project; returns how many were cleared.
 pub fn clear_done_tasks(conn: &Connection, project: &str) -> usize {
     conn.execute("DELETE FROM tasks WHERE project = ?1 AND done = 1", [project])
