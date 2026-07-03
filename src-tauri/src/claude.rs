@@ -55,6 +55,11 @@ pub fn capability_prompt(caps: Caps) -> String {
         "When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.".into(),
         "When you want the user to choose between a few clear options, present a choice card instead of asking in prose: output a fenced code block tagged krystal-ask whose body is valid JSON of the form {\"questions\":[{\"question\":\"…\",\"header\":\"short label\",\"multiSelect\":false,\"options\":[{\"label\":\"…\",\"description\":\"…\"}]}]} — this app renders it as clickable cards with a custom-answer box.".into(),
         "Emit that block as the very last thing in your reply and then STOP; the user's selection (or typed answer) arrives as their next message, so just continue naturally from it. Use it only for genuine forks where the choice changes what you do — never for routine questions.".into(),
+        // Each turn is a separate headless `claude -p` process (see run_chat_stream);
+        // when it exits, harness-tracked background work dies with it — a background
+        // shell can never outlive the reply that started it, and its "you'll be
+        // notified" promise silently breaks. Steer Claude away from ever relying on it.
+        "IMPORTANT: this app runs each reply as a separate headless claude process that EXITS as soon as the reply finishes, so background work does NOT survive between replies: never run Bash/PowerShell commands with run_in_background=true and never launch background agents or tasks you intend to check later — their processes and completion notifications die with the reply. Run long commands in the FOREGROUND with a generous timeout (up to 10 minutes) and wait for them inside the same reply; if something would take longer, break it into explicit steps the user triggers one reply at a time.".into(),
     ];
     if caps.pandoc {
         lines.push("Word documents (.docx) ARE supported via pandoc:".into());
