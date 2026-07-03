@@ -13,7 +13,10 @@ use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-use crate::models::{is_valid_model, TITLE_MODEL};
+use crate::models::{
+    looks_like_model_id, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
+    ORCH_FAST_MODEL, SUB_MODEL_AUTO, TITLE_MODEL,
+};
 
 /* --------------------------- capabilities -------------------------------- */
 
@@ -345,7 +348,9 @@ pub fn base_args(model: &str, sys_prompt: &str) -> Vec<String> {
         "--append-system-prompt".into(),
         sys_prompt.to_string(),
     ];
-    if is_valid_model(model) {
+    // Accept any well-formed Claude id (the catalogue is dynamic — see
+    // `catalog.rs` — so we can't gate on a hardcoded list here).
+    if looks_like_model_id(model) {
         args.push("--model".into());
         args.push(model.to_string());
     }
@@ -361,6 +366,110 @@ pub fn apply_mode(args: &mut Vec<String>, mode: &str) {
         args.push("--permission-mode".into());
         args.push("plan".into());
     }
+}
+
+/* ---------------------------- orchestrator ------------------------------- */
+
+/// RAII guard for the temporary worker-agent `.md` files written under
+/// `~/.claude/agents` for a single orchestrator turn. Removed on drop — i.e.
+/// once the claude child has exited and the chat handler returns — so they never
+/// linger to pollute the user's own Claude Code agents. Mirrors `SysPromptFile`.
+pub struct OrchestratorGuard(Vec<PathBuf>);
+
+impl Drop for OrchestratorGuard {
+    fn drop(&mut self) {
+        for p in self.0.drain(..) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+/// Everything a chat turn needs to run in orchestrator mode: a system-prompt
+/// note steering the orchestrator to delegate, plus the guard that cleans up the
+/// worker-agent files it references.
+pub struct Orchestration {
+    /// Appended (single line) to the system prompt for this turn.
+    pub note: String,
+    _guard: OrchestratorGuard,
+}
+
+static ORCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn claude_agents_dir() -> Option<PathBuf> {
+    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    Some(PathBuf::from(home).join(".claude").join("agents"))
+}
+
+/// Write one worker-agent definition file. The `model:` frontmatter pins the
+/// sub-agent's model; the body is its (deliberately generic, full-tool) brief —
+/// we never restrict a worker's toolset. Returns the path on success.
+fn write_worker_agent(dir: &std::path::Path, name: &str, description: &str, model: &str) -> Option<PathBuf> {
+    const BODY: &str = "You are a worker sub-agent operating under an orchestrator. Carry out the delegated task end-to-end with your full toolset, then return a tight, complete result the orchestrator can use directly. Be thorough but concise, and don't hand work back with questions unless you are genuinely blocked.";
+    let path = dir.join(format!("{name}.md"));
+    let content = format!("---\nname: {name}\ndescription: {description}\nmodel: {model}\n---\n{BODY}\n");
+    std::fs::write(&path, content).ok()?;
+    Some(path)
+}
+
+/// Resolve a model id's display name against the live catalogue, falling back
+/// to the static name table (then the id itself) for anything not in the list.
+fn resolve_model_name(catalog: &[ModelInfo], id: &str) -> String {
+    catalog
+        .iter()
+        .find(|m| m.id == id)
+        .map(|m| m.name.clone())
+        .unwrap_or_else(|| model_name(id).to_string())
+}
+
+/// Pick the newest model of `tier` from the live catalogue (id + display name),
+/// falling back to the given static id when the tier isn't present. This keeps
+/// the orchestrator's Auto worker tiers in step with the dynamic model list
+/// rather than pinning hardcoded ids.
+fn pick_tier(catalog: &[ModelInfo], tier: &str, fallback: &str) -> (String, String) {
+    match catalog.iter().find(|m| m.tier == tier) {
+        Some(m) => (m.id.clone(), m.name.clone()),
+        None => (fallback.to_string(), model_name(fallback).to_string()),
+    }
+}
+
+/// Prepare the worker sub-agents for one orchestrator turn and the note that
+/// steers the orchestrator to delegate to them. `sub_model` is a concrete model
+/// id, or `auto` to offer a fast/balanced/deep trio (drawn from the live
+/// `catalog`) the orchestrator picks from per task. Returns `None` (mode
+/// silently off) if the agents dir is unwritable.
+pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<Orchestration> {
+    let dir = claude_agents_dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    // Unique per process + call so concurrent turns never share (and so cleaning
+    // up one turn's files can't yank an agent out from under another).
+    let seq = ORCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tag = format!("{}-{}", std::process::id(), seq);
+    let mut files = Vec::new();
+
+    let note = if sub_model == SUB_MODEL_AUTO {
+        // Tiers track the live catalogue; the ORCH_* ids are only fallbacks.
+        let (fast_id, fast_m) = pick_tier(catalog, "haiku", ORCH_FAST_MODEL);
+        let (bal_id, bal_m) = pick_tier(catalog, "sonnet", ORCH_BALANCED_MODEL);
+        let (deep_id, deep_m) = pick_tier(catalog, "opus", ORCH_DEEP_MODEL);
+        let fast = format!("krystal-worker-fast-{tag}");
+        let bal = format!("krystal-worker-balanced-{tag}");
+        let deep = format!("krystal-worker-deep-{tag}");
+        files.push(write_worker_agent(&dir, &fast, "Fast, cheap worker for simple or mechanical delegated tasks.", &fast_id)?);
+        files.push(write_worker_agent(&dir, &bal, "Balanced worker for typical coding, analysis and writing tasks.", &bal_id)?);
+        files.push(write_worker_agent(&dir, &deep, "Most-capable worker, for genuinely hard reasoning tasks.", &deep_id)?);
+        format!(
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — conserve budget by delegating the heavy lifting to worker sub-agents via the Task tool instead of doing it yourself. For any substantial, well-scoped unit of work (searching or reading many files, running commands, implementing edits, drafting content, research), dispatch it to a worker, choosing the cheapest one that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). Keep your own turns focused on understanding the request, planning, dispatching, reviewing results, and writing the final answer; do the work yourself only when it is trivial or delegation would add pointless overhead.",
+        )
+    } else {
+        let name = format!("krystal-worker-{tag}");
+        files.push(write_worker_agent(&dir, &name, "Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model)?);
+        format!(
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — conserve budget by delegating the heavy lifting to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool instead of doing it yourself. For any substantial, well-scoped unit of work (searching or reading many files, running commands, implementing edits, drafting content, research), dispatch it to `{name}`, launching independent pieces in parallel (multiple Task calls in a single turn). Keep your own turns focused on understanding the request, planning, dispatching, reviewing results, and writing the final answer; do the work yourself only when it is trivial or delegation would add pointless overhead.",
+            mname = resolve_model_name(catalog, sub_model),
+        )
+    };
+
+    Some(Orchestration { note, _guard: OrchestratorGuard(files) })
 }
 
 /// Assemble the prompt fed over stdin. Mirrors `buildPrompt` in server.js.
@@ -1339,5 +1448,20 @@ fn main() {}
         let args = vec!["-p".to_string(), "--verbose".to_string()];
         let (out, _guard) = spill_system_prompt(&args);
         assert_eq!(out, args);
+    }
+
+    #[test]
+    fn worker_agent_file_has_frontmatter_and_pinned_model() {
+        let dir = std::env::temp_dir().join(format!("krystal-agents-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = write_worker_agent(&dir, "krystal-worker-x", "A worker", "claude-sonnet-4-6")
+            .expect("writes the agent file");
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(body.starts_with("---\n"));
+        assert!(body.contains("name: krystal-worker-x"));
+        assert!(body.contains("model: claude-sonnet-4-6"));
+        assert!(body.contains("worker sub-agent")); // the fixed brief
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

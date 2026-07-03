@@ -39,6 +39,7 @@ async function openThread(id, focusMid) {
   els.cwd.textContent = t.cwd;
   if (modelSel) modelSel.set(t.model || (state.models[0] && state.models[0].id) || '');
   if (modeSel) modeSel.set(t.mode || (state.modes[0] && state.modes[0].id) || 'auto');
+  if (typeof syncOrchestratorThread === 'function') syncOrchestratorThread(t);
   state.seed = t.seed || null;              // compaction summary, if this thread was just compacted
   els.feed.innerHTML = '';
   for (const m of t.messages) appendMessage(m.role, m.text, m.files, m);

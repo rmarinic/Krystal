@@ -154,6 +154,13 @@
       <div class="composer-tools">
         <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Plan only researches and proposes"></div>
         <div class="composer-tools-spacer"></div>
+        <!-- Orchestrator: run a premium model as a supervisor that delegates the
+             heavy lifting to cheaper worker sub-agents. Opens a popover to pick
+             the orchestrator model and the sub-agent model (or Auto). -->
+        <div class="orch-wrap" id="orch-wrap">
+          <button id="orch-btn" class="head-btn" data-i18n-title="orch.btnTitle" title="Orchestrator: run a premium model as a supervisor that delegates the heavy work to cheaper sub-agents">⚡ <span data-i18n="orch.btn">Orchestrate</span></button>
+          <div class="orch-pop" id="orch-pop" hidden></div>
+        </div>
         <button id="compact-btn" class="head-btn" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">🧹 Compact</button>
         <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
       </div>
@@ -345,6 +352,7 @@
   <script defer src="app/links.js"></script>
   <script defer src="app/logo.js"></script>
   <script defer src="app/usage.js"></script>
+  <script defer src="app/orchestrator.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

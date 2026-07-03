@@ -28,6 +28,10 @@ pub struct AppState {
     /// App data directory — where the DB lives and where we drop the per-project
     /// task-list snapshots Claude can read on demand.
     pub data_dir: std::path::PathBuf,
+    /// The model catalogue shown in the picker — seeded from the cached/static
+    /// list at boot and replaced by a live `GET /v1/models` fetch (see
+    /// `refresh_models`). Kept here so validation can accept dynamic ids.
+    pub models: std::sync::Mutex<Vec<models::ModelInfo>>,
 }
 
 impl AppState {
@@ -39,6 +43,12 @@ impl AppState {
     pub fn claude_bin(&self) -> String {
         self.claude_bin.lock().unwrap().clone()
     }
+
+    /// Is `id` a model we know about — in the current (possibly live-fetched)
+    /// catalogue, or the static fallback list?
+    pub fn model_known(&self, id: &str) -> bool {
+        self.models.lock().unwrap().iter().any(|m| m.id == id) || models::is_valid_model(id)
+    }
 }
 
 type CmdResult = Result<Value, String>;
@@ -46,8 +56,28 @@ type CmdResult = Result<Value, String>;
 /* ------------------------------- config ---------------------------------- */
 
 #[tauri::command]
-pub fn get_config() -> Value {
-    json!({ "models": models::MODELS, "modes": models::MODES })
+pub fn get_config(state: State<'_, AppState>) -> Value {
+    let models = state.models.lock().unwrap().clone();
+    json!({ "models": models, "modes": models::MODES })
+}
+
+/// Fetch the live model catalogue from the Anthropic Models API, adopt it into
+/// state, and cache it. On any failure (offline, no/expired credentials) the
+/// current catalogue is returned unchanged so the picker never empties. The
+/// frontend calls this once at boot and swaps in the result if it's newer.
+#[tauri::command]
+pub async fn refresh_models(state: State<'_, AppState>) -> CmdResult {
+    match crate::catalog::fetch_catalog().await {
+        Ok(list) => {
+            crate::catalog::save_cache(&state.data_dir, &list);
+            *state.models.lock().unwrap() = list.clone();
+            Ok(json!({ "models": list, "source": "live" }))
+        }
+        Err(e) => {
+            let cached = state.models.lock().unwrap().clone();
+            Ok(json!({ "models": cached, "source": "cache", "error": e }))
+        }
+    }
 }
 
 /* ----------------------------- onboarding -------------------------------- */
@@ -399,7 +429,7 @@ pub fn delete_thread(state: State<'_, AppState>, id: String) -> Value {
 
 #[tauri::command]
 pub fn set_model(state: State<'_, AppState>, id: String, model: String) -> CmdResult {
-    if !models::is_valid_model(&model) {
+    if !state.model_known(&model) {
         return Err("unknown model".into());
     }
     let conn = state.db.lock().unwrap();
@@ -415,6 +445,25 @@ pub fn set_mode(state: State<'_, AppState>, id: String, mode: String) -> CmdResu
     let conn = state.db.lock().unwrap();
     db::set_mode(&conn, &id, &mode);
     Ok(json!({ "mode": mode }))
+}
+
+/// Toggle orchestrator mode for a thread and set its worker sub-agent model
+/// (`auto` = let the orchestrator choose per task). The thread's own `model`
+/// stays the orchestrator model; only chat turns honour this (internal one-off
+/// calls always run plainly).
+#[tauri::command]
+pub fn set_orchestration(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+    sub_model: String,
+) -> CmdResult {
+    if sub_model != models::SUB_MODEL_AUTO && !state.model_known(&sub_model) {
+        return Err("unknown sub-agent model".into());
+    }
+    let conn = state.db.lock().unwrap();
+    db::set_orchestration(&conn, &id, enabled, &sub_model);
+    Ok(json!({ "orch": enabled, "orchSub": sub_model }))
 }
 
 #[tauri::command]
@@ -653,6 +702,20 @@ pub async fn chat(
     if let Some(t) = &task_awareness {
         sys.push(' ');
         sys.push_str(&t.note);
+    }
+
+    // Orchestrator mode: run `meta.model` as a supervisor that delegates to
+    // cheaper worker sub-agents. `_orch` holds the RAII guard that cleans up the
+    // temporary agent files — keep it alive until the stream finishes below.
+    let _orch = if meta.orch {
+        let catalog = state.models.lock().unwrap().clone();
+        claude::prepare_orchestration(&meta.orch_sub, &catalog)
+    } else {
+        None
+    };
+    if let Some(o) = &_orch {
+        sys.push(' ');
+        sys.push_str(&o.note);
     }
 
     let mut args = claude::base_args(&meta.model, &sys);

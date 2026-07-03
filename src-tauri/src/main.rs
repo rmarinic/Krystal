@@ -2,6 +2,7 @@
 // so server-style logs are visible while developing).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod catalog;
 mod claude;
 mod commands;
 mod db;
@@ -42,6 +43,9 @@ fn main() {
             db::migrate_legacy_store(&dir, &db_path);
             let conn = db::open(&db_path).expect("open krystal.db");
             println!("  database: {}", db_path.display());
+            // Seed the model catalogue from the last cache (instant + offline);
+            // the frontend refreshes it live via `refresh_models` at boot.
+            let models = catalog::load_cache(&dir).unwrap_or_else(models::seed_models);
             app.manage(AppState {
                 db: std::sync::Mutex::new(conn),
                 caps,
@@ -49,11 +53,13 @@ fn main() {
                 discord: discord::Presence::new(),
                 running: std::sync::Mutex::new(std::collections::HashMap::new()),
                 data_dir: dir.clone(),
+                models: std::sync::Mutex::new(models),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
+            commands::refresh_models,
             commands::preflight,
             commands::install_claude,
             commands::update_claude,
@@ -70,6 +76,7 @@ fn main() {
             commands::delete_thread,
             commands::set_model,
             commands::set_mode,
+            commands::set_orchestration,
             commands::clear_thread,
             commands::rename_thread,
             commands::search_messages,

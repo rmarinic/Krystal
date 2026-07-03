@@ -70,6 +70,13 @@ function createPicker(root, { items, value, tag, up, right, onChange }) {
 let modelSel = null;
 let modeSel = null;
 
+// Localized blurb for a model: prefer a per-id string, then a per-tier string,
+// then the backend-derived blurb. Dynamic (fetched) models fall through to the
+// tier or backend copy since they have no hardcoded per-id entry.
+function modelBlurb(m) {
+  return tr('modelblurb.' + m.id, null, tr('modeltier.' + (m.tier || ''), null, m.blurb || ''));
+}
+
 // Build (or rebuild) both pickers from the cached config, localizing the tags,
 // model blurbs and mode names/blurbs. Rebuilding is how a language switch
 // re-translates them; the current selection is preserved.
@@ -79,12 +86,13 @@ function buildPickers() {
   modelSel = createPicker(els.modelPicker, {
     tag: tr('model.tag'),
     items: state.models.map((m) => ({
-      value: m.id, name: m.name, blurb: tr('modelblurb.' + m.id, null, m.blurb),
+      value: m.id, name: m.name, blurb: modelBlurb(m),
     })),
     value: curModel,
     onChange: async (v) => {
       if (!state.activeId) return;
       await api.setModel(state.activeId, v);
+      if (typeof orchReflectModel === 'function') orchReflectModel(v);  // keep orchestrator popover in step
       updateUsage(state.lastUsage, { silent: true });   // re-scale meter to new window
     },
   });
@@ -102,6 +110,7 @@ function buildPickers() {
       await api.setMode(state.activeId, v);
     },
   });
+  if (typeof buildOrchestrator === 'function') buildOrchestrator();   // keep the orchestrator popover in lock-step
 }
 
 async function populatePickers() {
@@ -110,6 +119,21 @@ async function populatePickers() {
     state.models = models || [];
     state.modes = modes || [];
     buildPickers();
+  } catch {}
+  refreshModelsLive();   // then pull the latest catalogue from the Models API
+}
+
+// Fetch the live Anthropic model list (backend hits GET /v1/models), adopt it,
+// and rebuild the pickers. Silent on failure — the cached/static list already
+// populated them, so offline or unauthenticated launches degrade gracefully.
+async function refreshModelsLive() {
+  try {
+    const r = await api.refreshModels();
+    if (r && Array.isArray(r.models) && r.models.length) {
+      state.models = r.models;
+      buildPickers();                                     // preserves the current selection
+      if (state.activeId) updateUsage(state.lastUsage, { silent: true });  // re-scale meter
+    }
   } catch {}
 }
 

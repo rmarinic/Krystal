@@ -25,6 +25,10 @@ pub struct ThreadMeta {
     pub model: String,
     pub mode: String,
     pub seed: Option<String>,
+    /// Orchestrator mode: run `model` as a supervisor that delegates to workers.
+    pub orch: bool,
+    /// Worker sub-agent model when orchestrating, or `auto` to let it choose.
+    pub orch_sub: String,
 }
 
 /// ISO-8601 millisecond timestamp, matching JS `new Date().toISOString()`.
@@ -48,6 +52,8 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
           session_id TEXT,
           model      TEXT,
           mode       TEXT DEFAULT 'auto',
+          orch       INTEGER DEFAULT 0,
+          orch_sub   TEXT DEFAULT 'auto',
           seed       TEXT,
           turns      INTEGER DEFAULT 0,
           in_tok     INTEGER DEFAULT 0,
@@ -96,6 +102,8 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     // Errors (e.g. column already present) are intentionally ignored.
     let _ = conn.execute("ALTER TABLE messages ADD COLUMN segments TEXT", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN mode TEXT DEFAULT 'auto'", []);
+    let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch_sub TEXT DEFAULT 'auto'", []);
 
     let json_file = db_path
         .parent()
@@ -284,7 +292,7 @@ pub fn list_threads(conn: &Connection, project: Option<&str>) -> Vec<Value> {
 
 pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
     conn.query_row(
-        "SELECT id,title,cwd,session_id,model,mode,seed FROM threads WHERE id = ?1",
+        "SELECT id,title,cwd,session_id,model,mode,seed,orch,orch_sub FROM threads WHERE id = ?1",
         [id],
         |r| {
             Ok(ThreadMeta {
@@ -299,6 +307,10 @@ pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
                     .get::<_, Option<String>>(5)?
                     .unwrap_or_else(|| DEFAULT_MODE.to_string()),
                 seed: r.get(6)?,
+                orch: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                orch_sub: r
+                    .get::<_, Option<String>>(8)?
+                    .unwrap_or_else(|| "auto".to_string()),
             })
         },
     )
@@ -310,7 +322,7 @@ pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
 pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
     let mut meta = conn
         .query_row(
-            "SELECT id,title,cwd,session_id,model,mode,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at
+            "SELECT id,title,cwd,session_id,model,mode,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at,orch,orch_sub
              FROM threads WHERE id = ?1",
             [id],
             |r| {
@@ -328,6 +340,8 @@ pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
                     ),
                     "createdAt": r.get::<_, Option<String>>(12)?,
                     "updatedAt": r.get::<_, Option<String>>(13)?,
+                    "orch": r.get::<_, Option<i64>>(14)?.unwrap_or(0) != 0,
+                    "orchSub": r.get::<_, Option<String>>(15)?.unwrap_or_else(|| "auto".to_string()),
                 }))
             },
         )
@@ -389,6 +403,13 @@ pub fn set_model(conn: &Connection, id: &str, model: &str) {
 
 pub fn set_mode(conn: &Connection, id: &str, mode: &str) {
     let _ = conn.execute("UPDATE threads SET mode = ?1 WHERE id = ?2", params![mode, id]);
+}
+
+pub fn set_orchestration(conn: &Connection, id: &str, orch: bool, sub_model: &str) {
+    let _ = conn.execute(
+        "UPDATE threads SET orch = ?1, orch_sub = ?2 WHERE id = ?3",
+        params![orch as i64, sub_model, id],
+    );
 }
 
 pub fn set_seed(conn: &Connection, id: &str, seed: Option<&str>) {

@@ -23,6 +23,10 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Fetch the live Anthropic model catalogue (GET /v1/models) so the picker stays
+# current. rustls (no native TLS dep); reqwest is already in the tree via the
+# updater plugin, so this adds little. Only used for the models catalogue.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync"] }
 uuid = { version = "1", features = ["v4"] }
