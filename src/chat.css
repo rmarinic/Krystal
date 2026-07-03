@@ -341,6 +341,14 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .file-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-chip .x { cursor: pointer; color: var(--fg-dim); font-weight: 700; }
 .file-chip .x:hover { color: var(--warn); }
+/* Image attachments carry a small thumbnail that fades in once decoded. */
+.file-chip.img { padding-left: 3px; }
+.file-chip.img img {
+  width: 24px; height: 24px; border-radius: 6px; object-fit: cover;
+  display: block; opacity: 0; transition: opacity .2s ease;
+}
+.file-chip.img.loaded img { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .file-chip.img img { transition: none; } }
 
 /* ---- Assistant transcript: text blocks + action chips ---- */
 
@@ -757,6 +765,64 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 }
 .composer-ref .ref-x:hover { color: #ff8a8a; }
 @keyframes ref-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ---- Attachments tray: pasted screenshots / dropped files above the input.
+   Mirrors the #-reference pills, with an optional thumbnail for images. ---- */
+.composer-atts {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-width: 880px; margin: 0 auto 8px;
+}
+.composer-att {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 3px 5px 3px 8px;
+  animation: att-in .22s cubic-bezier(.2,.9,.3,1.2);
+}
+.composer-att.img { padding-left: 4px; }
+.composer-att .att-thumb {
+  width: 26px; height: 26px; border-radius: 999px; object-fit: cover;
+  border: 1px solid var(--border-2);
+}
+.composer-att .att-ico { font-size: 14px; line-height: 1; }
+.composer-att .att-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-att.failed { border-color: rgba(255,120,120,0.5); color: #ff9a9a; }
+.composer-att.failed .att-name { text-decoration: line-through; }
+.composer-att .att-x {
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.composer-att .att-x:hover { color: #ff8a8a; }
+@keyframes att-in { from { opacity: 0; transform: translateY(3px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
+   hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
+.chat { position: relative; }
+.drop-hint {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4,7,5,0.55); backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity .18s ease; pointer-events: none;
+}
+.drop-hint.on { opacity: 1; }
+.drop-hint-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px 40px;
+  border: 2px dashed var(--accent-2); border-radius: 18px;
+  background: rgba(108,199,142,0.08);
+  transform: translateY(8px) scale(.98); transition: transform .2s cubic-bezier(.2,.9,.3,1.2);
+}
+.drop-hint.on .drop-hint-card { transform: none; }
+.drop-hint-ico { font-size: 34px; line-height: 1; filter: drop-shadow(0 0 12px rgba(108,199,142,0.45)); }
+.drop-hint-text {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.04em; color: var(--accent-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-att { animation: none; }
+  .drop-hint, .drop-hint-card { transition: none; }
+}
 
 /* The # autocomplete floats just above the input row. */
 .mention-pop {

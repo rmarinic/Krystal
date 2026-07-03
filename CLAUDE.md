@@ -29,6 +29,7 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - `src/app/messages.js` — assistant transcript building blocks: action chips (expand/diff/output), plan & AskUserQuestion cards, `renderSegments`.
 - `src/app/stream.js` — composer input/autosize, the typewriter (`makeTyper`), concurrent per-thread streaming (`state.live`), `send`/stop.
 - `src/app/mentions.js` — `#`-reference another chat from the composer: a `#` autocomplete over the project's chats, reference pills above the input, and `resolveComposerRefs` → thread ids passed as `refs` to the `chat` command (backend folds the referenced transcripts into the prompt as background context).
+- `src/app/attachments.js` — attach files by **paste or drag-and-drop** (no upload button): Ctrl+V a clipboard image (persisted to `<app_data_dir>/attachments/` via the `save_attachment` backend command) or drop files onto the window (Tauri drag-drop event → real paths). Queued as pills above the input; on send their paths ride along as `files` to the `chat` command (backend's `build_prompt` tells Claude to Read them — Claude Code reads images natively). Image chips get a thumbnail via `read_image`.
 - `src/app/wizard.js` — Initialize wizard state machine (brief → analyze → questions → review → save) + the CLAUDE.md editor.
 - `src/app/localization.js` — EN/HR flag toggle; re-renders dynamic surfaces on language change.
 - `src/app/settings.js` — Discord presence + the Settings modal (tabs, feature switches, persisted in localStorage).

@@ -241,8 +241,14 @@ function appendMessage(role, text, files, meta) {
   const roleLabel = shell ? tr('shell.role') : (role === 'user' ? tr('msg.you') : tr('msg.claude'));
   let chips = '';
   if (files && files.length) {
-    chips = '<div class="file-chips">' + files.map((f) =>
-      `<span class="file-chip"><span class="name">${escapeHtml(basename(f))}</span></span>`).join('') + '</div>';
+    chips = '<div class="file-chips">' + files.map((f) => {
+      const nm = escapeHtml(basename(f));
+      // Image attachments get a small thumbnail (loaded lazily below).
+      if (isImageFile(f)) {
+        return `<span class="file-chip img" data-img="${escapeHtml(f)}"><img alt="" loading="lazy"><span class="name">${nm}</span></span>`;
+      }
+      return `<span class="file-chip"><span class="name">${nm}</span></span>`;
+    }).join('') + '</div>';
   }
   const star = (role === 'assistant' && !shell)
     ? `<button class="star${meta && meta.favorite ? ' on' : ''}"${meta && meta.id ? '' : ' disabled'} title="${tr('msg.saveReply')}">★</button>`
@@ -262,7 +268,26 @@ function appendMessage(role, text, files, meta) {
     bubble.textContent = text;
   }
   els.feed.appendChild(div);
+  if (files && files.length) loadFileChipThumbs(div);
   return div;
+}
+
+// File paths that point at an image — used to give attachment chips a thumbnail.
+const CHIP_IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+function isImageFile(p) { return CHIP_IMAGE_RE.test(p || ''); }
+
+/* Lazily fill image file-chips with a thumbnail, read back through the backend as
+   a data URL (same path as the tool-chip previews — no asset-scope config). */
+function loadFileChipThumbs(container) {
+  container.querySelectorAll('.file-chip.img[data-img]').forEach((chip) => {
+    const path = chip.dataset.img;
+    delete chip.dataset.img;                    // load once
+    const img = chip.querySelector('img');
+    api.readImage(path).then((src) => {
+      if (src) { img.src = src; chip.classList.add('loaded'); }
+      else chip.classList.remove('img');        // fall back to a plain name chip
+    }).catch(() => chip.classList.remove('img'));
+  });
 }
 
 async function toggleStar(div, btn) {

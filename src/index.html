@@ -129,6 +129,14 @@
       </div>
     </header>
 
+    <!-- Drag-and-drop hint: fades in over the chat while files hover the window. -->
+    <div class="drop-hint" id="drop-hint" hidden>
+      <div class="drop-hint-card">
+        <div class="drop-hint-ico" aria-hidden="true">📎</div>
+        <div class="drop-hint-text" data-i18n="attach.dropHint">Drop to attach</div>
+      </div>
+    </div>
+
     <div class="feed" id="feed">
       <div class="empty-state" id="empty-state">
         <div class="empty-mark">K</div>
@@ -152,11 +160,14 @@
       <!-- Chats the message #-references (added via the # autocomplete). Their
            transcripts ride along as background context for this turn. -->
       <div class="composer-refs" id="composer-refs" hidden></div>
+      <!-- Pasted screenshots / dropped files queued for the next message. No
+           upload button by design: attach by pasting (Ctrl+V) or drag-and-drop. -->
+      <div class="composer-atts" id="composer-attachments" hidden></div>
       <div class="composer-row">
         <span class="shell-badge" data-i18n="shell.badge" aria-hidden="true">shell mode · runs in the project folder</span>
         <!-- # autocomplete: pick an earlier chat to reference -->
         <div class="mention-pop" id="mention-pop" hidden></div>
-        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · $ for a shell command · # to reference a chat)"></textarea>
+        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)"></textarea>
         <button class="send-btn" id="send-btn" title="Send"></button>
       </div>
       <!-- Tiny git status line: current branch + working-tree changes. Hidden
@@ -325,6 +336,7 @@
   <script defer src="app/messages.js"></script>
   <script defer src="app/stream.js"></script>
   <script defer src="app/mentions.js"></script>
+  <script defer src="app/attachments.js"></script>
   <script defer src="app/wizard.js"></script>
   <script defer src="app/localization.js"></script>
   <script defer src="app/settings.js"></script>

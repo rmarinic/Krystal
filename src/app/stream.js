@@ -348,7 +348,8 @@ function handleLiveEvent(live, msg) {
 async function send() {
   const raw = els.input.value;
   const text = raw.trim();
-  if (!text || state.streaming || !state.activeId) return;
+  const hasAtts = typeof hasComposerAttachments === 'function' && hasComposerAttachments();
+  if ((!text && !hasAtts) || state.streaming || !state.activeId) return;
 
   // `$ …` runs a shell command directly, outside Claude.
   if (isShellInput(raw)) { runShellCommand(shellCommandOf(raw).trim()); return; }
@@ -356,14 +357,19 @@ async function send() {
   const threadId = state.activeId;   // capture: the active view may change mid-stream
   // Resolve any #-referenced chats to thread ids (background context), then reset.
   const refs = typeof resolveComposerRefs === 'function' ? resolveComposerRefs(text) : [];
+  // Pasted/dropped attachments become file paths Claude is told to Read. Awaits
+  // any in-flight save of a just-pasted screenshot so its path is ready.
+  const files = typeof collectAttachmentPaths === 'function' ? await collectAttachmentPaths() : [];
+  if (!text && !files.length) return;   // everything (e.g. a failed paste) dropped out
 
   // render the user message + clear composer. Sending re-engages auto-follow
   // (you want to watch the new reply), even if you'd scrolled up earlier.
   stickToBottom = true;
   state.seed = null;                 // this turn folds the compaction summary back in
-  appendMessage('user', text, null);
+  appendMessage('user', text, files, null);
   els.input.value = '';
   if (typeof clearComposerRefs === 'function') clearComposerRefs();
+  if (typeof clearComposerAttachments === 'function') clearComposerAttachments();
   autosize();
   scrollFeed();
 
@@ -371,7 +377,7 @@ async function send() {
   // activity array IS the active thread's list (same ref), so tool chips keep
   // flowing into the Activity panel and survive switching away and back.
   const live = {
-    threadId, userText: text, userFiles: null,
+    threadId, userText: text, userFiles: files,
     events: [], activity: state.activity, outputs: {},
     typer: null, bubble: null, finalText: null, finalized: false,
   };
@@ -390,7 +396,7 @@ async function send() {
     // not by the active view, so the reply always lands in `threadId`.
     const channel = new Channel();
     channel.onmessage = (msg) => handleLiveEvent(live, msg);
-    await invoke('chat', { threadId, text, refs, onEvent: channel });
+    await invoke('chat', { threadId, text, refs, files, onEvent: channel });
   } catch (e) {
     if (live.typer) live.typer.error(String(e && e.message || e));
     finishLive(live);

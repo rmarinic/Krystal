@@ -140,6 +140,52 @@ pub fn open_external(url: String) -> CmdResult {
     Ok(json!({ "ok": true }))
 }
 
+/// Open a URL in a native child webview window — the in-app browser. Unlike an
+/// embedded `<iframe>`, a top-level webview is not subject to the page's
+/// `X-Frame-Options` / `Content-Security-Policy: frame-ancestors` headers, so
+/// sites like YouTube/Google/X that refuse to be framed (the old iframe viewer
+/// showed "Refused to connect") load correctly here. Validated to http(s) only.
+///
+/// The window is a standalone top-level window outside the main window's
+/// capability scope (the `default` capability targets only `"main"`), so the
+/// page it loads gets no access to Krystal's IPC — showing arbitrary sites is
+/// safe. A single reusable window is kept: reopening navigates it instead of
+/// stacking new windows.
+#[tauri::command]
+pub fn open_webview(app: tauri::AppHandle, url: String) -> CmdResult {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    let parsed = tauri::Url::parse(&url).map_err(|_| "invalid link".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("refused to open this link".into());
+    }
+    let title = format!(
+        "Krystal — {}",
+        parsed.host_str().unwrap_or("link")
+    );
+
+    const LABEL: &str = "linkview";
+    if let Some(win) = app.get_webview_window(LABEL) {
+        win.navigate(parsed)
+            .map_err(|e| format!("could not open the link: {e}"))?;
+        let _ = win.set_title(&title);
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(json!({ "ok": true }));
+    }
+
+    WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(parsed))
+        .title(title)
+        .inner_size(1100.0, 820.0)
+        .min_inner_size(480.0, 360.0)
+        .center()
+        .focused(true)
+        .build()
+        .map_err(|e| format!("could not open the link: {e}"))?;
+
+    Ok(json!({ "ok": true }))
+}
+
 /// Absolute path of the running executable. The self-updater uses it to detect
 /// when the copy being launched isn't the one the installer updates (e.g. the app
 /// runs from a custom/portable folder), so it can break the "re-installs the same
@@ -190,6 +236,86 @@ pub fn read_image(path: String) -> String {
         Ok(bytes) => format!("data:{};base64,{}", mime, base64_encode(&bytes)),
         Err(_) => String::new(),
     }
+}
+
+/// Save a pasted/dropped attachment (e.g. a screenshot from the clipboard) into
+/// the app's `attachments/` folder and return its absolute path, so the frontend
+/// can hand that path to the `chat` command like any other referenced file —
+/// Claude Code reads image files natively. Bytes arrive base64-encoded (textual
+/// IPC), so a clipboard paste survives the round-trip unchanged.
+#[tauri::command]
+pub fn save_attachment(state: State<'_, AppState>, name: String, data_base64: String) -> CmdResult {
+    const MAX: usize = 24 * 1024 * 1024; // 24 MB — pasted screenshots, not big uploads
+    let bytes = base64_decode(&data_base64).ok_or("could not read the pasted data")?;
+    if bytes.is_empty() {
+        return Err("empty attachment".into());
+    }
+    if bytes.len() > MAX {
+        return Err("attachment is too large".into());
+    }
+    let dir = state.data_dir.join("attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // A monotonic-ish, collision-resistant filename: <millis>-<sanitized name>.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let safe = sanitize_filename(&name);
+    let path = dir.join(format!("{stamp}-{safe}"));
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(json!({ "path": path.to_string_lossy() }))
+}
+
+/// Reduce a suggested filename to a safe leaf: strip any directory parts and keep
+/// only sane characters, so a hostile clipboard name can't escape the folder.
+fn sanitize_filename(name: &str) -> String {
+    let leaf = name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(name);
+    let cleaned: String = leaf
+        .chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').to_string();
+    if cleaned.is_empty() {
+        "attachment.png".into()
+    } else {
+        cleaned.chars().take(120).collect()
+    }
+}
+
+/// Minimal standard-base64 decoder (the mirror of `base64_encode`). Ignores
+/// whitespace and an optional `data:` prefix; returns None on malformed input.
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    // Accept a full "data:...;base64,<payload>" URL as well as a bare payload.
+    let payload = match input.split_once("base64,") {
+        Some((_, p)) => p,
+        None => input,
+    };
+    let val = |c: u8| -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(payload.len() / 4 * 3);
+    let mut acc = 0u32;
+    let mut bits = 0u32;
+    for &b in payload.as_bytes() {
+        if b == b'=' || b.is_ascii_whitespace() {
+            continue;
+        }
+        let v = val(b)?;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Some(out)
 }
 
 /// Minimal standard-base64 encoder (no padding shortcuts) — keeps the image

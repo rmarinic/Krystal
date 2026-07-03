@@ -72,9 +72,12 @@
       'clear.btnTitle': 'Start fresh: Claude forgets this chat',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Message Claude…  (Enter to send · $ for a shell command · # to reference a chat)',
+      'composer.placeholder': 'Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)',
       'mention.none': 'No other chats to reference yet',
       'mention.removeRef': 'Remove reference',
+      'attach.remove': 'Remove attachment',
+      'attach.dropHint': 'Drop to attach',
+      'attach.failed': 'Couldn’t attach',
       'empty.title': 'Start a conversation',
       'empty.body': 'This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically.',
       'empty.newChat': '▸ New chat',
@@ -495,9 +498,12 @@
       'clear.btnTitle': 'Počni iznova: Claude zaboravlja ovaj razgovor',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje · $ za shell naredbu · # za referencu razgovora)',
+      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje · $ za shell naredbu · # za referencu razgovora · zalijepi ili ispusti za privitak)',
       'mention.none': 'Još nema drugih razgovora za referenciranje',
       'mention.removeRef': 'Ukloni referencu',
+      'attach.remove': 'Ukloni privitak',
+      'attach.dropHint': 'Ispusti za privitak',
+      'attach.failed': 'Nije moguće priložiti',
       'empty.title': 'Započni razgovor',
       'empty.body': 'Ovaj projekt je spreman. Pokreni razgovor s “▸ novi razgovor” u bočnoj traci ili otvori jedan s popisa. Claude može sam čitati sve u mapi projekta.',
       'empty.newChat': '▸ Novi razgovor',

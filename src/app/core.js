@@ -9,8 +9,8 @@
  *
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → search →
- *   messages → stream → mentions → wizard → localization → settings → tasks →
- *   git → links → logo → boot
+ *   messages → stream → mentions → attachments → wizard → localization →
+ *   settings → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -44,6 +44,8 @@ const els = {
   input: $('#input'),
   sendBtn: $('#send-btn'),
   composerRefs: $('#composer-refs'),
+  attachTray: $('#composer-attachments'),
+  dropHint: $('#drop-hint'),
   mentionPop: $('#mention-pop'),
   chatTools: $('#chat-tools'),
   modelPicker: $('#model-picker'),
@@ -168,11 +170,13 @@ const api = {
   gitPull(cwd) { return invoke('git_pull', { cwd }); },
   gitPush(cwd) { return invoke('git_push', { cwd }); },
   openExternal(url) { return invoke('open_external', { url }); },
+  openWebview(url) { return invoke('open_webview', { url }); },
   claudeMdExists(cwd) { return invoke('claude_md_exists', { cwd }); },
   claudeUsage(weeklyReset) { return invoke('claude_usage', { weeklyReset }); },
   preflight() { return invoke('preflight'); },
   appVersion() { return invoke('app_version'); },
   readImage(path) { return invoke('read_image', { path }); },
+  saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
 };
 
