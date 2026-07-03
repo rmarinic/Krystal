@@ -70,34 +70,16 @@ function askOpenLink(href) {
   });
 }
 
-/* In-app viewer: an iframe with a top bar carrying a prominent Back button (so
- * you're never trapped) and an "Open in browser" escape hatch. */
-let linkView = null;
+/* In-app viewer: a native child webview window. Unlike an embedded iframe, a
+ * top-level webview isn't subject to a site's X-Frame-Options / frame-ancestors
+ * headers, so pages like YouTube that refuse to be framed (which used to show
+ * "Refused to connect") open correctly here. It's a standalone window with its
+ * own chrome; on failure we fall back to the default browser. */
 function openLinkInApp(href) {
-  closeLinkView();
-  const v = document.createElement('div');
-  v.className = 'link-view';
-  v.innerHTML =
-    `<div class="link-view-bar">` +
-      `<button class="link-back" title="${escapeHtml(tr('link.back'))}">${escapeHtml(tr('link.back'))}</button>` +
-      `<span class="link-view-url">${escapeHtml(href)}</span>` +
-      `<button class="link-view-ext">${escapeHtml(tr('link.openBrowser'))}</button>` +
-    `</div>` +
-    `<div class="link-view-body"><iframe class="link-frame" referrerpolicy="no-referrer"></iframe></div>`;
-  document.body.appendChild(v);
-  linkView = v;
-  v.querySelector('.link-frame').src = href;
-  v.querySelector('.link-back').onclick = closeLinkView;
-  v.querySelector('.link-view-ext').onclick = () => { closeLinkView(); openExternalUrl(href); };
-  requestAnimationFrame(() => v.classList.add('show'));
+  api.openWebview(href).catch((e) => {
+    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('link.failLabel'),
+      body: escapeHtml(String((e && e.message) || e)) });
+    openExternalUrl(href);
+  });
 }
-function closeLinkView() {
-  if (!linkView) return;
-  const v = linkView; linkView = null;
-  v.classList.remove('show');
-  setTimeout(() => v.remove(), 220);
-}
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && linkView) closeLinkView();
-});
 
