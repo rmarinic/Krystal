@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::models::{
-    looks_like_model_id, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
+    is_safe_model_arg, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
     ORCH_FAST_MODEL, SUB_MODEL_AUTO, TITLE_MODEL,
 };
 
@@ -353,11 +353,17 @@ pub fn base_args(model: &str, sys_prompt: &str) -> Vec<String> {
         "--append-system-prompt".into(),
         sys_prompt.to_string(),
     ];
-    // Accept any well-formed Claude id (the catalogue is dynamic — see
-    // `catalog.rs` — so we can't gate on a hardcoded list here).
-    if looks_like_model_id(model) {
+    // Always honour the caller's exact model selection. `model` reaches the CLI
+    // as a real argv entry (never a shell string), so we forward *any* usable id
+    // — including dynamic catalogue shapes we never hardcoded (see `catalog.rs`).
+    // The only ids we can't pass are empty or whitespace/control-laden ones; if
+    // one slips through we log it rather than silently drop `--model` and let the
+    // CLI fall back to its own default (which would NOT be what the user picked).
+    if is_safe_model_arg(model) {
         args.push("--model".into());
         args.push(model.to_string());
+    } else if !model.is_empty() {
+        eprintln!("krystal: refusing to forward malformed model id {model:?}; claude will use its default");
     }
     args
 }
@@ -1453,6 +1459,23 @@ fn main() {}
         let args = vec!["-p".to_string(), "--verbose".to_string()];
         let (out, _guard) = spill_system_prompt(&args);
         assert_eq!(out, args);
+    }
+
+    #[test]
+    fn base_args_forwards_the_selected_model_verbatim() {
+        // The exact id the user picked must ride through as `--model <id>`.
+        let args = base_args("claude-opus-4-8", "sys");
+        let i = args.iter().position(|a| a == "--model").expect("--model present");
+        assert_eq!(args[i + 1], "claude-opus-4-8");
+
+        // A dynamic id we never hardcoded is still forwarded (no prefix gating).
+        let args = base_args("some-future-model-9", "sys");
+        let i = args.iter().position(|a| a == "--model").expect("--model present");
+        assert_eq!(args[i + 1], "some-future-model-9");
+
+        // Only an un-forwardable id is dropped — never a real selection.
+        let args = base_args("bad id", "sys");
+        assert!(!args.iter().any(|a| a == "--model"));
     }
 
     #[test]

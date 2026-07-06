@@ -43,12 +43,18 @@ pub fn is_valid_model(id: &str) -> bool {
     MODELS.iter().any(|m| m.id == id)
 }
 
-/// A conservative shape check for a Claude model id, used to decide whether to
-/// pass `--model` to the CLI for a *dynamically-fetched* id we didn't hardcode.
-pub fn looks_like_model_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.starts_with("claude-")
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '@'))
+/// Whether `id` is safe to forward verbatim as a `claude --model` argument.
+///
+/// We must honour the user's exact selection, so this is deliberately permissive:
+/// it accepts *any* non-empty id — including future id shapes the live catalogue
+/// might surface that we never hardcoded — and rejects only ids that can't be a
+/// real model id anyway (empty, or containing whitespace/control chars). Because
+/// args are passed as a real argv entry (never through a shell), there is no
+/// injection surface to guard against beyond that. Requiring a `claude-` prefix
+/// here would risk silently dropping `--model` and falling back to the CLI's
+/// default — the one thing we never want.
+pub fn is_safe_model_arg(id: &str) -> bool {
+    !id.is_empty() && !id.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 /// The static list as owned `ModelInfo`s — the seed/fallback for the catalogue.
@@ -184,13 +190,16 @@ mod tests {
     }
 
     #[test]
-    fn looks_like_model_id_accepts_real_ids_only() {
-        assert!(looks_like_model_id("claude-opus-4-8"));
-        assert!(looks_like_model_id("claude-haiku-4-5-20251001"));
-        assert!(looks_like_model_id("claude-opus-4-5@20251101"));
-        assert!(!looks_like_model_id("gpt-4"));
-        assert!(!looks_like_model_id(""));
-        assert!(!looks_like_model_id("claude opus; rm -rf")); // no spaces/semicolons
+    fn is_safe_model_arg_forwards_any_reasonable_id() {
+        // Real ids — and any future shape — must be forwarded verbatim.
+        assert!(is_safe_model_arg("claude-opus-4-8"));
+        assert!(is_safe_model_arg("claude-haiku-4-5-20251001"));
+        assert!(is_safe_model_arg("claude-opus-4-5@20251101"));
+        assert!(is_safe_model_arg("some-future-model-9")); // no claude- prefix required
+        // Only genuinely un-forwardable ids are refused.
+        assert!(!is_safe_model_arg(""));
+        assert!(!is_safe_model_arg("claude opus")); // whitespace
+        assert!(!is_safe_model_arg("claude\n4"));   // control char
     }
 
     #[test]
