@@ -331,6 +331,21 @@ function handleLiveEvent(live, msg) {
     // header if this thread is on screen, and the sidebar regardless.
     if (live.threadId === state.activeId) els.title.textContent = msg.title;
     if (state.view === 'threads') loadThreads();
+  } else if (event === 'agent_progress') {
+    // Live sub-agent progress: fold into the matching running Task entry so the
+    // Activity panel shows what the worker is doing, not just "Running…".
+    live.events.push(msg);
+    trackAgentProgress(live.activity, msg, active);
+  } else if (event === 'orchestration') {
+    // End-of-turn orchestrator savings summary: how the turn's tokens split
+    // between the premium supervisor and its cheaper workers. Stash on the turn
+    // (survives switching away/back) and, if on screen, surface in the Activity panel.
+    live.orch = msg;
+    if (active) {
+      state.activityOrch = msg;
+      if (typeof refreshActivityBtn === 'function') refreshActivityBtn();
+      if (typeof refreshActivityPanel === 'function') refreshActivityPanel();
+    }
   } else if (event === 'tasks') {
     // Claude added/edited tasks via the snapshot file this turn — refresh the UI.
     if (typeof onTasksSynced === 'function') onTasksSynced(msg);

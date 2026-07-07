@@ -401,8 +401,25 @@ impl Drop for OrchestratorGuard {
 pub struct Orchestration {
     /// Appended (single line) to the system prompt for this turn.
     pub note: String,
+    /// Tools the orchestrator itself is barred from calling this turn (passed as
+    /// `--disallowedTools`). See `ORCH_DENIED_TOOLS`.
+    pub disallowed_tools: Vec<String>,
     _guard: OrchestratorGuard,
 }
+
+/// The file/exec/search/fetch surface the orchestrator is forbidden from touching
+/// itself. Denying these (via `--disallowedTools`) leaves it only `Task` (to
+/// delegate) plus the tool-free planning tools, so every concrete action is forced
+/// onto a cheap worker — a hard wall the prompt note alone can't guarantee.
+///
+/// Verified against the `claude` CLI (v2.1.x): the deny bites even under
+/// `--dangerously-skip-permissions`, and — crucially — it does NOT propagate to
+/// the Task sub-agents, so workers keep their full toolset. Blocking only `Read`
+/// is useless (the model just `cat`s the file via `Bash`), hence the full set.
+pub const ORCH_DENIED_TOOLS: &[&str] = &[
+    "Read", "Write", "Edit", "NotebookEdit",
+    "Bash", "Grep", "Glob", "WebFetch", "WebSearch",
+];
 
 static ORCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -415,7 +432,7 @@ fn claude_agents_dir() -> Option<PathBuf> {
 /// sub-agent's model; the body is its (deliberately generic, full-tool) brief —
 /// we never restrict a worker's toolset. Returns the path on success.
 fn write_worker_agent(dir: &std::path::Path, name: &str, description: &str, model: &str) -> Option<PathBuf> {
-    const BODY: &str = "You are a worker sub-agent operating under an orchestrator. Carry out the delegated task end-to-end with your full toolset, then return a tight, complete result the orchestrator can use directly. Be thorough but concise, and don't hand work back with questions unless you are genuinely blocked.";
+    const BODY: &str = "You are a worker sub-agent operating under an orchestrator. Carry out the delegated task end-to-end with your full toolset. If you changed anything, verify it before returning — compile/build, run the relevant tests, or re-read what you edited — and report what you checked and the result. Then return a tight, complete result the orchestrator can use directly. Be thorough but concise, and don't hand work back with questions unless you are genuinely blocked.";
     let path = dir.join(format!("{name}.md"));
     let content = format!("---\nname: {name}\ndescription: {description}\nmodel: {model}\n---\n{BODY}\n");
     std::fs::write(&path, content).ok()?;
@@ -469,18 +486,19 @@ pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<O
         files.push(write_worker_agent(&dir, &bal, "Balanced worker for typical coding, analysis and writing tasks.", &bal_id)?);
         files.push(write_worker_agent(&dir, &deep, "Most-capable worker, for genuinely hard reasoning tasks.", &deep_id)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — conserve budget by delegating the heavy lifting to worker sub-agents via the Task tool instead of doing it yourself. For any substantial, well-scoped unit of work (searching or reading many files, running commands, implementing edits, drafting content, research), dispatch it to a worker, choosing the cheapest one that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). Keep your own turns focused on understanding the request, planning, dispatching, reviewing results, and writing the final answer; do the work yourself only when it is trivial or delegation would add pointless overhead.",
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to a worker sub-agent via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. For each task pick the cheapest worker that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). After a worker reports back changes, dispatch a quick verification task to `{fast}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Those tools are, in fact, turned off for you this turn — trying to call them will just fail, so route everything through Task from the start.",
         )
     } else {
         let name = format!("krystal-worker-{tag}");
         files.push(write_worker_agent(&dir, &name, "Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — conserve budget by delegating the heavy lifting to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool instead of doing it yourself. For any substantial, well-scoped unit of work (searching or reading many files, running commands, implementing edits, drafting content, research), dispatch it to `{name}`, launching independent pieces in parallel (multiple Task calls in a single turn). Keep your own turns focused on understanding the request, planning, dispatching, reviewing results, and writing the final answer; do the work yourself only when it is trivial or delegation would add pointless overhead.",
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. Launch independent pieces in parallel (multiple Task calls in a single turn). After `{name}` reports back changes, dispatch a quick verification task to `{name}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Those tools are, in fact, turned off for you this turn — trying to call them will just fail, so route everything through Task from the start.",
             mname = resolve_model_name(catalog, sub_model),
         )
     };
 
-    Some(Orchestration { note, _guard: OrchestratorGuard(files) })
+    let disallowed_tools = ORCH_DENIED_TOOLS.iter().map(|s| s.to_string()).collect();
+    Some(Orchestration { note, disallowed_tools, _guard: OrchestratorGuard(files) })
 }
 
 /// Assemble the prompt fed over stdin. Mirrors `buildPrompt` in server.js.
@@ -694,6 +712,17 @@ pub struct ChatResult {
     pub usage: Option<Value>,
     pub cost_usd: f64,
     pub is_error: bool,
+    /// The main/orchestrator model for this turn (from the `init` event). Any
+    /// assistant message on a *different* model is a delegated worker.
+    pub main_model: Option<String>,
+    /// Per-assistant-message token tally, keyed by message id so the duplicate
+    /// emissions the CLI makes under `--include-partial-messages` are deduped
+    /// (last write wins — the pair is identical). Value is `(model id, billable
+    /// tokens)`, where billable = input + output + cache_creation (the cheap
+    /// cache *reads* are excluded so the split reflects real work, not the
+    /// orchestrator re-reading the resumed conversation). Summed per model into
+    /// the orchestrator savings readout at end of turn.
+    pub msg_usage: HashMap<String, (String, u64)>,
 }
 
 impl ChatResult {
@@ -878,6 +907,7 @@ pub async fn run_chat_stream(
     channel: &Channel<Value>,
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
+    orchestrating: bool,
 ) -> Result<ChatResult, String> {
     let (args, _sys_file) = spill_system_prompt(args);
     let mut child = claude_command(bin, &args, cwd)
@@ -928,6 +958,12 @@ pub async fn run_chat_stream(
     // ended without a trailing text block to trigger the per-block flush).
     ask.flush(&mut result, channel);
 
+    // Orchestrator turns: surface how the turn's tokens split between the premium
+    // supervisor and the cheaper workers it delegated to.
+    if orchestrating {
+        emit_orchestration_summary(&mut result, channel);
+    }
+
     // If the answer arrived only via the final `result` event (no streamed text
     // deltas), still expose it as one text segment so the transcript isn't empty.
     if result.segments.is_empty() && !result.final_text.trim().is_empty() {
@@ -950,6 +986,92 @@ pub async fn run_chat_stream(
         let _ = channel.send(json!({ "type": "error", "message": msg }));
     }
     Ok(result)
+}
+
+/// Forward one sub-agent lifecycle event (`task_started`/`task_progress`/
+/// `task_updated`) to the frontend as a compact `agent_progress` message. Keyed
+/// by `id` (the Task's `tool_use_id`) so the Activity panel can match it to the
+/// running Task chip. Live-only — the Task's final output is persisted separately
+/// via its `tool_result`, so nothing here needs to touch `ChatResult`.
+fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {
+    let id = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+    if id.is_empty() {
+        return;
+    }
+    let phase = match ev.get("subtype").and_then(|v| v.as_str()) {
+        Some("task_started") => "started",
+        _ => "progress",
+    };
+    let usage = ev.get("usage");
+    let u = |k: &str| usage.and_then(|x| x.get(k)).and_then(|v| v.as_u64());
+    let mut msg = json!({ "type": "agent_progress", "id": id, "phase": phase });
+    if let Some(s) = ev.get("subagent_type").and_then(|v| v.as_str()) {
+        msg["subagent"] = json!(s);
+    }
+    if let Some(d) = ev.get("description").and_then(|v| v.as_str()) {
+        msg["description"] = json!(d);
+    }
+    if let Some(t) = ev.get("last_tool_name").and_then(|v| v.as_str()) {
+        msg["lastTool"] = json!(t);
+    }
+    if let Some(n) = u("tool_uses") {
+        msg["toolUses"] = json!(n);
+    }
+    if let Some(n) = u("total_tokens") {
+        msg["tokens"] = json!(n);
+    }
+    if let Some(n) = u("duration_ms") {
+        msg["durationMs"] = json!(n);
+    }
+    let _ = channel.send(msg);
+}
+
+/// Build the orchestrator savings readout from the per-model token tally and
+/// both persist it (as an `orchestration` segment, replayed into the Activity
+/// panel on reload) and stream it live. No-op unless the turn actually delegated
+/// — i.e. some tokens ran on a model other than the orchestrator's.
+fn emit_orchestration_summary(result: &mut ChatResult, channel: &Channel<Value>) {
+    let main = match &result.main_model {
+        Some(m) => m.clone(),
+        None => return,
+    };
+    // Fold the per-message tally into a per-model total.
+    let mut per_model: HashMap<String, u64> = HashMap::new();
+    for (model, toks) in result.msg_usage.values() {
+        *per_model.entry(model.clone()).or_insert(0) += toks;
+    }
+    let orch_tokens = per_model.get(&main).copied().unwrap_or(0);
+    let mut workers: Vec<(String, u64)> = per_model
+        .iter()
+        .filter(|(m, _)| **m != main)
+        .map(|(m, t)| (m.clone(), *t))
+        .collect();
+    let worker_tokens: u64 = workers.iter().map(|(_, t)| t).sum();
+    // Nothing was delegated (or every worker shared the orchestrator's model):
+    // there's no split worth showing.
+    if worker_tokens == 0 {
+        return;
+    }
+    workers.sort_by(|a, b| b.1.cmp(&a.1)); // heaviest worker first
+    let total = orch_tokens + worker_tokens;
+    let worker_pct = ((worker_tokens as f64 / total as f64) * 100.0).round() as u64;
+
+    let summary = json!({
+        "type": "orchestration",
+        "orchestrator": { "model": main, "name": model_name(&main), "tokens": orch_tokens },
+        "workers": workers
+            .iter()
+            .map(|(m, t)| json!({ "model": m, "name": model_name(m), "tokens": t }))
+            .collect::<Vec<_>>(),
+        "orchestratorTokens": orch_tokens,
+        "workerTokens": worker_tokens,
+        "totalTokens": total,
+        "workerPct": worker_pct,
+    });
+    // Persist with the turn so it rebuilds on reload; renderSegments ignores the
+    // unknown type, so it never leaks into the transcript.
+    result.push_tool(summary.clone());
+    let _ = channel.send(summary);
 }
 
 /// Flatten a tool_result's `content` (a string, or an array of text blocks)
@@ -1024,7 +1146,49 @@ fn route_event(
             if let Some(sid) = ev.get("session_id").and_then(|v| v.as_str()) {
                 result.session_id = Some(sid.to_string());
             }
+            // The turn's main model — the orchestrator when that mode is on.
+            if let Some(m) = ev.get("model").and_then(|v| v.as_str()) {
+                result.main_model = Some(m.to_string());
+            }
             let _ = channel.send(json!({ "type": "start", "sessionId": result.session_id }));
+        }
+        // Live sub-agent progress: while a Task runs, the CLI streams what the
+        // worker is doing (its evolving description, the tool it last used, and a
+        // running step/token/duration tally), keyed by the Task's `tool_use_id` —
+        // the same id our Activity chip carries. Forwarded so the panel can show
+        // it live instead of a blank "Running…".
+        "system"
+            if matches!(
+                ev.get("subtype").and_then(|v| v.as_str()),
+                Some("task_started") | Some("task_progress") | Some("task_updated")
+            ) =>
+        {
+            emit_agent_progress(ev, channel);
+        }
+        // Consolidated assistant message: carries `model` + `usage`. Worker
+        // sub-agents surface here tagged with their own (cheaper) model, so this
+        // is where we attribute tokens for the orchestrator savings readout.
+        "assistant" => {
+            if let Some(msg) = ev.get("message") {
+                let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(u) = msg.get("usage") {
+                    let tok = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                    let billable = tok("input_tokens")
+                        + tok("output_tokens")
+                        + tok("cache_creation_input_tokens");
+                    if !model.is_empty() && billable > 0 {
+                        // Dedupe by message id (duplicated under partial-messages);
+                        // fall back to a positional key if the id is ever missing.
+                        let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let key = if id.is_empty() {
+                            format!("_{}", result.msg_usage.len())
+                        } else {
+                            id.to_string()
+                        };
+                        result.msg_usage.insert(key, (model.to_string(), billable));
+                    }
+                }
+            }
         }
         "stream_event" => {
             let e = match ev.get("event") {
@@ -1491,5 +1655,24 @@ fn main() {}
         assert!(body.contains("worker sub-agent")); // the fixed brief
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn orchestrator_walls_off_its_own_tools_but_never_task() {
+        // The deny surface must cover the whole file/exec/search set (blocking only
+        // Read is useless — the model just cats via Bash) and must NEVER include
+        // Task, the one tool the orchestrator needs to delegate.
+        for t in ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"] {
+            assert!(ORCH_DENIED_TOOLS.contains(&t), "orchestrator must be denied {t}");
+        }
+        assert!(!ORCH_DENIED_TOOLS.contains(&"Task"), "Task must stay available");
+
+        // A prepared orchestration carries that exact deny list (env permitting the
+        // agents dir; if unwritable prepare returns None and there's nothing to check).
+        if let Some(o) = prepare_orchestration("claude-haiku-4-5-20251001", &[]) {
+            assert!(o.note.contains("ORCHESTRATOR MODE"));
+            let expected: Vec<String> = ORCH_DENIED_TOOLS.iter().map(|s| s.to_string()).collect();
+            assert_eq!(o.disallowed_tools, expected);
+        }
     }
 }

@@ -158,6 +158,13 @@
       'activity.noOutput': '(no output)',
       'activity.running': 'Running…',
       'activity.noCapture': '(no output captured)',
+      'activity.orch.title': 'Delegation',
+      'activity.orch.onWorkers': 'on cheaper workers',
+      'activity.orch.orchestrator': 'Orchestrator',
+      'activity.orch.workers': 'Workers',
+      'activity.orch.tokens': 'tokens',
+      'activity.orch.hint': 'The premium model only planned & reviewed — cheaper workers did the token-heavy work.',
+      'activity.agent.steps': 'steps',
 
       /* ---- tasks (per-project to-do list) ---- */
       'tasks.label': 'Tasks',
@@ -600,6 +607,13 @@
       'activity.noOutput': '(nema izlaza)',
       'activity.running': 'Izvodi se…',
       'activity.noCapture': '(izlaz nije zabilježen)',
+      'activity.orch.title': 'Delegiranje',
+      'activity.orch.onWorkers': 'na jeftinijim radnim agentima',
+      'activity.orch.orchestrator': 'Orkestrator',
+      'activity.orch.workers': 'Radni agenti',
+      'activity.orch.tokens': 'tokena',
+      'activity.orch.hint': 'Premium model samo je planirao i pregledavao — jeftiniji radni agenti odradili su posao bogat tokenima.',
+      'activity.agent.steps': 'koraka',
 
       /* ---- tasks (popis zadataka po projektu) ---- */
       'tasks.label': 'Zadaci',

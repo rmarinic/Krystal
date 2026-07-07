@@ -110,6 +110,7 @@ let state = {
   models: [],
   modes: [],
   activity: [],          // this chat's shells & sub-agents (for the Activity panel)
+  activityOrch: null,    // latest orchestrator token-split summary for this chat (or null)
   activityFilter: 'all', // Activity panel filter: 'all' | 'active' | 'done'
   tipLevelShown: null,   // which context-rot tip level we've already shown
   view: 'threads',       // 'threads' | 'search' | 'saved'

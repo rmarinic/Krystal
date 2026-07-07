@@ -8,6 +8,8 @@ function showEmpty() {
   els.meterRow.hidden = true;
   els.hintBtn.hidden = true;
   els.activityBtn.hidden = true;
+  state.activity = [];               // leaving any chat clears the Activity panel state
+  state.activityOrch = null;
   showTasksBtn(!!state.project);     // tasks belong to the project, not a chat
   els.title.textContent = tr('header.noConversation');
   els.cwd.textContent = '';
@@ -53,10 +55,12 @@ async function openThread(id, focusMid) {
     appendMessage('user', live.userText, live.userFiles, null);
     attachLiveTyper(live);
     state.activity = live.activity;
+    state.activityOrch = live.orch || orchFromSegments(t.messages);
   } else {
     // Rebuild the Activity log (shells & sub-agents) from the saved transcript so
     // it's populated on reload, not just during a live turn.
     state.activity = activityFromSegments(t.messages);
+    state.activityOrch = orchFromSegments(t.messages);
   }
   els.activityBtn.hidden = false;
   showTasksBtn(true);

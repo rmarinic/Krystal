@@ -1210,11 +1210,65 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--border);
 }
 .activity-out.err { color: #ffb3b3; }
+/* Live sub-agent progress inside a running Task item: what it's doing right now. */
+.activity-progress {
+  padding: 10px 12px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.ap-desc { font-size: 12.5px; color: var(--fg); line-height: 1.4; }
+.ap-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--fg-muted); font-family: var(--mono);
+}
+.ap-tool {
+  font-family: var(--sans); font-weight: 600; color: var(--accent-2);
+  padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-2);
+  animation: ap-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ap-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+  .ap-tool { animation: none; }
+}
 .activity-spin {
   display: inline-block; width: 11px; height: 11px; border-radius: 50%;
   border: 2px solid rgba(10,15,11,0.35); border-top-color: #0a0f0b;
   vertical-align: -1px; margin-right: 5px;
   animation: hint-spin .7s linear infinite;
+}
+
+/* Orchestrator savings banner — the share of a turn's tokens that ran on the
+ * cheaper workers the supervisor delegated to. Sits atop the Activity list. */
+.activity-orch {
+  border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 12px; padding: 12px; background: var(--bg-elev);
+  animation: orch-in .28s cubic-bezier(.2,.9,.3,1) both;
+}
+.activity-orch-head { display: flex; align-items: center; gap: 8px; }
+.activity-orch-ico { font-size: 15px; flex: none; }
+.activity-orch-title { font-weight: 600; font-size: 13px; }
+.activity-orch-pct { margin-left: auto; font-weight: 700; font-size: 14px; color: var(--accent-2); }
+.activity-orch-pct-sub { font-weight: 500; font-size: 11px; color: var(--fg-muted); }
+.activity-orch-bar {
+  height: 7px; border-radius: 999px; background: var(--border-2);
+  overflow: hidden; margin: 10px 0 9px;
+}
+.activity-orch-bar-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transform-origin: left; animation: orch-bar .5s cubic-bezier(.2,.9,.3,1) both;
+}
+.activity-orch-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.activity-orch-tag {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--fg-muted);
+}
+.activity-orch-tag.worker { color: #0a0f0b; background: var(--accent-2); border-color: transparent; }
+.activity-orch-hint { margin-top: 8px; font-size: 11px; color: var(--fg-muted); line-height: 1.45; }
+@keyframes orch-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes orch-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .activity-orch { animation: none; }
+  .activity-orch-bar-fill { animation: none; }
 }
 
 /* ============================================================
