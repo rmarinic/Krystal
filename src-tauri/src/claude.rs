@@ -401,25 +401,18 @@ impl Drop for OrchestratorGuard {
 pub struct Orchestration {
     /// Appended (single line) to the system prompt for this turn.
     pub note: String,
-    /// Tools the orchestrator itself is barred from calling this turn (passed as
-    /// `--disallowedTools`). See `ORCH_DENIED_TOOLS`.
-    pub disallowed_tools: Vec<String>,
     _guard: OrchestratorGuard,
 }
 
-/// The file/exec/search/fetch surface the orchestrator is forbidden from touching
-/// itself. Denying these (via `--disallowedTools`) leaves it only `Task` (to
-/// delegate) plus the tool-free planning tools, so every concrete action is forced
-/// onto a cheap worker — a hard wall the prompt note alone can't guarantee.
-///
-/// Verified against the `claude` CLI (v2.1.x): the deny bites even under
-/// `--dangerously-skip-permissions`, and — crucially — it does NOT propagate to
-/// the Task sub-agents, so workers keep their full toolset. Blocking only `Read`
-/// is useless (the model just `cat`s the file via `Bash`), hence the full set.
-pub const ORCH_DENIED_TOOLS: &[&str] = &[
-    "Read", "Write", "Edit", "NotebookEdit",
-    "Bash", "Grep", "Glob", "WebFetch", "WebSearch",
-];
+// NOTE: an earlier version of this mode also hard-blocked the orchestrator's own
+// tools via `--disallowedTools`. Reverted: that deny is enforced CLI-wide, and
+// Claude Code's built-in generic Task agent types (`general-purpose`, `claude`,
+// …) share the parent's permission set — only a fully custom-defined agent (like
+// our worker `.md` files) is exempt. The orchestrator doesn't reliably call Task
+// with the exact custom worker name; when it drifted to a generic type mid-turn,
+// that call inherited the deny and came back completely toolless, sometimes
+// stalling the whole turn. A silently-broken delegation is worse than the
+// token-waste this mode exists to prevent, so enforcement is prompt-only again.
 
 static ORCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -486,19 +479,18 @@ pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<O
         files.push(write_worker_agent(&dir, &bal, "Balanced worker for typical coding, analysis and writing tasks.", &bal_id)?);
         files.push(write_worker_agent(&dir, &deep, "Most-capable worker, for genuinely hard reasoning tasks.", &deep_id)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to a worker sub-agent via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. For each task pick the cheapest worker that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). After a worker reports back changes, dispatch a quick verification task to `{fast}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Those tools are, in fact, turned off for you this turn — trying to call them will just fail, so route everything through Task from the start.",
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to a worker sub-agent via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. For each task pick the cheapest worker that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). After a worker reports back changes, dispatch a quick verification task to `{fast}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Always pass the exact worker name as `subagent_type` — never `general-purpose`, `claude`, `Explore`, or any other built-in agent type, and never omit it.",
         )
     } else {
         let name = format!("krystal-worker-{tag}");
         files.push(write_worker_agent(&dir, &name, "Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. Launch independent pieces in parallel (multiple Task calls in a single turn). After `{name}` reports back changes, dispatch a quick verification task to `{name}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Those tools are, in fact, turned off for you this turn — trying to call them will just fail, so route everything through Task from the start.",
+            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. Launch independent pieces in parallel (multiple Task calls in a single turn). After `{name}` reports back changes, dispatch a quick verification task to `{name}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Always pass `subagent_type: \"{name}\"` exactly — never `general-purpose`, `claude`, `Explore`, or any other built-in agent type, and never omit it.",
             mname = resolve_model_name(catalog, sub_model),
         )
     };
 
-    let disallowed_tools = ORCH_DENIED_TOOLS.iter().map(|s| s.to_string()).collect();
-    Some(Orchestration { note, disallowed_tools, _guard: OrchestratorGuard(files) })
+    Some(Orchestration { note, _guard: OrchestratorGuard(files) })
 }
 
 /// Assemble the prompt fed over stdin. Mirrors `buildPrompt` in server.js.
@@ -1658,21 +1650,17 @@ fn main() {}
     }
 
     #[test]
-    fn orchestrator_walls_off_its_own_tools_but_never_task() {
-        // The deny surface must cover the whole file/exec/search set (blocking only
-        // Read is useless — the model just cats via Bash) and must NEVER include
-        // Task, the one tool the orchestrator needs to delegate.
-        for t in ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"] {
-            assert!(ORCH_DENIED_TOOLS.contains(&t), "orchestrator must be denied {t}");
-        }
-        assert!(!ORCH_DENIED_TOOLS.contains(&"Task"), "Task must stay available");
-
-        // A prepared orchestration carries that exact deny list (env permitting the
-        // agents dir; if unwritable prepare returns None and there's nothing to check).
+    fn orchestrator_note_names_the_exact_worker_and_forbids_generic_types() {
+        // Enforcement is prompt-only (see the NOTE above `Orchestration`): a CLI-level
+        // --disallowedTools deny was tried and reverted, since Claude Code's built-in
+        // generic Task agent types (general-purpose, claude, …) share the parent's
+        // permission set and would silently inherit the deny if the model drifted to
+        // one instead of the pinned custom worker. So the note must both name the
+        // exact worker and explicitly forbid the generic fallbacks.
         if let Some(o) = prepare_orchestration("claude-haiku-4-5-20251001", &[]) {
             assert!(o.note.contains("ORCHESTRATOR MODE"));
-            let expected: Vec<String> = ORCH_DENIED_TOOLS.iter().map(|s| s.to_string()).collect();
-            assert_eq!(o.disallowed_tools, expected);
+            assert!(o.note.contains("general-purpose"));
+            assert!(o.note.contains("krystal-worker-"));
         }
     }
 }

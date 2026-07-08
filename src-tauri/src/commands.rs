@@ -720,16 +720,6 @@ pub async fn chat(
 
     let mut args = claude::base_args(&meta.model, &sys);
     claude::apply_mode(&mut args, &meta.mode);   // Auto = full power; Plan = research only
-    // In orchestrator mode, hard-block the file/exec/search tools on the supervisor
-    // itself so it can only delegate (Task) — the deny doesn't reach the workers,
-    // which keep full power. This is the real wall behind the prompt note above.
-    // Variadic `--disallowedTools` stops at the next `--flag`, so ordering is safe.
-    if let Some(o) = &_orch {
-        if !o.disallowed_tools.is_empty() {
-            args.push("--disallowedTools".into());
-            args.extend(o.disallowed_tools.iter().cloned());
-        }
-    }
     if let Some(sid) = &meta.session_id {
         args.push("--resume".into());
         args.push(sid.clone());
