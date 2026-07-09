@@ -9,6 +9,7 @@ async function showProjectPicker() {
   state.activeId = null;
   state.view = 'threads';
   showTasksBtn(false);
+  setRunBtn(false);
   els.projectScreen.classList.remove('leaving');
   els.projectScreen.hidden = false;
   syncDiscordProject();
@@ -56,6 +57,7 @@ async function enterProject(project) {
   syncDiscordProject();
   els.cpName.textContent = project.name || basename(project.path);
   els.cpName.title = project.path || '';
+  refreshRunBtn();   // a run may already be in flight for this folder
   // Ease the picker out of the way rather than cutting to the chat.
   const screen = els.projectScreen;
   screen.classList.add('leaving');

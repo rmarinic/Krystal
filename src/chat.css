@@ -1819,23 +1819,128 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 /* ============================================================
  * Project switcher (sidebar) — current project + back to picker
  * ============================================================ */
+/* Row: the (now more compact) project chip + the RUN button beside it. */
+.cp-row { display: flex; align-items: stretch; gap: 8px; }
+
 .to-projects {
-  display: flex; align-items: center; gap: 8px; width: 100%;
+  display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0;
   background: var(--bg-card); border: 1px solid var(--border-2);
-  border-radius: var(--radius-sm); padding: 7px 10px; cursor: pointer;
+  border-radius: var(--radius-sm); padding: 5px 9px; cursor: pointer;
 }
 .to-projects:hover { border-color: var(--accent-2); }
 .to-projects .cp-label {
-  font-family: var(--mono); font-size: 9px; text-transform: uppercase;
+  font-family: var(--mono); font-size: 8px; text-transform: uppercase;
   letter-spacing: 0.10em; color: var(--fg-dim);
 }
 .to-projects .cp-name {
   flex: 1; min-width: 0; text-align: left;
-  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent-3);
+  font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.to-projects .cp-switch { margin-left: auto; color: var(--fg-muted); font-size: 13px; }
+.to-projects .cp-switch { margin-left: auto; color: var(--fg-muted); font-size: 12px; }
 .to-projects:hover .cp-switch { color: var(--accent-2); }
+
+/* RUN button — start the project locally for testing. Toggles play → stop. */
+.run-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 5px 11px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  color: var(--accent-3);
+  background: rgba(108,199,142,0.10);
+  border: 1px solid rgba(108,199,142,0.38);
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, transform .1s;
+}
+.run-btn:hover { background: rgba(108,199,142,0.20); border-color: var(--accent-2); }
+.run-btn:active { transform: translateY(1px); }
+.run-btn svg { flex: none; }
+.run-btn .run-ico-stop { display: none; }
+.run-btn.running {
+  color: #ffb4b4;
+  background: rgba(230,120,120,0.13);
+  border-color: rgba(230,120,120,0.45);
+  animation: run-pulse 1.9s ease-in-out infinite;
+}
+.run-btn.running .run-ico-play { display: none; }
+.run-btn.running .run-ico-stop { display: inline; }
+.run-btn.running:hover { background: rgba(230,120,120,0.22); border-color: rgba(230,120,120,0.7); }
+@keyframes run-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(230,120,120,0); }
+  50%      { box-shadow: 0 0 0 3px rgba(230,120,120,0.12); }
+}
+
+/* ---- Run panel (setup + live output) ---- */
+.run-modal { width: min(760px, 92vw); }
+.run-intro { color: var(--fg-muted); font-size: 13px; line-height: 1.5; margin: 0 0 14px; }
+.run-field-label {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--fg-dim); margin-bottom: 6px;
+}
+.run-cmd-input {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 48px;
+  font-family: var(--mono); font-size: 13px; color: var(--fg); line-height: 1.5;
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.run-cmd-input:focus { outline: none; border-color: var(--accent-2); }
+.run-detect-row { display: flex; align-items: center; gap: 10px; margin-top: 11px; flex-wrap: wrap; }
+.run-detect {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent-3);
+  background: rgba(108,199,142,0.08); border: 1px solid rgba(108,199,142,0.32);
+  border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.run-detect:hover { background: rgba(108,199,142,0.16); border-color: var(--accent-2); }
+.run-detect[disabled] { opacity: 0.55; cursor: default; }
+.run-detect-status { font-size: 12px; color: var(--fg-muted); }
+.run-detect-status.err { color: #ff9b9b; }
+.run-path-hint {
+  font-family: var(--mono); font-size: 10px; color: var(--fg-dim); margin-top: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.run-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); flex: none; }
+.run-dot.live { background: var(--accent-2); animation: run-blink 1.2s ease-in-out infinite; }
+.run-dot.err { background: #ff9b9b; }
+.run-status-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--fg-muted);
+}
+@keyframes run-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.run-output {
+  margin: 0; max-height: 52vh; min-height: 220px; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55;
+  background: rgba(5,8,6,0.6); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.run-line { display: block; color: var(--fg); }
+.run-line.cmd { color: var(--accent-3); font-weight: 600; }
+.run-line.err { color: #ff9b9b; }
+.run-line.ok  { color: var(--accent-2); }
+.run-line.sys { color: var(--fg-dim); font-style: italic; }
+
+.run-act {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 7px 13px; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.run-act:hover { border-color: var(--accent-2); color: var(--fg); }
+.run-act.primary {
+  color: var(--accent-3); background: rgba(108,199,142,0.10); border-color: rgba(108,199,142,0.4);
+}
+.run-act.primary:hover { background: rgba(108,199,142,0.2); border-color: var(--accent-2); color: var(--accent-3); }
+.run-act.danger { color: #ffb4b4; background: rgba(230,120,120,0.1); border-color: rgba(230,120,120,0.4); }
+.run-act.danger:hover { background: rgba(230,120,120,0.2); border-color: rgba(230,120,120,0.7); color: #ffb4b4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .run-btn { transition: none; }
+  .run-btn.running { animation: none; }
+  .run-dot.live { animation: none; }
+}
 
 /* ============================================================
  * Project picker — the entry screen
@@ -2132,8 +2237,32 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .msg { animation: msg-in .26s ease backwards; }
 @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* ---- Branch the conversation ---- */
+/* Pressing Branch: a soft accent-green glow pulses out from the button, so the
+   fork registers as a deliberate action before the switch happens. */
+.head-btn.sprouting {
+  animation: branch-sprout .9s ease both;
+  border-color: var(--accent-2);
+  color: var(--fg);
+}
+@keyframes branch-sprout {
+  0%   { box-shadow: 0 0 0 0 rgba(108,199,142,0.0); }
+  35%  { box-shadow: 0 0 0 4px rgba(108,199,142,0.22); }
+  100% { box-shadow: 0 0 0 0 rgba(108,199,142,0.0); }
+}
+/* Landing on the fork: the copied transcript settles in with a calm top-down
+   cascade (delays capped so a long chat doesn't wave forever) — a clear cue that
+   you've switched onto the branch, not just re-rendered the same chat. */
+.feed.branch-switch .msg { animation: msg-in .36s ease backwards; }
+.feed.branch-switch .msg:nth-child(1) { animation-delay: 0s; }
+.feed.branch-switch .msg:nth-child(2) { animation-delay: .05s; }
+.feed.branch-switch .msg:nth-child(3) { animation-delay: .10s; }
+.feed.branch-switch .msg:nth-child(4) { animation-delay: .15s; }
+.feed.branch-switch .msg:nth-child(n+5) { animation-delay: .19s; }
+
 @media (prefers-reduced-motion: reduce) {
   .init-modal, .project-screen, .project-card, .msg,
+  .head-btn.sprouting, .feed.branch-switch .msg,
   .modal-overlay.closing, .modal-overlay.closing .init-modal { animation: none !important; }
 }
 

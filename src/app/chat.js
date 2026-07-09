@@ -2,6 +2,12 @@
    Part of the chat frontend; shares one global scope (see core.js). */
 /* ----------------------------- thread view ------------------------------- */
 
+/* Ids of chats branched this session — so the meter can label a just-forked
+   chat as "branched" (it carries the source transcript in its seed) rather than
+   mistaking that seed for a compaction summary. Only consulted while usage is
+   still zero; once the first turn lands (context > 0) the flag no longer matters. */
+const branchedThreads = new Set();
+
 function showEmpty() {
   els.composer.hidden = true;
   els.chatTools.hidden = true;
@@ -145,6 +151,10 @@ function updateUsage(usage, opts = {}) {
   lastMeterPct = pct;
   if (ctx) {
     els.meterLabel.innerHTML = tr('meter.used', { ctx: fmtK(ctx), win: fmtK(win), cost: fmtCost(cost) });
+  } else if (state.seed && branchedThreads.has(state.activeId)) {
+    // A just-created branch carries its source's transcript as context (in the
+    // seed) until the first turn folds it in — say it's a branch, not "compacted".
+    els.meterLabel.innerHTML = tr('meter.branched', { win: fmtK(win) });
   } else if (state.seed) {
     // Fresh after a compaction: say so, and offer to read the kept summary.
     els.meterLabel.innerHTML = tr('meter.compacted', { win: fmtK(win) });

@@ -95,6 +95,12 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
           updated_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_task_project ON tasks(project);
+
+        CREATE TABLE IF NOT EXISTS run_config (
+          project    TEXT PRIMARY KEY,
+          command    TEXT,
+          updated_at TEXT
+        );
         "#,
     )?;
 
@@ -391,6 +397,102 @@ pub fn create(conn: &Connection, cwd: &str) -> Option<Value> {
     )
     .ok()?;
     get_thread(conn, &id)
+}
+
+/// Name a branched chat after its source, tagged with a "↳" so it's easy to spot
+/// in the list. Falls back to a plain name and caps the length so it stays tidy.
+fn branch_title(source: Option<&str>) -> String {
+    let base = source
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && *s != "New chat")
+        .unwrap_or("New chat");
+    let tagged = format!("↳ {base}");
+    tagged.chars().take(120).collect()
+}
+
+/// Assemble the seed for a branched thread: the source's own carried summary (if
+/// it had one) followed by its transcript, so the branch's first turn continues
+/// seamlessly even though the underlying Claude session can't be forked. Bounded
+/// to a sane size (keeps the most recent slice, like the #-reference context).
+fn build_branch_seed(conn: &Connection, source_id: &str, prior_seed: Option<&str>) -> Option<String> {
+    const MAX_CHARS: usize = 48_000;
+    let mut body = String::new();
+    if let Some(s) = prior_seed {
+        if !s.trim().is_empty() {
+            body.push_str(s.trim());
+            body.push_str("\n\n");
+        }
+    }
+    for (role, text) in recent_messages(conn, source_id, 2000) {
+        let who = if role == "user" { "User" } else { "Assistant" };
+        body.push_str(who);
+        body.push_str(": ");
+        body.push_str(&text);
+        body.push_str("\n\n");
+    }
+    let body = body.trim_end();
+    if body.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = body.chars().collect();
+    if chars.len() > MAX_CHARS {
+        let tail: String = chars[chars.len() - MAX_CHARS..].iter().collect();
+        Some(format!("[…earlier messages omitted…]\n\n{tail}"))
+    } else {
+        Some(body.to_string())
+    }
+}
+
+/// Fork a conversation: create a new thread in the same folder that starts as a
+/// copy of `source_id` — same settings and full transcript — but with its own
+/// fresh Claude session. The prior conversation is folded into the new thread's
+/// `seed` so Claude keeps full context on the first branched turn (the CLI
+/// session itself can't be forked, so we reconstruct context the same way a
+/// compaction summary is carried forward). The original thread is untouched.
+pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
+    let (title, cwd, model, mode, orch, orch_sub, seed) = conn
+        .query_row(
+            "SELECT title,cwd,model,mode,orch,orch_sub,seed FROM threads WHERE id = ?1",
+            [source_id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    r.get::<_, Option<String>>(2)?.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+                    r.get::<_, Option<String>>(3)?.unwrap_or_else(|| DEFAULT_MODE.to_string()),
+                    r.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                    r.get::<_, Option<String>>(5)?.unwrap_or_else(|| "auto".to_string()),
+                    r.get::<_, Option<String>>(6)?,
+                ))
+            },
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+
+    let branch_seed = build_branch_seed(conn, source_id, seed.as_deref());
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let t = now();
+    let new_title = branch_title(title.as_deref());
+
+    // A fresh session (usage reset to 0); the transcript is carried via the seed.
+    conn.execute(
+        "INSERT INTO threads (id,title,cwd,session_id,model,mode,orch,orch_sub,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at)
+         VALUES (?1,?2,?3,NULL,?4,?5,?6,?7,?8,0,0,0,0,0,?9,?9)",
+        params![new_id, new_title, cwd, model, mode, orch, orch_sub, branch_seed, t],
+    )
+    .ok()?;
+
+    // Copy the full transcript verbatim (files/segments columns carried across
+    // as-is) so the branch renders identically. Favorites stay with the original.
+    let _ = conn.execute(
+        "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,ts)
+         SELECT ?1, role, text, files, segments, compacted, 0, ts
+         FROM messages WHERE thread_id = ?2 ORDER BY id ASC",
+        params![new_id, source_id],
+    );
+
+    get_thread(conn, &new_id)
 }
 
 pub fn remove(conn: &Connection, id: &str) {
@@ -798,6 +900,35 @@ pub fn open_task_count(conn: &Connection, project: &str) -> i64 {
     .unwrap_or(0)
 }
 
+/* ------------------------------- run config ------------------------------ */
+/* How to start a project locally for testing (the RUN button). One command per
+ * project folder — the same `path` threads/tasks use — set by hand or detected
+ * by Claude. Empty/whitespace is treated as "not set yet". */
+
+/// The stored run command for a project folder, or None if unset/blank.
+pub fn get_run_command(conn: &Connection, project: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT command FROM run_config WHERE project = ?1",
+        [project],
+        |r| r.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .flatten()
+    .filter(|s| !s.trim().is_empty())
+}
+
+/// Set (or overwrite) a project's run command.
+pub fn set_run_command(conn: &Connection, project: &str, command: &str) {
+    let t = now();
+    let _ = conn.execute(
+        "INSERT INTO run_config (project,command,updated_at) VALUES (?1,?2,?3)
+         ON CONFLICT(project) DO UPDATE SET command = ?2, updated_at = ?3",
+        params![project, command, t],
+    );
+}
+
 /// Delete a project and all of its chats.
 pub fn delete_project(conn: &Connection, id: &str) {
     let path: Option<String> = conn
@@ -808,6 +939,7 @@ pub fn delete_project(conn: &Connection, id: &str) {
     if let Some(path) = path {
         let _ = conn.execute("DELETE FROM threads WHERE cwd = ?1", [&path]);
         let _ = conn.execute("DELETE FROM tasks WHERE project = ?1", [&path]);
+        let _ = conn.execute("DELETE FROM run_config WHERE project = ?1", [&path]);
     }
     let _ = conn.execute("DELETE FROM projects WHERE id = ?1", [id]);
 }

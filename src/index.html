@@ -65,11 +65,21 @@
           <span class="logo-tag">// claude code</span>
         </div>
       </div>
-      <button id="to-projects" class="to-projects" data-i18n-title="nav.switchTitle" title="Switch project">
-        <span class="cp-label" data-i18n="nav.projectLabel">project</span>
-        <span class="cp-name" id="cp-name">—</span>
-        <span class="cp-switch">⇄</span>
-      </button>
+      <div class="cp-row">
+        <button id="to-projects" class="to-projects" data-i18n-title="nav.switchTitle" title="Switch project">
+          <span class="cp-label" data-i18n="nav.projectLabel">project</span>
+          <span class="cp-name" id="cp-name">—</span>
+          <span class="cp-switch">⇄</span>
+        </button>
+        <!-- RUN: start this project locally for testing. First click (no command
+             set yet) opens a small setup panel where you type the run command or
+             let Claude detect it; after that it starts/stops the app. -->
+        <button id="run-btn" class="run-btn" data-i18n-title="run.btnTitle" title="Run the app locally to test it">
+          <svg class="run-ico-play" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="run-ico-stop" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          <span class="run-label" data-i18n="run.btn">Run</span>
+        </button>
+      </div>
       <button id="new-chat" class="new-chat-btn" data-i18n="nav.newChat">▸ new chat</button>
     </header>
 
@@ -161,6 +171,7 @@
           <button id="orch-btn" class="head-btn" data-i18n-title="orch.btnTitle" title="Orchestrator: run a premium model as a supervisor that delegates the heavy work to cheaper sub-agents">⚡ <span data-i18n="orch.btn">Orchestrate</span></button>
           <div class="orch-pop" id="orch-pop" hidden></div>
         </div>
+        <button id="branch-btn" class="head-btn" data-i18n="fork.btn" data-i18n-title="fork.btnTitle" title="Branch: fork this conversation into a copy you can take in a new direction — the original stays untouched">🌿 Branch</button>
         <button id="compact-btn" class="head-btn" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">🧹 Compact</button>
         <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
       </div>
@@ -220,6 +231,18 @@
       </header>
       <div class="init-body" id="tasks-body"></div>
       <footer class="init-foot" id="tasks-foot"></footer>
+    </div>
+  </div>
+
+  <!-- ============= Run panel: start the project locally & watch output ====== -->
+  <div class="modal-overlay" id="run-overlay" hidden>
+    <div class="init-modal run-modal" role="dialog" aria-modal="true" aria-labelledby="run-modal-title">
+      <header class="init-head">
+        <div class="init-title" id="run-modal-title" data-i18n="run.panelTitle">▶ Run app</div>
+        <button class="init-x" id="run-close" data-i18n-title="run.close" title="Close">×</button>
+      </header>
+      <div class="init-body" id="run-body"></div>
+      <footer class="init-foot" id="run-foot"></footer>
     </div>
   </div>
 
@@ -349,6 +372,7 @@
   <script defer src="app/settings.js"></script>
   <script defer src="app/tasks.js"></script>
   <script defer src="app/git.js"></script>
+  <script defer src="app/run.js"></script>
   <script defer src="app/links.js"></script>
   <script defer src="app/logo.js"></script>
   <script defer src="app/usage.js"></script>

@@ -222,6 +222,39 @@ async function doCompact(close) {
 els.clearBtn.onclick = () => doClear();
 els.compactBtn.onclick = () => doCompact();
 
+/* Branch (fork) the conversation: create a copy of the current chat as a new
+ * thread — same settings and transcript, its own fresh session, the prior talk
+ * kept as context — then switch straight into it. Non-destructive: the original
+ * chat is left exactly as it was. */
+async function doBranch() {
+  if (!state.activeId || state.streaming || els.branchBtn.disabled) return;
+  // Nothing to fork from an empty chat — nudge instead of making a blank copy.
+  if (!els.feed.querySelector('.msg')) {
+    showTip({ key: 'status', icon: '🌿', label: tr('fork.emptyLabel'), body: tr('fork.emptyBody') });
+    return;
+  }
+  els.branchBtn.disabled = true;
+  replayClass(els.branchBtn, 'sprouting', 900);     // a gentle "sprout" pulse on press
+  els.branchBtn.textContent = tr('fork.working');
+  try {
+    const t = await api.branch(state.activeId);
+    if (!t || !t.id) throw new Error(tr('fork.failBody'));
+    branchedThreads.add(t.id);                       // meter labels it "branched", not "compacted"
+    justAddedThreadId = t.id;                        // sidebar pops + glows the new row
+    await loadThreads();                             // it appears at the top of the list
+    await openThread(t.id);                          // switch into the branch…
+    replayClass(els.feed, 'branch-switch', 900);     // …with a calm settle of the copied thread
+    showTip({ key: 'status', icon: '🌿', label: tr('fork.doneLabel'), body: tr('fork.doneBody') });
+  } catch (e) {
+    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('fork.failLabel'),
+      body: escapeHtml(String(e.message || e)) });
+  } finally {
+    els.branchBtn.disabled = false;
+    els.branchBtn.textContent = tr('fork.btn');
+  }
+}
+els.branchBtn.onclick = () => doBranch();
+
 const INSIGHT_SVG =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 14.5l.55 1.6 1.6.55-1.6.55-.55 1.6-.55-1.6-1.6-.55 1.6-.55z"/></svg>';
 
