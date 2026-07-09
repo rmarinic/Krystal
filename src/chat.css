@@ -1854,19 +1854,24 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .run-btn:hover { background: rgba(108,199,142,0.20); border-color: var(--accent-2); }
 .run-btn:active { transform: translateY(1px); }
 .run-btn svg { flex: none; }
-.run-btn .run-ico-stop { display: none; }
+/* While running the button turns into a "live" indicator — clicking it reopens
+   the output panel (Stop lives there), so it stays useful after you start. */
+.run-ico-live {
+  display: none; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; flex: none;
+}
 .run-btn.running {
-  color: #ffb4b4;
-  background: rgba(230,120,120,0.13);
-  border-color: rgba(230,120,120,0.45);
+  color: var(--accent-3);
+  background: rgba(108,199,142,0.16);
+  border-color: rgba(108,199,142,0.5);
   animation: run-pulse 1.9s ease-in-out infinite;
 }
 .run-btn.running .run-ico-play { display: none; }
-.run-btn.running .run-ico-stop { display: inline; }
-.run-btn.running:hover { background: rgba(230,120,120,0.22); border-color: rgba(230,120,120,0.7); }
+.run-btn.running .run-ico-live { display: inline-block; animation: run-blink 1.2s ease-in-out infinite; }
+.run-btn.running:hover { background: rgba(108,199,142,0.24); border-color: var(--accent-2); }
 @keyframes run-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(230,120,120,0); }
-  50%      { box-shadow: 0 0 0 3px rgba(230,120,120,0.12); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); }
+  50%      { box-shadow: 0 0 0 3px rgba(108,199,142,0.15); }
 }
 
 /* ---- Run panel (setup + live output) ---- */
@@ -1938,7 +1943,8 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .run-btn { transition: none; }
-  .run-btn.running { animation: none; }
+  .run-btn.running,
+  .run-btn.running .run-ico-live { animation: none; }
   .run-dot.live { animation: none; }
 }
 

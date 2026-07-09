@@ -29,8 +29,8 @@ function setRunBtn(running) {
   if (!b) return;
   b.classList.toggle('running', running);
   const label = b.querySelector('.run-label');
-  if (label) label.textContent = running ? tr('run.stop') : tr('run.btn');
-  b.title = running ? tr('run.stopTitle') : tr('run.btnTitle');
+  if (label) label.textContent = running ? tr('run.running') : tr('run.btn');
+  b.title = running ? tr('run.viewTitle') : tr('run.btnTitle');
 }
 
 /* Sync the button when a project is opened/switched — a run may already be in
@@ -48,7 +48,9 @@ async function refreshRunBtn() {
 
 async function onRunClick() {
   if (!runCwd()) return;
-  if (runState.running) { doStop(); return; }
+  // Already running → reopen the live output panel so you can watch it (Stop
+  // lives inside the panel). This keeps the button re-clickable after a start.
+  if (runState.running) { openRunPanel('output'); return; }
   let cfg;
   try { cfg = await api.getRunConfig(runCwd()); } catch (_) { cfg = { command: '' }; }
   runState.command = cfg.command || '';
@@ -181,6 +183,15 @@ function updateRunStatus(kind) {
   label.textContent = text;
 }
 
+// Strip ANSI escape sequences and stray carriage returns so the stream reads
+// like a clean terminal even when a tool forces colour output.
+function cleanLine(s) {
+  return String(s == null ? '' : s)
+    .replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
+    .replace(/\r$/, '');
+}
+
 function mountLine(text, cls) {
   const out = runState.outEl;
   if (!out || !document.body.contains(out)) return;
@@ -190,6 +201,7 @@ function mountLine(text, cls) {
   out.appendChild(span);
 }
 function appendRunLine(text, cls) {
+  text = cleanLine(text);
   runState.buffer.push({ text, cls });
   if (runState.buffer.length > 2000) runState.buffer.splice(0, runState.buffer.length - 2000);
   mountLine(text, cls);
