@@ -357,6 +357,10 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   padding: 40px; background: rgba(6, 8, 12, 0.82);
   opacity: 0; transition: opacity .19s ease;
 }
+/* `display: flex` above overrides the UA `[hidden]` rule, so the overlay would
+   stay rendered full-screen and swallow every click while "closed". Keep it
+   truly gone until opened. */
+.lightbox-overlay[hidden] { display: none; }
 .lightbox-overlay.on { opacity: 1; }
 .lightbox-overlay.closing { opacity: 0; }
 .lightbox-figure {
