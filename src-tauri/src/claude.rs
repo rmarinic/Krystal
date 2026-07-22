@@ -45,13 +45,35 @@ pub fn probe_caps() -> Caps {
     }
 }
 
+/// English name of a UI language code — used only as the *fallback* reply
+/// language for a message too short to identify, never as an override.
+pub fn lang_label(code: &str) -> &'static str {
+    match code {
+        "hr" => "Croatian (hrvatski)",
+        _ => "English",
+    }
+}
+
 /// System prompt prepended on every turn. Kept to a SINGLE LINE (no newlines)
 /// so it can be passed safely as a command-line argument to the `claude.cmd`
 /// shim on Windows — Rust refuses to escape newlines into a batch invocation.
-pub fn capability_prompt(caps: Caps) -> String {
+///
+/// `ui_lang` is the app's interface language ('en' | 'hr'); it only decides the
+/// tie-break for messages that carry no language signal of their own.
+pub fn capability_prompt(caps: Caps, ui_lang: &str) -> String {
     let mut lines: Vec<String> = vec![
         "You are helping the user with the files and work in the current project folder.".into(),
-        "Read CLAUDE.md (if present) for what this project is about, and reply in the language the user writes in.".into(),
+        "Read CLAUDE.md (if present) for what this project is about.".into(),
+        // The reply language used to be one clause tacked onto the CLAUDE.md line,
+        // which lost every time the project's own files were written in another
+        // language — an English opener could still come back in Croatian. It is
+        // now its own explicit rule with a stated tie-break.
+        format!(
+            "LANGUAGE — decide this before you write anything: reply in the SAME language as the user's LATEST message, judged from that message alone. \
+             The language of CLAUDE.md, of the project's files, folder names, earlier chats, or of the app's interface NEVER decides your reply language — if the user writes in English you answer in English even when everything around you is in another language, and vice versa. \
+             Only when a message carries no language signal at all (\"ok\", a bare path, a link, an emoji) do you keep the language of the last message that did; if there is none, use {}.",
+            lang_label(ui_lang)
+        ),
         "When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.".into(),
         "When you want the user to choose between a few clear options, present a choice card instead of asking in prose: output a fenced code block tagged krystal-ask whose body is valid JSON of the form {\"questions\":[{\"question\":\"…\",\"header\":\"short label\",\"multiSelect\":false,\"options\":[{\"label\":\"…\",\"description\":\"…\"}]}]} — this app renders it as clickable cards with a custom-answer box.".into(),
         "Emit that block as the very last thing in your reply and then STOP; the user's selection (or typed answer) arrives as their next message, so just continue naturally from it. Use it only for genuine forks where the choice changes what you do — never for routine questions.".into(),
@@ -933,6 +955,9 @@ pub async fn run_chat_stream(
     // index -> (tool name, accumulating input JSON, tool_use id)
     let mut tool_blocks: HashMap<i64, (String, String, String)> = HashMap::new();
     let mut ask = AskParser::default();
+    // Sub-agent message ids already forwarded as live activity (dedupes the
+    // repeats `--include-partial-messages` produces).
+    let mut seen_agent_msgs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut lines = BufReader::new(stdout).lines();
 
     while let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? {
@@ -944,7 +969,14 @@ pub async fn run_chat_stream(
             Ok(v) => v,
             Err(_) => continue,
         };
-        route_event(&ev, &mut result, &mut tool_blocks, &mut ask, channel);
+        route_event(
+            &ev,
+            &mut result,
+            &mut tool_blocks,
+            &mut ask,
+            &mut seen_agent_msgs,
+            channel,
+        );
     }
     // Release anything the ask-block parser is still holding (e.g. a turn that
     // ended without a trailing text block to trigger the per-block flush).
@@ -1016,6 +1048,68 @@ fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {
         msg["durationMs"] = json!(n);
     }
     let _ = channel.send(msg);
+}
+
+/// Forward what a sub-agent is *saying and doing* right now as `agent_activity`
+/// lines, keyed by the parent Task's `tool_use_id` so the Task's action chip can
+/// show a live log instead of sitting blank until the worker returns.
+///
+/// A delegated worker's own assistant messages come back through the same stream
+/// tagged with `parent_tool_use_id`; each content block becomes one line (its
+/// prose, or the tool it just reached for). Live-only — nothing here is
+/// persisted; the Task's final output still lands via its `tool_result`.
+fn emit_agent_activity(
+    parent: &str,
+    ev: &Value,
+    seen: &mut std::collections::HashSet<String>,
+    channel: &Channel<Value>,
+) {
+    let msg = match ev.get("message") {
+        Some(m) => m,
+        None => return,
+    };
+    // `--include-partial-messages` emits the consolidated assistant message more
+    // than once; the message id makes those repeats free to drop.
+    if let Some(id) = msg.get("id").and_then(|v| v.as_str()) {
+        if !seen.insert(format!("{parent}:{id}")) {
+            return;
+        }
+    }
+    let blocks = match msg.get("content").and_then(|c| c.as_array()) {
+        Some(a) => a,
+        None => return,
+    };
+    for block in blocks {
+        match block.get("type").and_then(|v| v.as_str()) {
+            Some("text") => {
+                let t = block.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+                if t.is_empty() {
+                    continue;
+                }
+                let _ = channel.send(json!({
+                    "type": "agent_activity", "id": parent,
+                    "kind": "text", "text": take_chars(t, 600),
+                }));
+            }
+            Some("tool_use") => {
+                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let input = block.get("input").cloned().unwrap_or_else(|| json!({}));
+                let (detail, target) = tool_detail(name, &input);
+                let mut line = json!({
+                    "type": "agent_activity", "id": parent,
+                    "kind": "tool", "tool": name,
+                });
+                if let Some(t) = target {
+                    line["target"] = json!(t);
+                }
+                if let Some(d) = detail {
+                    line["detail"] = json!(take_chars(&d, 300));
+                }
+                let _ = channel.send(line);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Build the orchestrator savings readout from the per-model token tally and
@@ -1130,6 +1224,7 @@ fn route_event(
     result: &mut ChatResult,
     tool_blocks: &mut HashMap<i64, (String, String, String)>,
     ask: &mut AskParser,
+    seen_agent_msgs: &mut std::collections::HashSet<String>,
     channel: &Channel<Value>,
 ) {
     let ty = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -1161,6 +1256,13 @@ fn route_event(
         // sub-agents surface here tagged with their own (cheaper) model, so this
         // is where we attribute tokens for the orchestrator savings readout.
         "assistant" => {
+            // A delegated worker's messages carry the parent Task's tool_use id —
+            // stream them on as live activity for that Task's chip.
+            if let Some(parent) = ev.get("parent_tool_use_id").and_then(|v| v.as_str()) {
+                if !parent.is_empty() {
+                    emit_agent_activity(parent, ev, seen_agent_msgs, channel);
+                }
+            }
             if let Some(msg) = ev.get("message") {
                 let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
                 if let Some(u) = msg.get("usage") {

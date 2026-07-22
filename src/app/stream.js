@@ -1,11 +1,42 @@
 /* stream.js     — composer input, typewriter, concurrent streaming, send/stop
    Part of the chat frontend; shares one global scope (see core.js). */
+
+/* ------------------------------ composer drafts -------------------------- *
+ * What you've typed but not sent is kept PER CHAT: saved in localStorage (so it
+ * survives closing the app) and restored when you reopen that chat. Switching
+ * chats never loses an in-progress message, and the sidebar flags any chat that
+ * has an unsent draft waiting (see updateDraftMark in sidebar.js). */
+const DRAFTS_KEY = 'krystal.drafts';
+let drafts = (function loadDrafts() {
+  try { return JSON.parse(localStorage.getItem(DRAFTS_KEY)) || {}; } catch (_) { return {}; }
+})();
+function persistDrafts() {
+  try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch (_) {}
+}
+function getDraft(id) { return (id && drafts[id]) || ''; }
+function hasDraft(id) { return !!(id && drafts[id] && drafts[id].trim()); }
+/* Save (or clear) the draft for a chat. Only pokes the sidebar when the draft's
+ * presence actually flips, so typing doesn't re-render the row on every keypress. */
+function saveDraft(id, text) {
+  if (!id) return;
+  const had = !!drafts[id];
+  if (text && text.trim()) drafts[id] = text; else delete drafts[id];
+  const has = !!drafts[id];
+  persistDrafts();
+  if (had !== has && typeof updateDraftMark === 'function') updateDraftMark(id);
+}
+/* Forget a chat's draft entirely (e.g. the chat was deleted). */
+function dropDraft(id) {
+  if (id && drafts[id] != null) { delete drafts[id]; persistDrafts(); }
+}
+
 function autosize() {
   els.input.style.height = 'auto';
   els.input.style.height = Math.min(els.input.scrollHeight, 200) + 'px';
 }
 els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
+  saveDraft(state.activeId, els.input.value);   // keep this chat's draft current
   if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete
 });
 els.input.addEventListener('keydown', (e) => {
@@ -219,6 +250,13 @@ function makeTyper(bubble) {
       const chip = bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`);
       if (chip) setChipOutput(chip, msg.output, msg.isError);
     },
+    // Live sub-agent activity — stream a line into the matching Task chip so you
+    // can watch a delegated worker work instead of waiting for it to finish.
+    setAgentActivity(msg) {
+      if (!msg || !msg.id) return;
+      const chip = bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`);
+      if (chip) appendChipActivity(chip, msg);
+    },
     // Detach from the render loop without finalizing — the bubble is about to be
     // removed (thread switch); the underlying live turn keeps accumulating.
     stop() { if (raf != null) { cancelAnimationFrame(raf); raf = null; } },
@@ -263,6 +301,10 @@ function attachLiveTyper(live) {
   // Re-apply any tool outputs received so far so expanded chips show them again.
   if (live.outputs) for (const id in live.outputs) {
     typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError });
+  }
+  // Replay each running Task's live sub-agent log so a re-attached chip fills back in.
+  if (live.agentActivity) for (const id in live.agentActivity) {
+    for (const m of live.agentActivity[id]) typer.setAgentActivity(m);
   }
   if (!live.events.length) typer.thinking();
   return typer;
@@ -336,6 +378,13 @@ function handleLiveEvent(live, msg) {
     // Activity panel shows what the worker is doing, not just "Running…".
     live.events.push(msg);
     trackAgentProgress(live.activity, msg, active);
+  } else if (event === 'agent_activity') {
+    // What a delegated worker is saying/doing right now — stream it into the
+    // matching Task chip's expandable log (kept on `live` so a thread switch and
+    // return replays it). Live-only; the Task's final output persists separately.
+    const store = live.agentActivity || (live.agentActivity = {});
+    (store[msg.id] || (store[msg.id] = [])).push(msg);
+    if (live.typer) live.typer.setAgentActivity(msg);
   } else if (event === 'orchestration') {
     // End-of-turn orchestrator savings summary: how the turn's tokens split
     // between the premium supervisor and its cheaper workers. Stash on the turn
@@ -383,6 +432,7 @@ async function send() {
   state.seed = null;                 // this turn folds the compaction summary back in
   appendMessage('user', text, files, null);
   els.input.value = '';
+  saveDraft(threadId, '');           // the draft was just sent — clear it
   if (typeof clearComposerRefs === 'function') clearComposerRefs();
   if (typeof clearComposerAttachments === 'function') clearComposerAttachments();
   autosize();
@@ -439,6 +489,7 @@ async function runShellCommand(command) {
 
   stickToBottom = true;
   els.input.value = '';
+  saveDraft(threadId, '');           // the shell line was consumed — clear the draft
   autosize();
   syncShellMode();
 

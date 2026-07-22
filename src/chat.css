@@ -347,8 +347,45 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   width: 24px; height: 24px; border-radius: 6px; object-fit: cover;
   display: block; opacity: 0; transition: opacity .2s ease;
 }
-.file-chip.img.loaded img { opacity: 1; }
+.file-chip.img.loaded img { opacity: 1; cursor: zoom-in; }
 @media (prefers-reduced-motion: reduce) { .file-chip.img img { transition: none; } }
+
+/* ---- Image lightbox: view any thumbnail full-size ---- */
+.lightbox-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px; background: rgba(6, 8, 12, 0.82);
+  opacity: 0; transition: opacity .19s ease;
+}
+.lightbox-overlay.on { opacity: 1; }
+.lightbox-overlay.closing { opacity: 0; }
+.lightbox-figure {
+  margin: 0; max-width: 100%; max-height: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  transform: scale(.97); transition: transform .19s cubic-bezier(.2,.9,.3,1.1);
+}
+.lightbox-overlay.on .lightbox-figure { transform: scale(1); }
+.lightbox-figure img {
+  max-width: 100%; max-height: calc(100vh - 130px);
+  object-fit: contain; border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55); cursor: default;
+}
+.lightbox-cap {
+  font-size: 12px; color: rgba(255, 255, 255, 0.72);
+  font-family: var(--mono); max-width: 80ch; text-align: center; word-break: break-all;
+}
+.lightbox-x {
+  position: absolute; top: 16px; right: 20px;
+  width: 38px; height: 38px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
+  transition: background .14s, transform .14s;
+}
+.lightbox-x:hover { background: rgba(255, 255, 255, 0.18); transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-overlay, .lightbox-figure, .lightbox-x { transition: opacity .01s; }
+  .lightbox-figure { transform: none; }
+}
 
 /* ---- Assistant transcript: text blocks + action chips ---- */
 
@@ -441,6 +478,33 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 }
 .action-chip .chip-pending { font-size: 11.5px; color: var(--fg-dim); font-style: italic; }
 
+/* Live sub-agent log inside a running Task chip — what the delegated worker is
+ * saying and doing, streamed in line by line while it runs. */
+.action-chip .chip-agentlog {
+  display: flex; flex-direction: column; gap: 5px;
+  max-height: 300px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px;
+}
+.action-chip .chip-act-line {
+  font-size: 11.5px; line-height: 1.5; color: var(--fg-muted);
+  word-break: break-word;
+  animation: chip-act-in .18s ease;
+}
+.action-chip .chip-act-line.text { color: var(--fg-dim); white-space: pre-wrap; }
+.action-chip .chip-act-line.tool {
+  display: flex; align-items: baseline; gap: 6px; font-family: var(--mono);
+}
+.action-chip .chip-act-ico { flex: none; font-size: 11px; }
+.action-chip .chip-act-txt { min-width: 0; word-break: break-all; }
+@keyframes chip-act-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-act-line { animation: none; }
+}
+
 /* Unified-style diff: removed lines (red), added lines (green). */
 .action-chip .chip-diff {
   max-height: 320px; overflow: auto;
@@ -464,7 +528,7 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   max-width: 100%; max-height: 340px; border-radius: 5px; display: block;
   opacity: 0; transition: opacity .2s ease;
 }
-.action-chip .chip-img.loaded img { opacity: 1; }
+.action-chip .chip-img.loaded img { opacity: 1; cursor: zoom-in; }
 .action-chip .chip-img.failed { font-style: italic; }
 @media (prefers-reduced-motion: reduce) {
   .action-chip .chip-img img { transition: none; }
@@ -539,6 +603,32 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .msg.assistant .role .star.pop { animation: none; }
   .msg.assistant .role .star.pop::after { animation: none; opacity: 0; }
+}
+
+/* ---- Message delete (tidy a message out of the transcript) ---- */
+.msg .role .msg-del {
+  cursor: pointer; background: none; border: none; padding: 0 2px;
+  color: var(--fg-dim); line-height: 0; display: inline-flex;
+  opacity: 0; transform: scale(.9);
+  transition: opacity .14s, transform .14s, color .12s;
+}
+/* User rows have no star to push things right — the delete sits at the far end. */
+.msg.user .role .msg-del { margin-left: auto; }
+.msg.assistant .role .msg-del { margin-left: 2px; }
+.msg:hover .role .msg-del,
+.msg .role .msg-del:focus-visible { opacity: .55; transform: scale(1); }
+.msg .role .msg-del:hover { opacity: 1; color: var(--danger, #e0645a); transform: scale(1.12); }
+
+/* Collapse + fade a message out as it's removed. */
+.msg.removing {
+  height: 0 !important; opacity: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0;
+  overflow: hidden; transform: translateX(-6px);
+  transition: height .24s ease, opacity .2s ease, margin .24s ease,
+    padding .24s ease, transform .24s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg .role .msg-del { transition: opacity .01s; }
+  .msg.removing { transition: none; }
 }
 
 /* brief glow when you jump to a message from search / saved */
@@ -829,7 +919,7 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .composer-att.img { padding-left: 4px; }
 .composer-att .att-thumb {
   width: 26px; height: 26px; border-radius: 999px; object-fit: cover;
-  border: 1px solid var(--border-2);
+  border: 1px solid var(--border-2); cursor: zoom-in;
 }
 .composer-att .att-ico { font-size: 14px; line-height: 1; }
 .composer-att .att-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -846,6 +936,36 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 /* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
    hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
 .chat { position: relative; }
+
+/* ---- Ambient "living" glow behind the chat ----
+   A slow, ominous green pulse low in the message area that gives the chat depth.
+   Kept deliberately faint so it reads as atmosphere, never a distraction. Sits
+   behind the transparent feed (the header/composer are opaque, so it only shows
+   around the message bubbles). Gated by the Extra effects setting (body.fx-on)
+   and stilled under reduced-motion. */
+/* Lift the real panes above the glow. Left out on purpose: the drop-hint keeps
+   its own higher z-index (40) so it still covers the feed while files hover. */
+.chat > .chat-header, .chat > .feed, .chat > .composer {
+  position: relative; z-index: 1;
+}
+.chat::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  opacity: 0; transition: opacity .6s ease;
+  background:
+    radial-gradient(65% 55% at 50% 82%, rgba(108,199,142,0.16), transparent 70%),
+    radial-gradient(42% 42% at 14% 64%, rgba(143,224,170,0.08), transparent 72%),
+    radial-gradient(42% 42% at 86% 68%, rgba(108,199,142,0.07), transparent 72%);
+}
+body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out infinite; }
+@keyframes chat-glow {
+  0%, 100% { opacity: .45; transform: translateY(8px) scale(1); }
+  50%      { opacity: 1;   transform: translateY(0)   scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat::before { transition: none; }
+  body.fx-on .chat::before { animation: none; opacity: .6; }
+}
+
 .drop-hint {
   position: absolute; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;
@@ -2508,6 +2628,21 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   0%   { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); opacity: 1; }
   70%  { box-shadow: 0 0 0 5px rgba(108,199,142,0); opacity: .65; }
   100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); opacity: 1; }
+}
+
+/* ---- Sidebar: an unsent draft is waiting in this chat ---- */
+.sidebar-list .draft-dot {
+  display: inline-block; margin-left: 7px; vertical-align: middle;
+  font-size: 10px; line-height: 1; color: var(--accent-3);
+  opacity: .85; animation: draft-in .22s ease;
+}
+.sidebar-list li.has-draft > a { border-color: rgba(143,224,170,0.22); }
+@keyframes draft-in {
+  from { opacity: 0; transform: scale(.6); }
+  to   { opacity: .85; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-list .draft-dot { animation: none; }
 }
 
 /* ---- Settings → Activity tab ---- */

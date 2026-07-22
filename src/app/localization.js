@@ -45,8 +45,10 @@ function relocalizeDynamic() {
 document.querySelectorAll('.lang-toggle').forEach((b) => {
   b.onclick = () => window.I18N.setLang(window.I18N.getLang() === 'en' ? 'hr' : 'en');
 });
-document.addEventListener('i18n:changed', () => {
+document.addEventListener('i18n:changed', (e) => {
   updateLangBtn();
+  // Keep the backend's tie-break language in step with the interface.
+  api.setUiLanguage((e.detail && e.detail.lang) || window.I18N.getLang()).catch(() => {});
   updateSettingsBtn();
   els.title.title = tr('rename.headerTitle');
   syncComposer();                          // re-translate the send/stop title

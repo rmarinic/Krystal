@@ -35,11 +35,21 @@ pub struct AppState {
     /// list at boot and replaced by a live `GET /v1/models` fetch (see
     /// `refresh_models`). Kept here so validation can accept dynamic ids.
     pub models: std::sync::Mutex<Vec<models::ModelInfo>>,
+    /// The app's interface language ('en' | 'hr'), pushed down from the frontend
+    /// at boot and whenever the user flips the flag. Used ONLY as the tie-break
+    /// reply language for text that carries no language signal of its own — a
+    /// Croatian UI never turns an English message into a Croatian answer.
+    pub ui_lang: std::sync::Mutex<String>,
 }
 
 impl AppState {
     fn sys_prompt(&self) -> String {
-        claude::capability_prompt(self.caps)
+        claude::capability_prompt(self.caps, &self.ui_lang())
+    }
+
+    /// Current UI language code (owned clone — never held across an await).
+    pub fn ui_lang(&self) -> String {
+        self.ui_lang.lock().unwrap().clone()
     }
 
     /// Current claude executable path (owned clone — never held across an await).
@@ -62,6 +72,17 @@ type CmdResult = Result<Value, String>;
 pub fn get_config(state: State<'_, AppState>) -> Value {
     let models = state.models.lock().unwrap().clone();
     json!({ "models": models, "modes": models::MODES })
+}
+
+/// Tell the backend which language the app's interface is in. It never forces a
+/// reply language — it only breaks the tie for a message too short to identify
+/// (see `claude::capability_prompt`) and picks the language Claude drafts
+/// generated content in (tasks, a fresh CLAUDE.md).
+#[tauri::command]
+pub fn set_ui_language(state: State<'_, AppState>, lang: String) -> Value {
+    let lang = if lang == "hr" { "hr" } else { "en" };
+    *state.ui_lang.lock().unwrap() = lang.to_string();
+    json!({ "lang": lang })
 }
 
 /// Fetch the live model catalogue from the Anthropic Models API, adopt it into
@@ -526,6 +547,16 @@ pub fn toggle_favorite(state: State<'_, AppState>, message_id: i64) -> CmdResult
     db::toggle_favorite(&conn, message_id).ok_or_else(|| "not found".into())
 }
 
+/// Drop one message from a thread's saved transcript. Only the app's copy is
+/// affected — the resumed `claude` session still remembers it — so the UI frames
+/// this as tidying the transcript, not as erasing context.
+#[tauri::command]
+pub fn delete_message(state: State<'_, AppState>, message_id: i64) -> CmdResult {
+    let conn = state.db.lock().unwrap();
+    let thread_id = db::delete_message(&conn, message_id).ok_or("not found")?;
+    Ok(json!({ "ok": true, "threadId": thread_id }))
+}
+
 /* -------------------------------- tasks ---------------------------------- */
 /* A per-project to-do list. Tasks are keyed by the project's folder path, so
  * they're shared across all of that project's chats and openable at any time. */
@@ -589,7 +620,9 @@ pub fn task_count(state: State<'_, AppState>, project: String) -> Value {
 /// of clarifying questions (first pass, only when genuinely needed) or a clean,
 /// actionable task list. Domain-agnostic: the project might be writing, code,
 /// research, data — anything; Claude infers it from the folder and the brief.
-fn tasks_prompt(brief: &str, answers: &[Value]) -> String {
+fn tasks_prompt(brief: &str, answers: &[Value], ui_lang: &str) -> String {
+    // Only a tie-break for text with no language signal — never an override.
+    let fallback_lang = claude::lang_label(ui_lang);
     let answered = !answers.is_empty();
     let answers_block = if answered {
         let qa = answers
@@ -657,7 +690,7 @@ B) The task list:
 }}
 
 Rules:
-- Write every task and question in the SAME language the description is written in. If unclear, default to Croatian.
+- Write every task and question in the SAME language the description is written in. If that is genuinely unclear, use {fallback_lang}.
 - Make tasks specific and outcome-oriented — each should be one coherent piece of work, not a whole epic and not a trivial sub-step. Aim for roughly 3-12 tasks; split big items, merge tiny ones.
 - Order tasks in a sensible sequence (dependencies / natural workflow first).
 - Keep titles short (a line); put any extra detail in "note".
@@ -680,7 +713,7 @@ pub async fn generate_tasks(
 
     let sys = state.sys_prompt();
     let args = claude::base_args(models::DEFAULT_MODEL, &sys);
-    let prompt = tasks_prompt(brief.trim(), &answers);
+    let prompt = tasks_prompt(brief.trim(), &answers, &state.ui_lang());
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &cwd, &prompt).await?;
 
     match extract_json(&text) {
@@ -1489,7 +1522,8 @@ pub async fn hint_thread(state: State<'_, AppState>, id: String) -> CmdResult {
 // It is deliberately domain-agnostic: the project could be writing, research,
 // code, data, design, admin — anything. Claude infers the type and language
 // from the folder and the brief rather than us assuming them.
-fn analyze_prompt(brief: &str) -> String {
+fn analyze_prompt(brief: &str, ui_lang: &str) -> String {
+    let fallback_lang = claude::lang_label(ui_lang);
     let intro = if brief.trim().is_empty() {
         String::new()
     } else {
@@ -1520,7 +1554,7 @@ Then return a SINGLE JSON object (no prose, no code fence) shaped exactly like:
 }}
 
 Rules:
-- Detect the project's main language from the documents and the description, and write every question and option in THAT language. If it is genuinely unclear, default to Croatian.
+- Detect the project's main language from the documents and the description, and write every question and option in THAT language. If it is genuinely unclear, use {fallback_lang}.
 - Do NOT assume the project type — adapt the questions to whatever you actually find.
 - Ask 6 to 9 DEEP, project-SPECIFIC questions whose answers would make the CLAUDE.md genuinely useful. Pick whichever of these fit THIS project: the precise goal/scope, the kind of end result and its audience, the language Claude should reply in, the tone/voice, conventions to follow (citation style, code style, formatting…), how sources/inputs/files should be handled, key terminology or names to keep consistent, the current status and next steps, and any do/don't rules. Tailor them to what you actually saw — reference real files where useful.
 - Give each question 3-5 realistic premade options grounded in what you found, and set "allowCustom": true so the user can type their own.
@@ -1531,7 +1565,8 @@ Return ONLY the JSON object."#
     )
 }
 
-fn draft_prompt(findings: &str, answers: &[Value], brief: &str) -> String {
+fn draft_prompt(findings: &str, answers: &[Value], brief: &str, ui_lang: &str) -> String {
+    let fallback_lang = claude::lang_label(ui_lang);
     let qa = answers
         .iter()
         .map(|a| {
@@ -1568,7 +1603,7 @@ Answers:
 {qa}
 
 Produce the CLAUDE.md CONTENT ONLY (GitHub-flavoured markdown, no surrounding code fence, no commentary before or after). Make it a practical brief that a helper reads at the start of every future chat in this folder. Guidelines:
-- Write it in the project's main language (match the documents and answers; if it is Croatian, keep č/ć/ž/š/đ in UTF-8).
+- Write it in the project's main language (match the documents and answers; if that is genuinely unclear, use {fallback_lang}). If it is Croatian, keep č/ć/ž/š/đ in UTF-8.
 - Lead with a short overview section: what the project is, the kind of end result, and the audience/goal.
 - Add focused sections that reflect the answers — only the ones that apply, e.g.: language & style, tone/voice, conventions (citations, code style, formatting), how sources/inputs are handled, structure, current status & next steps, terminology/glossary, and clear "do this / avoid this" rules.
 - If Word (.docx) documents are in play, include a short note that Claude can read and write .docx (via pandoc / python-docx) and should preserve formatting.
@@ -1588,7 +1623,7 @@ pub async fn init_analyze(state: State<'_, AppState>, id: String, brief: Option<
 
     let sys = state.sys_prompt();
     let args = claude::base_args(&meta.model, &sys);
-    let prompt = analyze_prompt(brief.as_deref().unwrap_or(""));
+    let prompt = analyze_prompt(brief.as_deref().unwrap_or(""), &state.ui_lang());
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
     match extract_json(&text) {
@@ -1613,7 +1648,7 @@ pub async fn init_draft(
 
     let sys = state.sys_prompt();
     let args = claude::base_args(&meta.model, &sys);
-    let prompt = draft_prompt(summary.as_deref().unwrap_or(""), &answers, brief.as_deref().unwrap_or(""));
+    let prompt = draft_prompt(summary.as_deref().unwrap_or(""), &answers, brief.as_deref().unwrap_or(""), &state.ui_lang());
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
     let md = strip_md_fence(text.trim());

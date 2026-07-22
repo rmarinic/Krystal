@@ -6,8 +6,12 @@
 enhanceLogos();
 whenFontsReady(() => playLogoIntro());   // reveal + intro once the mono font is loaded (crisp K)
 updateLangBtn();
+// Tell the backend the current UI language so it can pick the reply-language
+// tie-break for messages too short to identify (never an override).
+api.setUiLanguage(window.I18N.getLang()).catch(() => {});
 updateSettingsBtn();
 scheduleLogoLife();
+applyExtraEffects();   // reflect the Extra effects setting onto the chat glow at boot
 api.discordSetShareName(settingOn('discordShareName')).catch(() => {});
 if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();

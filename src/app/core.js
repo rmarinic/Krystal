@@ -104,6 +104,10 @@ const els = {
   emptyNewChat: $('#empty-new-chat'),
   emptyInit: $('#empty-init'),
   usageChip: $('#usage-chip'),
+  lightboxOverlay: $('#lightbox-overlay'),
+  lightboxImg: $('#lightbox-img'),
+  lightboxCap: $('#lightbox-cap'),
+  lightboxClose: $('#lightbox-close'),
 };
 
 let state = {
@@ -147,6 +151,7 @@ const api = {
   remove(id) { return invoke('delete_thread', { id }); },
   rename(id, title) { return invoke('rename_thread', { id, title }); },
   config() { return invoke('get_config'); },
+  setUiLanguage(lang) { return invoke('set_ui_language', { lang }); },
   refreshModels() { return invoke('refresh_models'); },
   setModel(id, model) { return invoke('set_model', { id, model }); },
   setMode(id, mode) { return invoke('set_mode', { id, mode }); },
@@ -167,6 +172,7 @@ const api = {
   search(q, project) { return invoke('search_messages', { q, project }); },
   favorites(project) { return invoke('list_favorites', { project }); },
   toggleFav(mid) { return invoke('toggle_favorite', { messageId: mid }); },
+  deleteMessage(mid) { return invoke('delete_message', { messageId: mid }); },
   tasks(project) { return invoke('list_tasks', { project }); },
   addTask(project, title, note) { return invoke('add_task', { project, title, note }); },
   updateTask(id, title, done) { return invoke('update_task', { id, title, done }); },
@@ -269,4 +275,50 @@ function decorateCode(scope) {
 /* True for paths that point at an image we can preview inline. */
 const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 function isImagePath(p) { return !!p && IMG_EXT_RE.test(p.trim()); }
+
+/* ------------------------------ image lightbox --------------------------- *
+ * Any image the app shows as a small thumbnail — a composer attachment pill, a
+ * sent message's file-chip, or a tool chip's inline preview — is click-to-view.
+ * A single delegated listener opens the loaded thumbnail's pixels full-size in a
+ * dim overlay so an attached screenshot is actually readable, not a 40px chip. */
+function openLightbox(src, caption) {
+  const o = els.lightboxOverlay;
+  if (!o || !src) return;
+  els.lightboxImg.src = src;
+  els.lightboxImg.alt = caption || '';
+  els.lightboxCap.textContent = caption || '';
+  els.lightboxCap.hidden = !caption;
+  o.classList.remove('closing');
+  o.hidden = false;
+  requestAnimationFrame(() => o.classList.add('on'));
+}
+function closeLightbox() {
+  const o = els.lightboxOverlay;
+  if (!o || o.hidden) return;
+  o.classList.remove('on');
+  o.classList.add('closing');
+  setTimeout(() => { o.hidden = true; o.classList.remove('closing'); els.lightboxImg.src = ''; }, 190);
+}
+if (els.lightboxOverlay) {
+  els.lightboxClose.onclick = closeLightbox;
+  // Click anywhere on the backdrop (but not the image itself) to dismiss.
+  els.lightboxOverlay.addEventListener('click', (e) => {
+    if (e.target !== els.lightboxImg) closeLightbox();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !els.lightboxOverlay.hidden) closeLightbox();
+  });
+  // Delegated: a click on any already-loaded thumbnail opens it full-size. The
+  // caption prefers the human filename shown on the chip, falling back to alt.
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest(
+      '.file-chip.img img, .chip-img.loaded img, .composer-att.img .att-thumb',
+    );
+    if (!img || !img.getAttribute('src')) return;
+    const holder = img.closest('.file-chip, .composer-att, .chip-img');
+    const nameEl = holder && holder.querySelector('.name, .att-name');
+    const caption = (nameEl && nameEl.textContent.trim()) || img.alt || '';
+    openLightbox(img.src, caption);
+  });
+}
 

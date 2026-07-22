@@ -75,6 +75,11 @@ async function openThread(id, focusMid) {
   activityMinH = 0;                 // new chat → re-measure the activity panel size
   if (!els.activityOverlay.hidden) refreshActivityPanel();
 
+  // Restore this chat's unsent draft (kept per chat, persisted across restarts).
+  els.input.value = getDraft(id);
+  autosize();
+  syncShellMode();
+
   if (focusMid) {
     const el = els.feed.querySelector(`[data-mid="${focusMid}"]`);
     if (el) {
@@ -268,7 +273,12 @@ function appendMessage(role, text, files, meta) {
   const star = (role === 'assistant' && !shell)
     ? `<button class="star${meta && meta.favorite ? ' on' : ''}"${meta && meta.id ? '' : ' disabled'} title="${tr('msg.saveReply')}">★</button>`
     : '';
-  div.innerHTML = `<div class="role">${roleLabel}${star}</div>${chips}<div class="bubble"></div>`;
+  // Delete this message from the saved transcript. Only a persisted message (one
+  // with a DB id) can be removed; a still-streaming reply has none yet.
+  const del = (meta && meta.id)
+    ? `<button class="msg-del" title="${tr('msg.deleteTitle')}" aria-label="${tr('msg.delete')}">${TRASH_ICON}</button>`
+    : '';
+  div.innerHTML = `<div class="role">${roleLabel}${star}${del}</div>${chips}<div class="bubble"></div>`;
   const bubble = div.querySelector('.bubble');
   if (role === 'assistant') {
     if (segs && segs.length) {
@@ -282,6 +292,8 @@ function appendMessage(role, text, files, meta) {
   } else {
     bubble.textContent = text;
   }
+  const delBtn = div.querySelector('.msg-del');
+  if (delBtn) delBtn.onclick = () => deleteMessage(div);
   els.feed.appendChild(div);
   if (files && files.length) loadFileChipThumbs(div);
   return div;
@@ -303,6 +315,34 @@ function loadFileChipThumbs(container) {
       else chip.classList.remove('img');        // fall back to a plain name chip
     }).catch(() => chip.classList.remove('img'));
   });
+}
+
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+
+/* Remove a single message from the saved transcript. It only tidies the app's
+ * copy — the resumed claude session still remembers it — so we say as much and
+ * collapse the bubble out with a short fade rather than a hard cut. */
+async function deleteMessage(div) {
+  const mid = div.dataset.mid;
+  if (!mid || div.classList.contains('removing')) return;
+  if (!confirm(tr('msg.deleteConfirm'))) return;
+  try {
+    await api.deleteMessage(Number(mid));
+  } catch (_) {
+    return;   // leave the message in place if the backend couldn't remove it
+  }
+  // Lock the current height so the collapse animates from it, then fade+shrink.
+  div.style.height = div.offsetHeight + 'px';
+  void div.offsetHeight;                            // reflow so the next change animates
+  div.classList.add('removing');
+  const finish = () => {
+    div.remove();
+    if (state.view === 'saved') refreshSaved();     // it may have been a saved reply
+  };
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) finish();
+  else setTimeout(finish, 260);
 }
 
 async function toggleStar(div, btn) {

@@ -210,6 +210,15 @@
     </div>
   </div>
 
+  <!-- ============= Image lightbox: view an attachment full-size ============= -->
+  <div class="lightbox-overlay" id="lightbox-overlay" hidden>
+    <button class="lightbox-x" id="lightbox-close" data-i18n-title="lightbox.close" title="Close" aria-label="Close">×</button>
+    <figure class="lightbox-figure">
+      <img id="lightbox-img" alt="">
+      <figcaption class="lightbox-cap" id="lightbox-cap"></figcaption>
+    </figure>
+  </div>
+
   <!-- ============= Activity panel: live shells & sub-agents ============= -->
   <div class="modal-overlay" id="activity-overlay" hidden>
     <div class="init-modal activity-modal" role="dialog" aria-modal="true" aria-labelledby="activity-title">

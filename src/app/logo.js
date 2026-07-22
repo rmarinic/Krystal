@@ -65,3 +65,10 @@ function scheduleLogoLife() {
   logoLifeTimer = setTimeout(() => { triggerLogoGlow(); scheduleLogoLife(); }, delay);
 }
 
+/* The umbrella "Extra effects" switch (stored under the legacy `logoLife` key)
+ * gates every ambient touch — the living logo AND the chat backdrop glow (and
+ * whatever subtle effects we add next). A single body class drives the CSS. */
+function applyExtraEffects() {
+  document.body.classList.toggle('fx-on', settingOn('logoLife'));
+}
+

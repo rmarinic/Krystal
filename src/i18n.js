@@ -159,6 +159,9 @@
       'msg.you': 'You',
       'msg.claude': 'Claude',
       'msg.saveReply': 'Save this reply',
+      'msg.delete': 'Delete message',
+      'msg.deleteTitle': 'Delete this message from the transcript',
+      'msg.deleteConfirm': 'Delete this message from the chat transcript? This only tidies the saved history — Claude may still remember it in this session until you clear or compact the chat.',
 
       /* ---- clear / compact ---- */
       'clear.confirm': 'Start fresh? Claude will forget this conversation. (Your other chats stay.)',
@@ -188,6 +191,7 @@
       'activity.btnTitle': "Agents & shells: when Claude runs a command or launches a sub-agent, open this to watch what it's doing",
       'activity.panelTitle': '⚡ Agents & shells',
       'activity.close': 'Close',
+      'lightbox.close': 'Close (Esc)',
       'activity.filter.all': 'All',
       'activity.filter.active': 'Active',
       'activity.filter.done': 'Done',
@@ -248,6 +252,8 @@
       'chip.outputLabel': 'Output',
       'chip.noOutput': 'No output captured.',
       'chip.pending': 'Working… output will appear here.',
+      'chip.agentLive': 'Live activity',
+      'chip.agentWaiting': 'Sub-agent starting… its steps will stream in here.',
       'chip.imgFailed': "Couldn't load image preview.",
       'code.copy': 'Copy',
       'shell.role': 'Shell',
@@ -436,8 +442,8 @@
       'link.failLabel': "Couldn't open link",
       'settings.gitStatus.name': 'Git branch status',
       'settings.gitStatus.desc': 'Show the current branch and working-tree changes under the message box. Hidden automatically when the project folder is not a git repository.',
-      'settings.logoLife.name': 'Living logo',
-      'settings.logoLife.desc': 'Let the Krystal logo glow on its own now and then, to make the app feel a little more alive.',
+      'settings.logoLife.name': 'Extra effects',
+      'settings.logoLife.desc': 'Subtle ambient touches that give the app depth: the Krystal logo glowing on its own now and then, and a soft green glow pulsing behind the chat.',
       'settings.discord.name': 'Discord presence',
       'settings.discord.desc': 'Show on your Discord profile that you are using Krystal. Chat content is never shared.',
       'settings.discordShareName.name': 'Share project name',
@@ -472,6 +478,7 @@
       'settings.runs.stale': 'Stale',
       'settings.runs.unknown': 'Untitled chat',
       'sidebar.streamingTitle': 'A reply is streaming in this chat',
+      'sidebar.draftTitle': 'An unsent draft is waiting in this chat',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'no changes',
@@ -652,6 +659,9 @@
       'msg.you': 'Ti',
       'msg.claude': 'Claude',
       'msg.saveReply': 'Spremi ovaj odgovor',
+      'msg.delete': 'Izbriši poruku',
+      'msg.deleteTitle': 'Izbriši ovu poruku iz prijepisa',
+      'msg.deleteConfirm': 'Izbrisati ovu poruku iz prijepisa razgovora? Ovo samo posprema spremljenu povijest — Claude je i dalje može pamtiti u ovoj sesiji dok ne očistiš ili sažmeš razgovor.',
 
       /* ---- clear / compact ---- */
       'clear.confirm': 'Početi iznova? Claude će zaboraviti ovaj razgovor. (Ostali razgovori ostaju.)',
@@ -681,6 +691,7 @@
       'activity.btnTitle': 'Agenti i ljuske: kad Claude pokrene naredbu ili pod-agenta, otvori ovo da vidiš što radi',
       'activity.panelTitle': '⚡ Agenti i ljuske',
       'activity.close': 'Zatvori',
+      'lightbox.close': 'Zatvori (Esc)',
       'activity.filter.all': 'Sve',
       'activity.filter.active': 'Aktivni',
       'activity.filter.done': 'Gotovi',
@@ -741,6 +752,8 @@
       'chip.outputLabel': 'Izlaz',
       'chip.noOutput': 'Nema zabilježenog izlaza.',
       'chip.pending': 'Radim… izlaz će se pojaviti ovdje.',
+      'chip.agentLive': 'Aktivnost uživo',
+      'chip.agentWaiting': 'Pod-agent se pokreće… koraci će se pojavljivati ovdje.',
       'chip.imgFailed': 'Pregled slike nije moguće učitati.',
       'code.copy': 'Kopiraj',
       'shell.role': 'Shell',
@@ -928,8 +941,8 @@
       'link.failLabel': 'Nije moguće otvoriti poveznicu',
       'settings.gitStatus.name': 'Git status grane',
       'settings.gitStatus.desc': 'Prikaži trenutačnu granu i promjene u radnom stablu ispod okvira za poruku. Automatski se skriva kad mapa projekta nije git repozitorij.',
-      'settings.logoLife.name': 'Živi logotip',
-      'settings.logoLife.desc': 'Neka Krystal logotip povremeno sam zasvijetli, da aplikacija djeluje malo življe.',
+      'settings.logoLife.name': 'Dodatni efekti',
+      'settings.logoLife.desc': 'Suptilni ambijentalni detalji koji daju dubinu aplikaciji: Krystal logotip koji povremeno sam zasvijetli i mekani zeleni sjaj koji pulsira iza razgovora.',
       'settings.discord.name': 'Discord prisutnost',
       'settings.discord.desc': 'Prikaži na svom Discord profilu da koristiš Krystal. Sadržaj razgovora nikad se ne dijeli.',
       'settings.discordShareName.name': 'Dijeli naziv projekta',
@@ -964,6 +977,7 @@
       'settings.runs.stale': 'Zastarjelo',
       'settings.runs.unknown': 'Razgovor bez naslova',
       'sidebar.streamingTitle': 'U ovom razgovoru pristiže odgovor',
+      'sidebar.draftTitle': 'U ovom razgovoru čeka neposlana skica',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'nema promjena',

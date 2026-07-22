@@ -29,6 +29,7 @@ function renderSidebar() {
   }
   for (const t of state.threads) {
     const li = document.createElement('li');
+    li.dataset.tid = t.id;
     if (t.id === state.activeId) li.className = 'current';
     if (t.id === justAddedThreadId) { li.classList.add('just-added'); justAddedThreadId = null; }
     // A turn streaming in this thread (even from another open view) → live mark.
@@ -36,9 +37,14 @@ function renderSidebar() {
     if (streaming) li.classList.add('streaming');
     const liveDot = streaming
       ? `<span class="live-dot" title="${tr('sidebar.streamingTitle')}" aria-hidden="true"></span>` : '';
+    // An unsent draft waiting in this chat → a small pencil mark.
+    const draft = typeof hasDraft === 'function' && hasDraft(t.id);
+    if (draft) li.classList.add('has-draft');
+    const draftDot = draft
+      ? `<span class="draft-dot" title="${tr('sidebar.draftTitle')}" aria-hidden="true">✎</span>` : '';
     li.innerHTML = `
       <a>
-        <span class="time">${timeLabel(t.updatedAt)}${liveDot}</span>
+        <span class="time">${timeLabel(t.updatedAt)}${liveDot}${draftDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
@@ -55,10 +61,34 @@ function renderSidebar() {
       // Collapse the row away before the list re-renders — a tidy, deliberate exit.
       li.classList.add('removing');
       await api.remove(t.id);
+      if (typeof dropDraft === 'function') dropDraft(t.id);   // its draft goes with it
       if (state.activeId === t.id) { state.activeId = null; showEmpty(); }
       setTimeout(loadThreads, 220);
     };
     els.threadList.appendChild(li);
+  }
+}
+
+/* Flip a chat row's draft mark without re-rendering the whole list — called as
+ * you type/clear a draft, so it toggles the moment the draft appears or empties. */
+function updateDraftMark(id) {
+  if (state.view !== 'threads' || !id) return;
+  const li = els.threadList.querySelector(`li[data-tid="${cssEsc(id)}"]`);
+  if (!li) return;
+  const on = typeof hasDraft === 'function' && hasDraft(id);
+  li.classList.toggle('has-draft', on);
+  let dot = li.querySelector('.draft-dot');
+  if (on && !dot) {
+    const time = li.querySelector('.time');
+    if (!time) return;
+    dot = document.createElement('span');
+    dot.className = 'draft-dot';
+    dot.title = tr('sidebar.draftTitle');
+    dot.setAttribute('aria-hidden', 'true');
+    dot.textContent = '✎';
+    time.appendChild(dot);
+  } else if (!on && dot) {
+    dot.remove();
   }
 }
 

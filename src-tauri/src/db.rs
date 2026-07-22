@@ -710,6 +710,23 @@ pub fn toggle_favorite(conn: &Connection, message_id: i64) -> Option<Value> {
     Some(json!({ "favorite": fav != 0 }))
 }
 
+/// Remove a single message from a thread's transcript. Returns the thread id it
+/// belonged to, or `None` if there was no such message.
+///
+/// This edits the *saved* transcript only — the `claude` session the thread
+/// resumes from keeps its own history, so a deleted message can still colour
+/// later replies until the chat is cleared or compacted. The UI says so.
+pub fn delete_message(conn: &Connection, message_id: i64) -> Option<String> {
+    let thread_id: Option<String> = conn
+        .query_row("SELECT thread_id FROM messages WHERE id = ?1", [message_id], |r| r.get(0))
+        .optional()
+        .ok()
+        .flatten();
+    let thread_id = thread_id?;
+    conn.execute("DELETE FROM messages WHERE id = ?1", [message_id]).ok()?;
+    Some(thread_id)
+}
+
 pub fn list_favorites(conn: &Connection, project: Option<&str>) -> Vec<Value> {
     let mut stmt = conn
         .prepare(

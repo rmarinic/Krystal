@@ -67,7 +67,7 @@ function setSettingVal(k, v) {           // non-boolean (e.g. the link-open choi
 }
 function applySetting(k) {
   if (k === 'gitStatus') refreshGit();
-  else if (k === 'logoLife') scheduleLogoLife();
+  else if (k === 'logoLife') { scheduleLogoLife(); applyExtraEffects(); }
   else if (k === 'discordShareName') {
     api.discordSetShareName(settingOn(k)).catch(() => {});
     syncDiscordProject();

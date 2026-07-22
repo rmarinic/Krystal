@@ -55,11 +55,14 @@ fn main() {
                 run_procs: std::sync::Mutex::new(std::collections::HashMap::new()),
                 data_dir: dir.clone(),
                 models: std::sync::Mutex::new(models),
+                // Overwritten by the frontend at boot (and on every flag flip).
+                ui_lang: std::sync::Mutex::new("en".to_string()),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
+            commands::set_ui_language,
             commands::refresh_models,
             commands::preflight,
             commands::install_claude,
@@ -84,6 +87,7 @@ fn main() {
             commands::search_messages,
             commands::list_favorites,
             commands::toggle_favorite,
+            commands::delete_message,
             commands::list_tasks,
             commands::add_task,
             commands::update_task,
