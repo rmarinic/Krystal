@@ -939,31 +939,43 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 
 /* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
    hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
-.chat { position: relative; }
+/* overflow-x: clip contains the backlight halo within the chat pane (so it never
+   bleeds onto the sidebar); overflow-y stays visible so header pickers / the
+   mention popup can still overflow vertically. */
+.chat { position: relative; overflow-x: clip; }
 
-/* ---- Ambient "living" glow behind the chat ----
-   A slow, ominous green pulse low in the message area that gives the chat depth.
-   Kept deliberately faint so it reads as atmosphere, never a distraction. Sits
-   behind the transparent feed (the header/composer are opaque, so it only shows
-   around the message bubbles). Gated by the Extra effects setting (body.fx-on)
-   and stilled under reduced-motion. */
-/* Lift the real panes above the glow. Left out on purpose: the drop-hint keeps
-   its own higher z-index (40) so it still covers the feed while files hover. */
+/* ---- Ambient "backlight" glow behind the chat ----
+   A panel the width of the message column, sitting DIRECTLY behind the messages
+   and emitting a soft green glow OUTWARD from its edges — as if something is lit
+   behind the chat. The halo bleeds into the side gutters (and softly top/bottom),
+   making the container's edges read as backlit, not a random cloud. Kept faint so
+   it's atmosphere; gated by Extra effects (body.fx-on) and calmed for reduced-motion.
+   Left out of the lift below on purpose: the drop-hint keeps its own z-index (40). */
 .chat > .chat-header, .chat > .feed, .chat > .composer {
   position: relative; z-index: 1;
 }
 .chat::before {
-  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  content: ""; position: absolute; z-index: 0; pointer-events: none;
+  /* centred vertical panel, ~the message column's width, inset clear of the
+     opaque header/composer so all four edges glow within the feed */
+  left: 50%; transform: translateX(-50%);
+  top: 104px; bottom: 108px;
+  width: min(860px, 86%);
+  border-radius: 26px;
+  /* faint inner fill (the panel itself reads as lit) + an outward green halo */
+  background: radial-gradient(120% 100% at 50% 50%,
+    rgba(108,199,142,0.07), rgba(108,199,142,0.02) 58%, transparent 78%);
+  box-shadow:
+    0 0 55px 3px rgba(108,199,142,0.18),
+    0 0 130px 22px rgba(108,199,142,0.11),
+    0 0 230px 60px rgba(108,199,142,0.05);
   opacity: 0; transition: opacity .6s ease;
-  background:
-    radial-gradient(65% 55% at 50% 82%, rgba(108,199,142,0.16), transparent 70%),
-    radial-gradient(42% 42% at 14% 64%, rgba(143,224,170,0.08), transparent 72%),
-    radial-gradient(42% 42% at 86% 68%, rgba(108,199,142,0.07), transparent 72%);
 }
 body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out infinite; }
+/* Pulse the backlight's intensity only — the panel never moves or resizes. */
 @keyframes chat-glow {
-  0%, 100% { opacity: .45; transform: translateY(8px) scale(1); }
-  50%      { opacity: 1;   transform: translateY(0)   scale(1.05); }
+  0%, 100% { opacity: .5; }
+  50%      { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat::before { transition: none; }

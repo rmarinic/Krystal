@@ -44,6 +44,28 @@ jobs:
       - name: Install npm deps (Tauri CLI)
         run: npm install
 
+      # Pull this version's section out of CHANGELOG.md. tauri-action writes the
+      # release body into latest.json as the updater `notes`, so this is exactly
+      # what the in-app "update available" prompt shows under "What's new".
+      - name: Extract release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}"
+          $notes = ""
+          if (Test-Path CHANGELOG.md) {
+            $md = Get-Content -Raw CHANGELOG.md
+            $rx = "(?ms)^##\s+" + [regex]::Escape($ver) + "\b[^\r\n]*\r?\n(.*?)(?=^##\s+|\z)"
+            $m = [regex]::Match($md, $rx)
+            if ($m.Success) { $notes = $m.Groups[1].Value.Trim() }
+          }
+          if (-not $notes) { $notes = "Krystal $ver. See the full history on GitHub." }
+          $delim = "KRYSTAL_NOTES_EOF"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "notes<<$delim"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $notes
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $delim
+          Write-Host "Release notes for ${ver}:`n$notes"
+
       - name: Build, sign & publish release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -53,11 +75,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Krystal ${{ github.ref_name }}'
-          releaseBody: |
-            Krystal ${{ github.ref_name }}.
-
-            Installed copies update themselves automatically — just launch the app
-            and accept the update prompt. First-time install: download the
-            `*-setup.exe` below and run it.
+          releaseBody: ${{ steps.notes.outputs.notes }}
           releaseDraft: false
           prerelease: false
