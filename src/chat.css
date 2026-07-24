@@ -951,8 +951,14 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
    making the container's edges read as backlit, not a random cloud. Kept faint so
    it's atmosphere; gated by Extra effects (body.fx-on) and calmed for reduced-motion.
    Left out of the lift below on purpose: the drop-hint keeps its own z-index (40). */
-.chat > .chat-header, .chat > .feed, .chat > .composer {
+.chat > .feed, .chat > .composer {
   position: relative; z-index: 1;
+}
+/* Header sits above the feed so its downward dropdowns (model picker) aren't
+   painted under the later-in-DOM .feed sibling — otherwise only the top menu
+   item, still within the header's box, stays clickable. */
+.chat > .chat-header {
+  position: relative; z-index: 3;
 }
 .chat::before {
   content: ""; position: absolute; z-index: 0; pointer-events: none;

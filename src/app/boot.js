@@ -15,6 +15,7 @@ applyExtraEffects();   // reflect the Extra effects setting onto the chat glow a
 api.discordSetShareName(settingOn('discordShareName')).catch(() => {});
 if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();
+startModelRefresh();
 startUsage();
 showProjectPicker();
 

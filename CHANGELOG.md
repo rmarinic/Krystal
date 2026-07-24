@@ -4,6 +4,10 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.14.3
+- Fixed the model dropdown: opening it, only the top option was clickable — the other models were rendered behind the chat and swallowed clicks. All options are now selectable.
+- The model list now stays current with the latest Claude models on its own — it refreshes live (when the window regains focus and hourly), so newly released models (e.g. Claude Opus 5) appear without restarting the app. Chats still pinned to a superseded model are moved to the current one automatically.
+
 ## v0.14.2
 - Reworked the ambient chat glow into a soft green "backlight" that emanates from directly behind the message column, so the chat reads as lit from behind rather than a diffuse cloud. Still controlled by the **Extra effects** setting.
 

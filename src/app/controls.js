@@ -81,7 +81,19 @@ function modelBlurb(m) {
 // model blurbs and mode names/blurbs. Rebuilding is how a language switch
 // re-translates them; the current selection is preserved.
 function buildPickers() {
-  const curModel = modelSel ? modelSel.getValue() : ((state.models[0] && state.models[0].id) || '');
+  let curModel = modelSel ? modelSel.getValue() : ((state.models[0] && state.models[0].id) || '');
+  // Resilience guard: if the stored selection fell out of the live catalogue
+  // (e.g. a live refresh dropped it), snap to the newest model of the same
+  // tier rather than let the closed picker show a raw unknown id — createPicker's
+  // paintVal() falls back to the raw id when nothing in `opts` matches.
+  if (state.models.length && !state.models.some((m) => m.id === curModel)) {
+    const tier = curModel.split('-')[1];
+    const fallback = state.models.find((m) => m.id.split('-')[1] === tier) || state.models[0];
+    if (fallback.id !== curModel) {
+      curModel = fallback.id;
+      if (state.activeId) api.setModel(state.activeId, curModel).catch(() => {});   // keep the DB in sync
+    }
+  }
   const curMode = modeSel ? modeSel.getValue() : ((state.modes[0] && state.modes[0].id) || 'auto');
   modelSel = createPicker(els.modelPicker, {
     tag: tr('model.tag'),
@@ -135,6 +147,19 @@ async function refreshModelsLive() {
       if (state.activeId) updateUsage(state.lastUsage, { silent: true });  // re-scale meter
     }
   } catch {}
+}
+
+let modelPollTimer = null;
+const MODEL_POLL_MS = 60 * 60 * 1000;   // models change far less often than usage — hourly is plenty
+
+// Keep the model picker current without a restart: poll hourly while the window
+// is visible, and refresh immediately when it regains focus (a stale background
+// tab shouldn't miss a same-day model release). The initial fetch already
+// happened via populatePickers() → refreshModelsLive() at boot.
+function startModelRefresh() {
+  clearInterval(modelPollTimer);
+  modelPollTimer = setInterval(() => { if (!document.hidden) refreshModelsLive(); }, MODEL_POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshModelsLive(); });
 }
 
 /* Full-screen "working" overlay used by Compact & Clear — a satisfying little

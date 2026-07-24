@@ -387,13 +387,13 @@ fn messages_of(conn: &Connection, id: &str) -> Vec<Value> {
     rows.filter_map(|r| r.ok()).collect()
 }
 
-pub fn create(conn: &Connection, cwd: &str) -> Option<Value> {
+pub fn create(conn: &Connection, cwd: &str, default_model: &str) -> Option<Value> {
     let id = uuid::Uuid::new_v4().to_string();
     let t = now();
     conn.execute(
         "INSERT INTO threads (id,title,cwd,session_id,model,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at)
          VALUES (?1,?2,?3,NULL,?4,NULL,0,0,0,0,0,?5,?6)",
-        params![id, "New chat", cwd, DEFAULT_MODEL, t, t],
+        params![id, "New chat", cwd, default_model, t, t],
     )
     .ok()?;
     get_thread(conn, &id)

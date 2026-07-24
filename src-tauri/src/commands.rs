@@ -399,8 +399,22 @@ pub fn list_threads(state: State<'_, AppState>, project: Option<String>) -> Valu
 
 #[tauri::command]
 pub fn get_thread(state: State<'_, AppState>, id: String) -> CmdResult {
+    // Clone the catalogue out first so we never hold the models lock across the
+    // DB work below.
+    let catalog = state.models.lock().unwrap().clone();
     let conn = state.db.lock().unwrap();
-    db::get_thread(&conn, &id).ok_or_else(|| "not found".into())
+    let mut thread = db::get_thread(&conn, &id).ok_or("not found")?;
+    // Self-heal a stored model id that has dropped out of the live catalogue, so
+    // the picker never shows a dead id and future sends never target a vanished
+    // model. Persist the correction so the DB, picker and sends all agree.
+    if let Some(stored) = thread.get("model").and_then(|m| m.as_str()).map(str::to_string) {
+        let effective = models::effective_id(&catalog, &stored);
+        if effective != stored {
+            db::set_model(&conn, &id, &effective);
+            thread["model"] = Value::String(effective);
+        }
+    }
+    Ok(thread)
 }
 
 #[tauri::command]
@@ -408,8 +422,11 @@ pub fn create_thread(state: State<'_, AppState>, cwd: String) -> CmdResult {
     if cwd.is_empty() {
         return Err("cwd required".into());
     }
+    // Default a new chat to the live catalogue's preferred model (not a hardcoded
+    // id), so a fresh chat never opens pointing at a superseded model.
+    let default_model = models::default_id(&state.models.lock().unwrap());
     let conn = state.db.lock().unwrap();
-    let thread = db::create(&conn, &cwd).ok_or("could not create thread")?;
+    let thread = db::create(&conn, &cwd, &default_model).ok_or("could not create thread")?;
     db::touch_project(&conn, &cwd); // keep the project list ordered by recent use
     Ok(thread)
 }
@@ -738,11 +755,26 @@ pub async fn chat(
     let refs = refs.unwrap_or_default();
 
     // Snapshot the thread (owned) so we hold no DB lock across the stream.
-    let meta = {
+    let mut meta = {
         let conn = state.db.lock().unwrap();
         db::get_meta(&conn, &thread_id)
     }
     .ok_or("unknown thread")?;
+
+    // Self-heal a stale model id: if the thread's stored model has dropped out of
+    // the live catalogue, remap it (by tier) to a live one before it reaches the
+    // CLI, and persist the correction so the DB/picker/sends all agree. Still
+    // permissive — a valid id is passed through untouched. Clone the catalogue out
+    // and drop the lock before touching the DB.
+    let effective_model = {
+        let catalog = state.models.lock().unwrap();
+        models::effective_id(&catalog, &meta.model)
+    };
+    if effective_model != meta.model {
+        let conn = state.db.lock().unwrap();
+        db::set_model(&conn, &thread_id, &effective_model);
+        meta.model = effective_model;
+    }
 
     // Let Claude KNOW a task list exists (a cheap one-liner) and drop a fresh
     // markdown snapshot it can read — and optionally edit — on demand, without

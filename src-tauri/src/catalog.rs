@@ -64,6 +64,7 @@ pub async fn fetch_catalog() -> Result<Vec<ModelInfo>, String> {
     // tier -> (created_at, id, name, ctx) for the newest model seen in that tier.
     let mut best: HashMap<String, (String, String, String, u64)> = HashMap::new();
     let mut after: Option<String> = None;
+    let mut hit_cap = true;
 
     for _ in 0..20 {
         // hard page cap — the catalogue is small
@@ -104,6 +105,12 @@ pub async fn fetch_catalog() -> Result<Vec<ModelInfo>, String> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            if created.is_empty() {
+                // No date to sort on — this model could win/lose its tier by
+                // arrival order rather than recency. Surface it so the
+                // newest-per-tier curation isn't silently misclassifying.
+                eprintln!("catalog: model {id} has no created_at; newest-per-tier may misclassify it");
+            }
             let tier = models::tier_of(&id, &name);
             // Keep the newest (created_at sorts lexically as ISO-8601). Ties and
             // missing dates keep whichever we saw first.
@@ -118,11 +125,21 @@ pub async fn fetch_catalog() -> Result<Vec<ModelInfo>, String> {
         if body.get("has_more").and_then(|v| v.as_bool()).unwrap_or(false) {
             match body.get("last_id").and_then(|v| v.as_str()) {
                 Some(a) => after = Some(a.to_string()),
-                None => break,
+                None => {
+                    hit_cap = false;
+                    break;
+                }
             }
         } else {
+            hit_cap = false;
             break;
         }
+    }
+    if hit_cap {
+        // We exhausted the page budget while the API still reported more models.
+        // The catalogue is truncated — later models (possibly a newer tier entry)
+        // never got scanned. Surface it rather than silently curating a subset.
+        eprintln!("catalog: hit the 20-page pagination cap; model list may be truncated");
     }
 
     if best.is_empty() {
