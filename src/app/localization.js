@@ -58,5 +58,6 @@ document.addEventListener('i18n:changed', (e) => {
   applyWelcomeInitLabel();                 // keep Initialize/Reinitialize correct
   refreshUsageSurfaces();                  // re-translate the usage chip + picker card
   relocalizeDynamic();
+  if (!els.agentOverlay.hidden) renderAgentPanel();   // agent inspector, if it's open
 });
 

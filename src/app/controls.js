@@ -239,7 +239,7 @@ async function doCompact(close) {
     showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('compact.failLabel'),
       body: escapeHtml(String(e.message || e)) });
   } finally {
-    els.compactBtn.disabled = false;
+    els.compactBtn.disabled = state.streaming || !state.activeId;
     els.compactBtn.textContent = tr('compact.btn');
   }
 }
@@ -250,9 +250,14 @@ els.compactBtn.onclick = () => doCompact();
 /* Branch (fork) the conversation: create a copy of the current chat as a new
  * thread — same settings and transcript, its own fresh session, the prior talk
  * kept as context — then switch straight into it. Non-destructive: the original
- * chat is left exactly as it was. */
+ * chat is left exactly as it was.
+ *
+ * Works mid-reply too (streams are per-thread and keep running when you switch
+ * away): the branch simply starts from everything before the turn still in
+ * flight, which the done-tip spells out. */
 async function doBranch() {
-  if (!state.activeId || state.streaming || els.branchBtn.disabled) return;
+  if (!state.activeId || els.branchBtn.disabled) return;
+  const midTurn = state.streaming;
   // Nothing to fork from an empty chat — nudge instead of making a blank copy.
   if (!els.feed.querySelector('.msg')) {
     showTip({ key: 'status', icon: '🌿', label: tr('fork.emptyLabel'), body: tr('fork.emptyBody') });
@@ -269,7 +274,8 @@ async function doBranch() {
     await loadThreads();                             // it appears at the top of the list
     await openThread(t.id);                          // switch into the branch…
     replayClass(els.feed, 'branch-switch', 900);     // …with a calm settle of the copied thread
-    showTip({ key: 'status', icon: '🌿', label: tr('fork.doneLabel'), body: tr('fork.doneBody') });
+    showTip({ key: 'status', icon: '🌿', label: tr('fork.doneLabel'),
+      body: tr(midTurn ? 'fork.doneBodyLive' : 'fork.doneBody') });
   } catch (e) {
     showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('fork.failLabel'),
       body: escapeHtml(String(e.message || e)) });

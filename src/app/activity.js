@@ -224,6 +224,15 @@ function renderActivityBody(body) {
       `<span class="activity-name">${escapeHtml(kind)}</span>` +
       `<span class="activity-target">${escapeHtml(a.target || '')}</span>` +
       `<span class="activity-state ${cls}">${a.running ? '<span class="activity-spin"></span>' : ''}${escapeHtml(stateLbl)}</span>`;
+    // A sub-agent has a run of its own — offer the inspector right here.
+    if (a.name === 'Task' && hasAgentRun(a.id)) {
+      const open = document.createElement('button');
+      open.className = 'activity-open';
+      open.textContent = tr('agent.openBtn');
+      open.title = tr('agent.openTitle');
+      open.onclick = () => openAgentPanel(a.id);
+      head.appendChild(open);
+    }
     item.appendChild(head);
     if (a.detail) {
       const c = document.createElement('div');
@@ -277,6 +286,7 @@ els.activityOverlay.addEventListener('mouseup', (e) => {
   actPressOnBackdrop = false;
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !els.activityOverlay.hidden) closeActivity();
+  // The agent inspector opens on top of this panel — Escape closes that first.
+  if (e.key === 'Escape' && !els.activityOverlay.hidden && els.agentOverlay.hidden) closeActivity();
 });
 

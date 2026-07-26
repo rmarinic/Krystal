@@ -8,7 +8,7 @@
  * mirrors the original top-to-bottom order; boot.js (the entry point) loads last.
  *
  * Load order (see index.html):
- *   core → sidebar → chat → projects → controls → activity → search →
+ *   core → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → mentions → attachments → wizard → localization →
  *   settings → tasks → git → links → logo → boot
  *
@@ -66,6 +66,16 @@ const els = {
   activityBody: $('#activity-body'),
   activityClose: $('#activity-close'),
   activityFilters: $('#activity-filters'),
+  agentOverlay: $('#agent-overlay'),
+  agentTitle: $('#agent-title'),
+  agentSub: $('#agent-sub'),
+  agentStatus: $('#agent-status'),
+  agentStats: $('#agent-stats'),
+  agentBody: $('#agent-body'),
+  agentHint: $('#agent-hint'),
+  agentStop: $('#agent-stop'),
+  agentDone: $('#agent-done'),
+  agentClose: $('#agent-close'),
   tasksBtn: $('#tasks-btn'),
   tasksCount: $('#tasks-count'),
   tasksOverlay: $('#tasks-overlay'),
@@ -127,6 +137,7 @@ let state = {
   results: [],           // current search/favorite results
   lastUsage: null,       // most recent usage, for re-scaling the meter
   seed: null,            // compaction summary of the active thread (until the next turn folds it in)
+  summary: null,         // same summary, kept readable ("view summary") even after a turn folds it in
 };
 
 /* Context-rot thresholds as a FRACTION of the active model's context window
@@ -214,7 +225,13 @@ function renderMarkdown(md) {
   const html = window.marked ? marked.parse(md || '') : (md || '');
   return window.DOMPurify ? DOMPurify.sanitize(html) : html;
 }
-function scrollFeed() { els.feed.scrollTop = els.feed.scrollHeight; }
+/* Jump the feed to the bottom. Remembers the landing position so the scroll
+ * event it echoes can be told apart from a real user scroll (see stream.js). */
+let feedAutoTop = -1;
+function scrollFeed() {
+  els.feed.scrollTop = els.feed.scrollHeight;
+  feedAutoTop = els.feed.scrollTop;
+}
 
 /* ----------------------------- code blocks ------------------------------- */
 

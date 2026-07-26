@@ -49,7 +49,10 @@ async function openThread(id, focusMid) {
   if (modeSel) modeSel.set(t.mode || (state.modes[0] && state.modes[0].id) || 'auto');
   if (typeof syncOrchestratorThread === 'function') syncOrchestratorThread(t);
   state.seed = t.seed || null;              // compaction summary, if this thread was just compacted
+  state.summary = state.seed;                // readable copy: survives the turn that folds the seed in
   els.feed.innerHTML = '';
+  closeAgentPanelIfForeign(id);
+  hydrateAgentRuns(id, t.messages);         // so sub-agent chips can open their run
   for (const m of t.messages) appendMessage(m.role, m.text, m.files, m);
   updateUsage(t.usage, { silent: true });   // set meter without popping a tip on open
 
@@ -155,7 +158,12 @@ function updateUsage(usage, opts = {}) {
   if (!opts.silent && pct > lastMeterPct && pct > 0) replayClass(els.meterFill, 'grew', 1000);
   lastMeterPct = pct;
   if (ctx) {
-    els.meterLabel.innerHTML = tr('meter.used', { ctx: fmtK(ctx), win: fmtK(win), cost: fmtCost(cost) });
+    // Once a turn lands the chat is no longer "compacted", but the kept summary
+    // stays worth reading — keep the quiet link if we still have it.
+    const kept = state.summary
+      ? ` <button class="view-summary" type="button">· ${escapeHtml(tr('meter.viewSummary'))}</button>` : '';
+    els.meterLabel.innerHTML =
+      tr('meter.used', { ctx: fmtK(ctx), win: fmtK(win), cost: fmtCost(cost) }) + kept;
   } else if (state.seed && branchedThreads.has(state.activeId)) {
     // A just-created branch carries its source's transcript as context (in the
     // seed) until the first turn folds it in — say it's a branch, not "compacted".
@@ -163,11 +171,12 @@ function updateUsage(usage, opts = {}) {
   } else if (state.seed) {
     // Fresh after a compaction: say so, and offer to read the kept summary.
     els.meterLabel.innerHTML = tr('meter.compacted', { win: fmtK(win) });
-    const link = els.meterLabel.querySelector('.view-summary');
-    if (link) link.onclick = showCompactSummary;
   } else {
     els.meterLabel.innerHTML = tr('meter.new', { win: fmtK(win) });
   }
+  // Wire whichever "view summary" link the label ended up carrying.
+  const link = els.meterLabel.querySelector('.view-summary');
+  if (link) link.onclick = showCompactSummary;
 
   if (!opts.silent && level !== 'ok' && state.tipLevelShown !== level) {
     state.tipLevelShown = level;
@@ -176,12 +185,15 @@ function updateUsage(usage, opts = {}) {
 }
 
 /* Show the summary kept by the last compaction as a side-tip the user can read,
- * so "compacted chat" isn't a dead end — they can see exactly what was kept. */
+ * so "compacted chat" isn't a dead end — they can see exactly what was kept.
+ * Reads `state.summary`, not `state.seed`: sending a message clears the seed (the
+ * turn folds it into the context), but the label — and this button — are still on
+ * screen while that reply streams, so it has to keep working. */
 function showCompactSummary() {
-  if (!state.seed) return;
+  if (!state.summary) return;
   const close = showTip({
     key: 'summary', cls: 'summary', icon: '🧹', label: tr('compact.summaryLabel'),
-    body: renderMarkdown(state.seed),
+    body: renderMarkdown(state.summary),
   });
   // Highlight + copy-enable any code in the kept brief, just like a normal reply.
   const card = els.tips.querySelector('.tip.summary .tip-body');

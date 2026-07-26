@@ -48,8 +48,11 @@ function initError(message, retry) {
   if (retry) els.initFoot.appendChild(footBtn(tr('wiz.retry'), 'primary', retry));
 }
 
+/* Openable at any time, including mid-reply: the wizard's analyze/draft steps are
+ * one-shot Claude runs of their own, not part of the chat's session, and saving
+ * CLAUDE.md is plain file I/O. */
 function openInit() {
-  if (!state.activeId || state.streaming) return;
+  if (!state.activeId) return;
   wiz.brief = ''; wiz.summary = ''; wiz.questions = []; wiz.sel = {}; wiz.markdown = '';
   showInitOverlay();
   els.initTitle.textContent = tr('wiz.title');
@@ -58,9 +61,10 @@ function openInit() {
 
 /* "Edit instructions" — open the project's CLAUDE.md directly for editing,
  * instead of re-running the whole wizard. The wizard is still reachable from
- * here via the "Reinitialize" button. */
+ * here via the "Reinitialize" button. Reading and writing the file has nothing to
+ * do with the chat's session, so this stays available while a reply streams. */
 async function openClaudeEditor() {
-  if (!state.activeId || state.streaming) return;
+  if (!state.activeId) return;
   showInitOverlay();
   els.initTitle.textContent = tr('wiz.editTitle');
   els.initSteps.innerHTML = '';                 // not a wizard — no step dots

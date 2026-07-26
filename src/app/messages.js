@@ -220,6 +220,9 @@ const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).rep
  * and the reload path so they look (and expand) identically. */
 function renderActionChip(seg, working) {
   const name = seg.name || '';
+  // A sub-agent is a whole run, not a blob of output: its chip opens the agent
+  // inspector instead of expanding inline (see agents.js).
+  if (name === 'Task' && seg.id) return renderAgentChip(seg, working);
   const target = seg.target || '';
   const label = toolLabel(name) + (target ? ' · ' + target : '');
   const el = document.createElement('div');
@@ -395,52 +398,6 @@ function renderDiff(edits) {
     }
   }
   return wrap;
-}
-
-/* One line in a Task chip's live-activity log: either a worker's prose or a tool
- * it just reached for (icon + label + short target/detail). Built from the
- * backend's `agent_activity` events. */
-function chipActivityLine(msg) {
-  const line = document.createElement('div');
-  line.className = 'chip-act-line ' + (msg.kind === 'tool' ? 'tool' : 'text');
-  if (msg.kind === 'tool') {
-    const label = toolLabel(msg.tool) + (msg.target ? ' · ' + msg.target : '');
-    line.innerHTML =
-      `<span class="chip-act-ico" aria-hidden="true">${TOOL_ICON[msg.tool] || '⚙️'}</span>` +
-      '<span class="chip-act-txt"></span>';
-    line.querySelector('.chip-act-txt').textContent =
-      label + (msg.detail ? '  ·  ' + msg.detail : '');
-  } else {
-    line.textContent = msg.text || '';
-  }
-  return line;
-}
-
-const CHIP_ACT_MAX = 200;   // cap the live log so a chatty worker can't bloat the DOM
-
-/* Append a live-activity line to a running Task chip. Lazily creates the log
- * area (dropping the "pending" placeholder the first time), keeps it capped, and
- * lets an open chip grow + follow so you can watch a sub-agent work in real time. */
-function appendChipActivity(chip, msg) {
-  const details = chip.querySelector('.chip-details');
-  if (!details) return;
-  let log = details.querySelector('.chip-agentlog');
-  if (!log) {
-    const pend = details.querySelector('.chip-pending');
-    if (pend) pend.remove();
-    const head = document.createElement('div');
-    head.className = 'chip-out-head';
-    head.textContent = tr('chip.agentLive');
-    details.appendChild(head);
-    log = document.createElement('div');
-    log.className = 'chip-agentlog';
-    details.appendChild(log);
-  }
-  log.appendChild(chipActivityLine(msg));
-  while (log.childElementCount > CHIP_ACT_MAX) log.removeChild(log.firstChild);
-  // If the chip is open, its details grow freely (max-height:none) — keep the
-  // feed following so the newest line stays in view.
-  if (chip.classList.contains('open')) maybeFollow();
 }
 
 /* A tool's output arrived (tool_result) — fold it into the matching chip and

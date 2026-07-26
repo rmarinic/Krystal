@@ -231,6 +231,30 @@
     </div>
   </div>
 
+  <!-- ============= Agent inspector: one sub-agent's run, live ============= -->
+  <!-- Opened from a sub-agent chip (or the Activity panel): every step the worker
+       takes as it happens, its token/step tally, and its report at the end. -->
+  <div class="modal-overlay agent-overlay" id="agent-overlay" hidden>
+    <div class="init-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-title">
+      <header class="init-head agent-head">
+        <span class="agent-ico" aria-hidden="true">🧩</span>
+        <div class="agent-heading">
+          <div class="init-title" id="agent-title" data-i18n="agent.panelTitle">Sub-agent</div>
+          <div class="agent-sub" id="agent-sub" hidden></div>
+        </div>
+        <span class="agent-status" id="agent-status"></span>
+        <button class="init-x" id="agent-close" data-i18n-title="agent.close" title="Close">×</button>
+      </header>
+      <div class="agent-stats" id="agent-stats"></div>
+      <div class="init-body agent-body" id="agent-body"></div>
+      <footer class="init-foot agent-foot">
+        <span class="agent-hint" id="agent-hint"></span>
+        <button class="init-act danger" id="agent-stop" hidden data-i18n="agent.stopBtn">Stop</button>
+        <button class="init-act ghost" id="agent-done" data-i18n="agent.close">Close</button>
+      </footer>
+    </div>
+  </div>
+
   <!-- ============= Tasks panel: per-project to-do list ============= -->
   <div class="modal-overlay" id="tasks-overlay" hidden>
     <div class="init-modal tasks-modal" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
@@ -371,6 +395,7 @@
   <script defer src="app/projects.js"></script>
   <script defer src="app/controls.js"></script>
   <script defer src="app/activity.js"></script>
+  <script defer src="app/agents.js"></script>
   <script defer src="app/search.js"></script>
   <script defer src="app/messages.js"></script>
   <script defer src="app/stream.js"></script>

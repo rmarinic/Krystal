@@ -82,20 +82,64 @@ async function stopActiveTurn() {
   showTip({ key: 'status', icon: '⏹', label: tr('stop.toastLabel'), body: tr('stop.toastBody') });
 }
 
-/* Auto-follow the stream ONLY while the user is parked at the bottom. The
- * decision is driven by the user's own scrolling (a scroll listener), not
- * re-checked while we auto-scroll — otherwise a small wheel nudge up would land
- * within a "near bottom" threshold and get yanked straight back down, making it
- * impossible to scroll up to read while a reply streams in.
+/* Auto-follow the stream ONLY while the user is parked at the bottom.
  *
- * As soon as the user scrolls away from the bottom, following stops; it resumes
- * when they return to (near) the bottom. Programmatic scrolls always land exactly
- * at the bottom, so they never accidentally toggle this off. */
+ * Following is turned OFF by the user's *input* (wheel up, an upward touch drag,
+ * grabbing the scrollbar, PageUp/Home) rather than by the scroll event alone —
+ * those fire before the scroll is applied, so they beat the stream's next
+ * auto-scroll. Deciding from scroll events only used to lose that race: the
+ * stream could re-pin the feed to the bottom before the user's (coalesced) scroll
+ * event was dispatched, so we sampled the bottom position and stayed locked —
+ * the wheel felt dead and only dragging the scrollbar (which keeps overriding
+ * scrollTop) could escape.
+ *
+ * Following is turned back ON as soon as the feed comes to rest at (near) the
+ * bottom again — or right away when we jump it to the bottom on purpose (opening
+ * a chat, sending). `feedAutoTop` records where our own jumps landed so their
+ * echoed scroll event isn't mistaken for the user scrolling away. */
 let stickToBottom = true;
 function atBottom() {
   return els.feed.scrollHeight - els.feed.scrollTop - els.feed.clientHeight < 60;
 }
-els.feed.addEventListener('scroll', () => { stickToBottom = atBottom(); }, { passive: true });
+function unfollowFeed() { stickToBottom = false; feedAutoTop = -1; }
+
+els.feed.addEventListener('scroll', () => {
+  // Echo of our own scrollFeed(): that jump always means "follow from here", and
+  // it must not be measured against the bottom — the feed may have grown since,
+  // which would read as "the user scrolled up" and freeze following.
+  if (feedAutoTop >= 0 && Math.abs(els.feed.scrollTop - feedAutoTop) <= 1) {
+    stickToBottom = true;
+    return;
+  }
+  feedAutoTop = -1;
+  stickToBottom = atBottom();
+}, { passive: true });
+
+// Wheel: any upward nudge detaches immediately; scrolling back down re-attaches
+// via the scroll listener once the feed actually reaches the bottom.
+els.feed.addEventListener('wheel', (e) => { if (e.deltaY < 0) unfollowFeed(); }, { passive: true });
+
+// Touch drag: downward finger movement = scrolling up.
+let touchY = 0;
+els.feed.addEventListener('touchstart', (e) => {
+  touchY = e.touches[0] ? e.touches[0].clientY : 0;
+}, { passive: true });
+els.feed.addEventListener('touchmove', (e) => {
+  const y = e.touches[0] ? e.touches[0].clientY : touchY;
+  if (y - touchY > 2) unfollowFeed();
+  touchY = y;
+}, { passive: true });
+
+// Grabbing the scrollbar: stop fighting the drag for as long as it lasts.
+els.feed.addEventListener('mousedown', (e) => {
+  if (e.clientX - els.feed.getBoundingClientRect().left > els.feed.clientWidth) unfollowFeed();
+});
+
+// Keyboard scrolling of the feed (when it, not the composer, has focus).
+els.feed.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') unfollowFeed();
+});
+
 function maybeFollow() { if (stickToBottom) scrollFeed(); }
 
 /* Typewriter: decouples network arrival from rendering. Tokens are buffered
@@ -250,13 +294,6 @@ function makeTyper(bubble) {
       const chip = bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`);
       if (chip) setChipOutput(chip, msg.output, msg.isError);
     },
-    // Live sub-agent activity — stream a line into the matching Task chip so you
-    // can watch a delegated worker work instead of waiting for it to finish.
-    setAgentActivity(msg) {
-      if (!msg || !msg.id) return;
-      const chip = bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`);
-      if (chip) appendChipActivity(chip, msg);
-    },
     // Detach from the render loop without finalizing — the bubble is about to be
     // removed (thread switch); the underlying live turn keeps accumulating.
     stop() { if (raf != null) { cancelAnimationFrame(raf); raf = null; } },
@@ -282,6 +319,10 @@ function syncComposer() {
   els.sendBtn.classList.toggle('is-stop', canStop);   // CSS morphs the icon
   els.sendBtn.title = tr(canStop ? 'composer.stopTitle' : 'composer.sendTitle');
   els.sendBtn.disabled = canStop ? false : !state.activeId;
+  // Compacting needs a settled session, so it can't run mid-turn — say so with a
+  // real disabled state instead of a button that looks live and does nothing.
+  els.compactBtn.disabled = canStop || !state.activeId;
+  els.compactBtn.title = tr(canStop ? 'compact.btnTitleBusy' : 'compact.btnTitle');
   syncShellMode();   // a streaming turn suppresses shell mode; refresh the badge
   refreshActivityBtn();
 }
@@ -302,10 +343,7 @@ function attachLiveTyper(live) {
   if (live.outputs) for (const id in live.outputs) {
     typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError });
   }
-  // Replay each running Task's live sub-agent log so a re-attached chip fills back in.
-  if (live.agentActivity) for (const id in live.agentActivity) {
-    for (const m of live.agentActivity[id]) typer.setAgentActivity(m);
-  }
+  refreshAgentChips();   // rebuilt sub-agent chips pick their tally back up
   if (!live.events.length) typer.thinking();
   return typer;
 }
@@ -327,6 +365,7 @@ function finishLive(live) {
   live.finalized = true;
   live.typer = null;
   for (const a of live.activity) a.running = false;   // clear spinners even if backgrounded
+  agentTurnEnded(live.threadId);                      // no worker is still going either
   state.live.delete(live.threadId);
   if (live.threadId === state.activeId) {
     syncComposer();
@@ -348,10 +387,14 @@ function handleLiveEvent(live, msg) {
   } else if (event === 'tool') {
     live.events.push(msg);
     trackTool(live.activity, msg, active);
+    // A sub-agent gets a run record of its own (before the chip is built, so the
+    // chip can read its tally straight from it).
+    if (msg.name === 'Task') agentTaskSeen(live.threadId, msg);
     if (live.typer) live.typer.setTool(msg);
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active);          // updates the Activity panel
+    agentResultSeen(msg);                           // a sub-agent handed its report back
     if (live.typer) live.typer.setToolResult(msg);  // and folds output into the chip
   } else if (event === 'done') {
     live.finalText = msg.text;
@@ -374,17 +417,16 @@ function handleLiveEvent(live, msg) {
     if (live.threadId === state.activeId) els.title.textContent = msg.title;
     if (state.view === 'threads') loadThreads();
   } else if (event === 'agent_progress') {
-    // Live sub-agent progress: fold into the matching running Task entry so the
-    // Activity panel shows what the worker is doing, not just "Running…".
+    // Live sub-agent tally (tokens, steps, last tool): into the Activity panel's
+    // Task entry and into the run the agent inspector reads.
     live.events.push(msg);
     trackAgentProgress(live.activity, msg, active);
+    agentProgressSeen(msg);
   } else if (event === 'agent_activity') {
-    // What a delegated worker is saying/doing right now — stream it into the
-    // matching Task chip's expandable log (kept on `live` so a thread switch and
-    // return replays it). Live-only; the Task's final output persists separately.
-    const store = live.agentActivity || (live.agentActivity = {});
-    (store[msg.id] || (store[msg.id] = [])).push(msg);
-    if (live.typer) live.typer.setAgentActivity(msg);
+    // What a delegated worker is saying/doing right now — one line per step, kept
+    // in its run (survives a thread switch AND the end of the turn) and streamed
+    // into the inspector's timeline if it's open.
+    agentActivitySeen(msg);
   } else if (event === 'orchestration') {
     // End-of-turn orchestrator savings summary: how the turn's tokens split
     // between the premium supervisor and its cheaper workers. Stash on the turn

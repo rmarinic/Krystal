@@ -4,6 +4,11 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.15.0
+- Sub-agents now open in a window of their own. Click a sub-agent chip and you can follow exactly what it's doing, step by step, as it happens: every file it reads, every command it runs, everything it says — with its token count, step count and elapsed time on top, and the report it hands back at the end. You can stop it from in there too. Also reachable from Activity → Inspect.
+- Scrolling up to re-read something while a reply is still coming in no longer drags you back down to the bottom. The moment you scroll up, following stops; scroll back to the bottom and it picks the newest text up again.
+- Fixed buttons that quietly did nothing while a reply was being generated: **view summary** (after compacting), **Branch**, and **Edit instructions** / **Reinitialize** all work mid-reply now. Pasting or dropping a file mid-reply queues it for your next message instead of being ignored. **Compact** genuinely needs a settled chat, so it's now clearly greyed out with a tooltip rather than looking clickable.
+
 ## v0.14.3
 - Fixed the model dropdown: opening it, only the top option was clickable — the other models were rendered behind the chat and swallowed clicks. All options are now selectable.
 - The model list now stays current with the latest Claude models on its own — it refreshes live (when the window regains focus and hourly), so newly released models (e.g. Claude Opus 5) appear without restarting the app. Chats still pinned to a superseded model are moved to the current one automatically.

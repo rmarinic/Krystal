@@ -137,8 +137,10 @@ function hasComposerAttachments() { return composerAttachments.length > 0; }
 
 // Ctrl+V a screenshot (or any clipboard image) → attach it. We only swallow the
 // paste when we actually took an image, so pasting text still works normally.
+// (You can type the next message while a reply streams in, so you can queue
+// attachments for it too — they just wait in the tray until the turn finishes.)
 els.input.addEventListener('paste', (e) => {
-  if (!state.activeId || state.streaming) return;
+  if (!state.activeId) return;
   const items = (e.clipboardData && e.clipboardData.items) || [];
   let took = false;
   for (const it of items) {
@@ -175,7 +177,7 @@ function hideDropHint() {
   dropHintTimer = setTimeout(() => { if (!dropHintOn) els.dropHint.hidden = true; }, 220);
 }
 
-const canAttachDrop = () => !!state.activeId && !state.streaming && !els.composer.hidden;
+const canAttachDrop = () => !!state.activeId && !els.composer.hidden;
 
 // Handle one drag lifecycle step (kind: 'enter' | 'over' | 'leave' | 'drop').
 function onDragStep(kind, paths) {

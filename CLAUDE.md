@@ -10,7 +10,7 @@
 - `src-tauri/claude.rs` — shells out to the `claude` CLI, handles streaming.
 - `src-tauri/commands.rs` — Tauri command handlers exposed to the frontend.
 - `src-tauri/db.rs` — SQLite persistence for chats/projects.
-- `src/app/` — the frontend UI logic, split into cohesive **classic scripts that share one global scope** (no bundler/modules). They load in order via `<script defer>` (see `index.html`); a symbol declared in an earlier file is visible to all later ones, so **load order matters** and `boot.js` (the entry point) loads last. Layout: `core` (IPC/`els`/`state`/`api`/utils) → `sidebar` → `chat` → `projects` → `controls` → `activity` → `search` → `messages` → `stream` → `wizard` → `localization` → `settings` → `git` → `links` → `logo` → `usage` → `boot`. See `src/app/core.js` for the full map.
+- `src/app/` — the frontend UI logic, split into cohesive **classic scripts that share one global scope** (no bundler/modules). They load in order via `<script defer>` (see `index.html`); a symbol declared in an earlier file is visible to all later ones, so **load order matters** and `boot.js` (the entry point) loads last. Layout: `core` (IPC/`els`/`state`/`api`/utils) → `sidebar` → `chat` → `projects` → `controls` → `activity` → `agents` → `search` → `messages` → `stream` → `wizard` → `localization` → `settings` → `git` → `links` → `logo` → `usage` → `boot`. See `src/app/core.js` for the full map.
 - `src/i18n.js`, `src/onboarding.js`, `src/updater.js` — i18n dictionary, first-run onboarding, and self-update (load before the `app/` modules).
 - Self-updates ship via **GitHub Releases**.
 
@@ -25,6 +25,7 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - `src/app/projects.js` — project picker (entry screen), `startNewChat`, welcome-screen Initialize/Reinitialize.
 - `src/app/controls.js` — model/mode pickers (`createPicker`), compact/clear/hint actions, the compact/clear progress overlay.
 - `src/app/activity.js` — Activity panel: live shells & sub-agents (track/render tool runs).
+- `src/app/agents.js` — the **agent inspector**: a run record per sub-agent (Task) keyed by its `tool_use` id, kept outside `state.live` so a finished agent stays inspectable. Its chip opens a dedicated window with a live step-by-step timeline, token/step/elapsed tiles, the agent's report, and Stop (which ends the owning turn — the CLI can't kill one worker).
 - `src/app/search.js` — sidebar search box + Saved (favorites) toggle.
 - `src/app/messages.js` — assistant transcript building blocks: action chips (expand/diff/output), plan & AskUserQuestion cards, `renderSegments`.
 - `src/app/stream.js` — composer input/autosize, the typewriter (`makeTyper`), concurrent per-thread streaming (`state.live`), `send`/stop.
