@@ -215,6 +215,14 @@ const api = {
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
 };
 
+/* The delegation tool — the one that launches a sub-agent. The CLI has shipped it
+ * under more than one name (`Agent` today, `Task` before), and the name is what
+ * the tool event carries, so every place that treats a chip as a sub-agent asks
+ * here instead of comparing to one string. A name we don't know yet still gets
+ * picked up late, once the CLI reports agent progress for it (see agents.js). */
+const AGENT_TOOLS = new Set(['Agent', 'Task']);
+const isAgentTool = (name) => AGENT_TOOLS.has(name);
+
 function basename(p) { return p.split(/[\\/]/).pop(); }
 function timeLabel(iso) {
   if (!iso) return '';

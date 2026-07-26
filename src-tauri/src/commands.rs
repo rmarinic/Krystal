@@ -798,6 +798,10 @@ pub async fn chat(
     if let Some(o) = &_orch {
         sys.push(' ');
         sys.push_str(&o.note);
+        if meta.mode == "plan" {
+            sys.push(' ');
+            sys.push_str(claude::ORCH_PLAN_NOTE);
+        }
     }
 
     let mut args = claude::base_args(&meta.model, &sys);
@@ -839,7 +843,22 @@ pub async fn chat(
         None
     };
 
-    let res = claude::run_chat_stream(
+    // Fold any edits Claude made to the task snapshot back into the database and
+    // nudge the UI. Called on EVERY exit path below, not just the happy one: the
+    // edits are already on disk, and the next turn re-writes that file from the
+    // database — so skipping this on a stopped or failed turn would quietly throw
+    // away tasks it had already ticked off.
+    let sync_tasks = || {
+        if let Some(t) = &task_awareness {
+            if let Some((open, total)) =
+                reconcile_task_snapshot(&state.db, &state.data_dir, &meta.cwd, &t.path, &t.written)
+            {
+                let _ = on_event.send(json!({ "type": "tasks", "open": open, "total": total }));
+            }
+        }
+    };
+
+    let res = match claude::run_chat_stream(
         &state.claude_bin(),
         &args,
         &meta.cwd,
@@ -849,11 +868,19 @@ pub async fn chat(
         &thread_id,
         meta.orch,
     )
-    .await?;
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            sync_tasks();
+            return Err(e);
+        }
+    };
 
     // Match server.js: on a hard error with no text, the error event was already
-    // emitted — don't record an empty turn.
+    // emitted — don't record an empty turn. (A stopped turn lands here.)
     if res.final_text.is_empty() && res.is_error {
+        sync_tasks();
         return Ok(());
     }
 
@@ -888,15 +915,7 @@ pub async fn chat(
         "assistantId": assistant_id,
     }));
 
-    // If Claude edited the task snapshot this turn, fold those changes back into
-    // the database and nudge the UI to refresh its list + badge.
-    if let Some(t) = &task_awareness {
-        if let Some((open, total)) =
-            reconcile_task_snapshot(&state.db, &state.data_dir, &meta.cwd, &t.path, &t.written)
-        {
-            let _ = on_event.send(json!({ "type": "tasks", "open": open, "total": total }));
-        }
-    }
+    sync_tasks();   // Claude may have ticked tasks off / added some this turn
 
     // First-turn auto-naming resolves on its own clock (a cheap Haiku call run
     // alongside the stream). When it lands, persist it and nudge the UI with a
@@ -1841,7 +1860,7 @@ fn base_name_of(path: &str) -> String {
 }
 
 const TASK_SNAPSHOT_LEGEND: &str =
-    "<!-- HOW TO EDIT (saved back into the app automatically after your reply):\n     • toggle done: change [ ] to [x] or back\n     • rename / re-note: edit the text after the (id:N) marker\n     • add a task: add a new line  - [ ] My new task — optional note\n     • delete a task: remove its whole line\n     Keep the (id:N) marker on existing tasks — it's how edits are matched.\n     Only edit this when the user asks you to manage tasks. -->";
+    "<!-- HOW TO EDIT (saved back into the app automatically after your reply):\n     • toggle done: change [ ] to [x] or back\n     • rename / re-note: edit the text after the (id:N) marker\n     • add a task: add a new line  - [ ] My new task — optional note\n     • delete a task: remove its whole line\n     Keep the (id:N) marker on existing tasks — it's how edits are matched.\n     KEEP THIS CURRENT: when your work finishes one of these tasks, tick it off\n     here in the same reply — you don't need to be asked. Never invent tasks or\n     reorder the list on your own, and don't tick off what isn't really done. -->";
 
 /// Render the project's tasks as the markdown Claude reads/edits.
 fn render_task_markdown(project: &str, tasks: &[Value]) -> String {
@@ -2017,8 +2036,18 @@ struct TaskAwareness {
     written: String,
 }
 
-/// Build the awareness note and drop a fresh snapshot. `None` when the project
-/// has no tasks (nothing to be aware of).
+/// How many open task titles the awareness note spells out before it stops and
+/// points at the file for the rest.
+const TASK_NOTE_TITLES: usize = 12;
+
+/// Build the awareness note and drop a fresh snapshot.
+///
+/// The note NAMES the open tasks rather than only counting them: to notice that
+/// the work it just did finishes one of them, Claude has to know what's on the
+/// list, and re-reading the file every turn purely to find that out would be
+/// wasteful. The rest — notes, completed items, `(id:N)` markers — stays in the
+/// file. An empty list still gets a one-line note so "add that to my tasks" works
+/// from a standing start.
 fn prepare_task_awareness(
     data_dir: &std::path::Path,
     db: &std::sync::Mutex<rusqlite::Connection>,
@@ -2028,23 +2057,55 @@ fn prepare_task_awareness(
         let conn = db.lock().unwrap();
         db::list_tasks(&conn, project)
     };
-    if tasks.is_empty() {
-        return None;
-    }
+    let (path, written) = write_task_snapshot(data_dir, project, &tasks)?;
     let total = tasks.len();
-    let open = tasks
+    let open_titles: Vec<String> = tasks
         .iter()
         .filter(|t| !t.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
-        .count();
-    let (path, written) = write_task_snapshot(data_dir, project, &tasks)?;
+        .filter_map(|t| t.get("title").and_then(|x| x.as_str()))
+        .map(|s| {
+            let s = s.trim();
+            if s.chars().count() > 70 {
+                s.chars().take(70).collect::<String>() + "…"
+            } else {
+                s.to_string()
+            }
+        })
+        .collect();
+    let open = open_titles.len();
+
+    if total == 0 {
+        let note = format!(
+            "TASK LIST: this project has a to-do list the user manages in the Krystal app, and it is currently EMPTY (file: {}). Leave it alone unless the user asks you to track something — then add `- [ ] Task title` lines to that file and the app picks them up automatically after your reply.",
+            path.display()
+        );
+        return Some(TaskAwareness { note, path, written });
+    }
+
+    let listing = if open == 0 {
+        " Every task on it is already done.".to_string()
+    } else {
+        let shown = open_titles
+            .iter()
+            .take(TASK_NOTE_TITLES)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; ");
+        let more = open.saturating_sub(TASK_NOTE_TITLES);
+        if more > 0 {
+            format!(" Open: {shown}; and {more} more (in the file).")
+        } else {
+            format!(" Open: {shown}.")
+        }
+    };
     let note = format!(
-        "TASK LIST: this project has a to-do list the user manages in the Krystal app — currently {total} task(s), {open} still open. Do NOT pull it into context for unrelated work or assume its contents. When the conversation calls for it (the user mentions the task list, asks what's next, or asks you to add/update/complete tasks) use this file: {}. READ it to see the list. You may also EDIT that file to manage tasks WHEN THE USER ASKS — toggle [ ]/[x] to (un)complete, edit the text to rename, add a `- [ ] New task` line to add, or delete a line to remove; keep each existing task's `(id:N)` marker. Your edits are saved back into the app automatically after your reply. Never touch it for unrelated work.",
+        "TASK LIST: this project has a to-do list the user manages in the Krystal app — {total} task(s), {open} open.{listing} The full list is in {}; READ that file when you need a task's note, the completed ones, or the `(id:N)` markers.\n\
+         KEEP IT CURRENT WITHOUT BEING ASKED: whenever work in this conversation actually finishes one of those open tasks, edit that file before you end your reply and flip that line's `[ ]` to `[x]`. Add a `- [ ] …` line when the user hands you new work worth tracking, change a line's text to rename it, delete a line to drop it. Keep every existing `(id:N)` marker exactly as it is — the app matches lines back to tasks by it. Your edits are folded into the app automatically once your reply ends, so there's no need to paste the list back at the user.\n\
+         Use judgement: only tick off what is genuinely done, never invent or reshuffle tasks the user didn't ask for, and don't drag the list into a conversation it has nothing to do with.",
         path.display()
     );
     Some(TaskAwareness { note, path, written })
 }
-
-/// Strip a leading/trailing ```markdown fence around a draft, if present.
 
 /// Strip a leading/trailing ```markdown fence around a draft, if present.
 fn strip_md_fence(s: &str) -> String {
@@ -2110,4 +2171,77 @@ fn strip_code_fence(s: &str) -> &str {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(id: i64, title: &str, note: Option<&str>, done: bool) -> Value {
+        json!({ "id": id, "title": title, "note": note, "done": done })
+    }
+
+    /// The snapshot is the whole task-sync contract: whatever `render` writes,
+    /// `parse` has to read back identically, or a turn that only READ the file
+    /// would look like an edit and rewrite the user's list.
+    #[test]
+    fn snapshot_round_trips() {
+        let tasks = vec![
+            task(1, "Fix the scroll lock", None, false),
+            task(2, "Agent window", Some("timeline + tokens"), true),
+        ];
+        let md = render_task_markdown("G:/Projects/demo", &tasks);
+        let parsed = parse_task_markdown(&md);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].id, Some(1));
+        assert_eq!(parsed[0].title, "Fix the scroll lock");
+        assert_eq!(parsed[0].note, None);
+        assert!(!parsed[0].done);
+        assert_eq!(parsed[1].id, Some(2));
+        assert_eq!(parsed[1].title, "Agent window");
+        assert_eq!(parsed[1].note.as_deref(), Some("timeline + tokens"));
+        assert!(parsed[1].done);
+    }
+
+    /// The header and the how-to legend must never parse as tasks — the legend
+    /// spells out a `- [ ] My new task` example, so this is a real trap.
+    #[test]
+    fn header_and_legend_are_not_tasks() {
+        let md = render_task_markdown("G:/Projects/demo", &[]);
+        assert!(md.contains("- [ ] My new task"), "legend example still present");
+        assert!(parse_task_markdown(&md).is_empty());
+    }
+
+    #[test]
+    fn ticking_a_box_is_read_back_as_done() {
+        let tasks = vec![task(7, "Ship it", None, false)];
+        let md = render_task_markdown("p", &tasks);
+        let edited = md.replace("- [ ] (id:7)", "- [x] (id:7)");
+        let parsed = parse_task_markdown(&edited);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, Some(7));
+        assert!(parsed[0].done, "the toggle Claude makes must register");
+    }
+
+    #[test]
+    fn a_line_without_an_id_marker_is_a_new_task() {
+        let md = format!(
+            "{}- [ ] Brand new thing — with a note\n",
+            render_task_markdown("p", &[task(1, "Existing", None, false)])
+        );
+        let parsed = parse_task_markdown(&md);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[1].id, None, "no marker → inserted as new");
+        assert_eq!(parsed[1].title, "Brand new thing");
+        assert_eq!(parsed[1].note.as_deref(), Some("with a note"));
+    }
+
+    /// Tolerated hand-edits: `*` bullets and an upper-case X.
+    #[test]
+    fn parse_tolerates_bullet_and_case_variants() {
+        let parsed = parse_task_markdown("* [X] (id:3) Done thing\n- [x] (id:4) Also done\n");
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed[0].done && parsed[1].done);
+        assert_eq!(parsed[0].id, Some(3));
+    }
 }

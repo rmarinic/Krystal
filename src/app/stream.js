@@ -389,7 +389,7 @@ function handleLiveEvent(live, msg) {
     trackTool(live.activity, msg, active);
     // A sub-agent gets a run record of its own (before the chip is built, so the
     // chip can read its tally straight from it).
-    if (msg.name === 'Task') agentTaskSeen(live.threadId, msg);
+    if (isAgentTool(msg.name)) agentTaskSeen(live.threadId, msg);
     if (live.typer) live.typer.setTool(msg);
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };

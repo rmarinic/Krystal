@@ -421,7 +421,9 @@ impl Drop for OrchestratorGuard {
 /// note steering the orchestrator to delegate, plus the guard that cleans up the
 /// worker-agent files it references.
 pub struct Orchestration {
-    /// Appended (single line) to the system prompt for this turn.
+    /// Appended to the system prompt for this turn. Multi-line is fine: the whole
+    /// system prompt is spilled to a file before it reaches the CLI (see
+    /// `spill_system_prompt`), so nothing here has to survive shell tokenizing.
     pub note: String,
     _guard: OrchestratorGuard,
 }
@@ -430,28 +432,118 @@ pub struct Orchestration {
 // tools via `--disallowedTools`. Reverted: that deny is enforced CLI-wide, and
 // Claude Code's built-in generic Task agent types (`general-purpose`, `claude`,
 // …) share the parent's permission set — only a fully custom-defined agent (like
-// our worker `.md` files) is exempt. The orchestrator doesn't reliably call Task
-// with the exact custom worker name; when it drifted to a generic type mid-turn,
+// our worker `.md` files) is exempt. The orchestrator doesn't reliably call the
+// delegation tool with the exact custom worker name; when it drifted mid-turn,
 // that call inherited the deny and came back completely toolless, sometimes
 // stalling the whole turn. A silently-broken delegation is worse than the
 // token-waste this mode exists to prevent, so enforcement is prompt-only again.
 
 static ORCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Shared prefix of every worker file/agent name we write, so a stale sweep can
+/// recognise our own leftovers without touching the user's real agents.
+const WORKER_PREFIX: &str = "krystal-worker-";
+
+/// Opening of the orchestrator note — how to call a worker at all.
+///
+/// The delegation tool is `Agent` in current Claude Code and was `Task` in older
+/// builds; naming both keeps the note correct either way (see `tool_detail`,
+/// which matches the same pair). Naming the wrong one is not harmless: the model
+/// is being told to route all its work through a tool that doesn't exist, and
+/// spends the turn hunting for it.
+const ORCH_HEAD: &str = "\
+ORCHESTRATOR MODE — you are the orchestrator for this turn, running on a premium model. You plan and delegate; cheaper worker sub-agents do the heavy lifting.
+
+Delegate with the `Agent` tool (older builds name it `Task`), passing the worker's exact name as `subagent_type`. Never use `general-purpose`, `claude`, `Explore` or any other built-in agent type, and never omit it.";
+
+/// The rest of the orchestrator note: what to keep, what to hand off, how to
+/// size and brief a task, and when to stop delegating.
+///
+/// Deliberately NOT "delegate everything": a sub-agent starts from an empty
+/// context, so spawning one for a single Read costs a full agent boot to save a
+/// few hundred tokens, and a task needing a dozen look-ups becomes a dozen
+/// serial boots — which is what made simple requests crawl. Targeted reads stay
+/// with the orchestrator; the context hogs (bulk exploration, build/test output,
+/// multi-file edits) are what actually get delegated.
+const ORCH_RULES: &str = "\
+Do yourself: understand the request, plan, targeted look-ups (Read/Grep/Glob when you already know the file or symbol), review what workers return, write the final answer.
+
+Delegate: every file write or edit, every command/build/test run, every broad search or piece of research, and anything whose output would be long. Never edit a file yourself.
+
+Size the task, don't micro-delegate. One Read or one Grep you already know the target of is faster done yourself — a worker boots into an empty context, so spawning one for a keystroke costs far more than it saves. Delegate work that takes several steps or would flood your context.
+
+Every brief is a contract. State the objective, the files/paths and facts you already know (the worker is blind to this conversation), what \"done\" looks like, and the exact shape of the answer you want back. Thin briefs are the main way this mode fails.
+
+Run 2–4 workers in parallel when the pieces are genuinely independent — one Agent call per piece, all in the same message. Never more than 5 at once, and never give two workers the same file: one file, one worker.
+
+Keep coupled work whole. A single coherent change belongs to one worker; splitting it across a chain of workers loses information at every handoff.
+
+Verify once per coherent change, not after every worker: one worker builds/compiles, runs the relevant tests, and reports failures verbatim.
+
+Stop conditions. If a worker comes back blocked or wrong, re-dispatch at most once with a sharper brief, then do the rest yourself with your own tools. If the Agent tool errors or a worker returns nothing usable, do not retry in a loop — finish the job yourself. Delivering the user's result always outranks staying in delegation.";
+
+/// Appended to the orchestrator note when the turn also runs in Plan mode.
+///
+/// Plan mode drops `--dangerously-skip-permissions` (see `apply_mode`), and a
+/// sub-agent inherits its parent's permission context — so a worker told to edit
+/// would stall on a permission prompt that nothing in a `-p` run can answer.
+/// Keeping the workers read-only removes that dead end.
+pub const ORCH_PLAN_NOTE: &str = "\
+This turn also runs in Plan mode: nothing may be created, edited or deleted. Delegate reading, searching and research only, and say explicitly in every brief that the worker must not write anything — a worker that tries to write will stall waiting for a permission prompt nobody can answer. Finish by presenting the plan yourself.";
+
 fn claude_agents_dir() -> Option<PathBuf> {
     let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
     Some(PathBuf::from(home).join(".claude").join("agents"))
 }
 
+/// The worker brief. A sub-agent starts with a *fresh, isolated context* — it
+/// cannot see the conversation — so the brief spells out how to work from the
+/// delegation message alone, forbids delegating further (Claude Code lets
+/// sub-agents nest by default, which turns one task into a tree), and gives it a
+/// hard stop condition so a stuck worker returns instead of grinding.
+const WORKER_BODY: &str = "\
+You are a worker sub-agent. An orchestrator delegated exactly one task to you.
+
+You start blind: you cannot see the user's conversation or anything the orchestrator has read. Work from your brief plus the project itself, and look things up rather than asking.
+
+Do the whole task yourself with your full toolset. Do NOT delegate any part of it to another sub-agent.
+
+If you changed anything, verify it before returning — build/compile it, run the relevant tests, or re-read what you edited — and report what you checked and what it said.
+
+Stop condition: if the same approach fails twice, stop. Return what you learned, what you tried, and the exact error. Never grind on a failing loop, and never hand the task back as a question unless you are genuinely blocked.
+
+Return a tight, self-contained report the orchestrator can act on directly: what you did, which files (and roughly which lines) you touched, what you verified, and anything it must know. No preamble, no restating the brief.";
+
 /// Write one worker-agent definition file. The `model:` frontmatter pins the
 /// sub-agent's model; the body is its (deliberately generic, full-tool) brief —
 /// we never restrict a worker's toolset. Returns the path on success.
 fn write_worker_agent(dir: &std::path::Path, name: &str, description: &str, model: &str) -> Option<PathBuf> {
-    const BODY: &str = "You are a worker sub-agent operating under an orchestrator. Carry out the delegated task end-to-end with your full toolset. If you changed anything, verify it before returning — compile/build, run the relevant tests, or re-read what you edited — and report what you checked and the result. Then return a tight, complete result the orchestrator can use directly. Be thorough but concise, and don't hand work back with questions unless you are genuinely blocked.";
     let path = dir.join(format!("{name}.md"));
-    let content = format!("---\nname: {name}\ndescription: {description}\nmodel: {model}\n---\n{BODY}\n");
+    let content = format!("---\nname: {name}\ndescription: {description}\nmodel: {model}\n---\n{WORKER_BODY}\n");
     std::fs::write(&path, content).ok()?;
     Some(path)
+}
+
+/// Delete worker files left behind by a Krystal that died mid-turn (a crash or a
+/// force-quit skips the `OrchestratorGuard` drop). Every file we write is tagged
+/// with the writing process's pid, so anything tagged with a pid that is no
+/// longer alive is certainly stale. Best-effort; a failure here never blocks a
+/// turn.
+fn sweep_stale_worker_agents(dir: &std::path::Path) {
+    let me = std::process::id();
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(rest) = name.strip_prefix(WORKER_PREFIX) else { continue };
+        let Some(stem) = rest.strip_suffix(".md") else { continue };
+        // …-<pid>-<seq>: the pid is the second-to-last dash segment.
+        let mut parts = stem.rsplitn(3, '-');
+        let (_seq, pid) = (parts.next(), parts.next());
+        let Some(pid) = pid.and_then(|p| p.parse::<u32>().ok()) else { continue };
+        if pid != me && !pid_alive(pid) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
 }
 
 /// Resolve a model id's display name against the live catalogue, falling back
@@ -483,6 +575,7 @@ fn pick_tier(catalog: &[ModelInfo], tier: &str, fallback: &str) -> (String, Stri
 pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<Orchestration> {
     let dir = claude_agents_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
+    sweep_stale_worker_agents(&dir);
     // Unique per process + call so concurrent turns never share (and so cleaning
     // up one turn's files can't yank an agent out from under another).
     let seq = ORCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -494,20 +587,23 @@ pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<O
         let (fast_id, fast_m) = pick_tier(catalog, "haiku", ORCH_FAST_MODEL);
         let (bal_id, bal_m) = pick_tier(catalog, "sonnet", ORCH_BALANCED_MODEL);
         let (deep_id, deep_m) = pick_tier(catalog, "opus", ORCH_DEEP_MODEL);
-        let fast = format!("krystal-worker-fast-{tag}");
-        let bal = format!("krystal-worker-balanced-{tag}");
-        let deep = format!("krystal-worker-deep-{tag}");
+        let fast = format!("{WORKER_PREFIX}fast-{tag}");
+        let bal = format!("{WORKER_PREFIX}balanced-{tag}");
+        let deep = format!("{WORKER_PREFIX}deep-{tag}");
         files.push(write_worker_agent(&dir, &fast, "Fast, cheap worker for simple or mechanical delegated tasks.", &fast_id)?);
         files.push(write_worker_agent(&dir, &bal, "Balanced worker for typical coding, analysis and writing tasks.", &bal_id)?);
         files.push(write_worker_agent(&dir, &deep, "Most-capable worker, for genuinely hard reasoning tasks.", &deep_id)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to a worker sub-agent via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. For each task pick the cheapest worker that can do it well: `{fast}` ({fast_m}, fast & cheap) for simple or mechanical tasks, `{bal}` ({bal_m}, balanced) for typical coding, analysis and writing, and `{deep}` ({deep_m}, most capable) only for genuinely hard reasoning. Launch independent pieces in parallel (multiple Task calls in a single turn). After a worker reports back changes, dispatch a quick verification task to `{fast}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Always pass the exact worker name as `subagent_type` — never `general-purpose`, `claude`, `Explore`, or any other built-in agent type, and never omit it.",
+            "{ORCH_HEAD}\n\nYour workers for this turn — pick the cheapest one that can do the job well:\n\
+             - `{fast}` ({fast_m}) — mechanical, fully-specified work.\n\
+             - `{bal}` ({bal_m}) — normal coding, analysis and writing. Your default.\n\
+             - `{deep}` ({deep_m}) — genuinely hard reasoning only.\n\n{ORCH_RULES}",
         )
     } else {
-        let name = format!("krystal-worker-{tag}");
+        let name = format!("{WORKER_PREFIX}{tag}");
         files.push(write_worker_agent(&dir, &name, "Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model)?);
         format!(
-            "ORCHESTRATOR MODE: You are the orchestrator, running on a premium model — your job is to command, not to do. NEVER use tools yourself (no Read, Write, Edit, Bash, Grep, Glob, or any other file/command tool): delegate EVERY concrete action to your `{name}` worker sub-agent (which runs on {mname}) via the Task tool, no matter how small — every file read or write, every edit, every command, every search or piece of research. Launch independent pieces in parallel (multiple Task calls in a single turn). After `{name}` reports back changes, dispatch a quick verification task to `{name}` to confirm the changes are correct — build/compile, run the relevant tests, or re-read what changed — before you rely on them or answer. Your own turns are limited to understanding the request, planning, dispatching Task calls, reviewing worker results, and writing the final answer. The ONLY thing you may do without a worker is pure conversation or planning that needs no tools at all. Always pass `subagent_type: \"{name}\"` exactly — never `general-purpose`, `claude`, `Explore`, or any other built-in agent type, and never omit it.",
+            "{ORCH_HEAD}\n\nYou have one worker for this turn: `{name}` (runs on {mname}). Every delegated task goes to it.\n\n{ORCH_RULES}",
             mname = resolve_model_name(catalog, sub_model),
         )
     };
@@ -593,7 +689,9 @@ fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<String>) {
             return (Some(q.to_string()), Some(take_chars(q, 28)));
         }
     }
-    if name == "Task" {
+    // Delegation. The CLI has shipped this tool under both names — `Agent` is the
+    // current one, `Task` the older — so match either.
+    if name == "Agent" || name == "Task" {
         if let Some(d) = str_of("description") {
             return (Some(d.to_string()), Some(take_chars(d, 28)));
         }
@@ -702,6 +800,12 @@ fn claude_command(bin: &str, args: &[String], cwd: &str) -> Command {
         .current_dir(cwd)
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
+        // Stream a sub-agent's own prose, not just its tool calls, so the Activity
+        // panel and the agent inspector can show what a worker is *doing* instead
+        // of sitting blank while it thinks (see `emit_agent_activity`). The env
+        // form of `--forward-subagent-text`: older CLIs ignore it, where an
+        // unknown flag would kill the turn.
+        .env("CLAUDE_CODE_FORWARD_SUBAGENT_TEXT", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -924,7 +1028,19 @@ pub async fn run_chat_stream(
     orchestrating: bool,
 ) -> Result<ChatResult, String> {
     let (args, _sys_file) = spill_system_prompt(args);
-    let mut child = claude_command(bin, &args, cwd)
+    let mut cmd = claude_command(bin, &args, cwd);
+    if orchestrating {
+        // Guardrails the prompt can't enforce on its own. Claude Code lets a
+        // sub-agent spawn sub-agents of its own (three layers deep by default) and
+        // run twenty at once — both are how an orchestrated turn quietly grows into
+        // a tree of agents that takes an hour. Depth 1 keeps workers doing the work
+        // themselves; 5 concurrent matches the parallelism the note asks for.
+        // Env vars rather than CLI flags on purpose: an unknown flag aborts the
+        // whole turn, an unknown env var is simply ignored by an older CLI.
+        cmd.env("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "1")
+            .env("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "5");
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to start claude: {e}"))?;
 
@@ -1755,14 +1871,74 @@ fn main() {}
     fn orchestrator_note_names_the_exact_worker_and_forbids_generic_types() {
         // Enforcement is prompt-only (see the NOTE above `Orchestration`): a CLI-level
         // --disallowedTools deny was tried and reverted, since Claude Code's built-in
-        // generic Task agent types (general-purpose, claude, …) share the parent's
+        // generic agent types (general-purpose, claude, …) share the parent's
         // permission set and would silently inherit the deny if the model drifted to
         // one instead of the pinned custom worker. So the note must both name the
         // exact worker and explicitly forbid the generic fallbacks.
         if let Some(o) = prepare_orchestration("claude-haiku-4-5-20251001", &[]) {
             assert!(o.note.contains("ORCHESTRATOR MODE"));
             assert!(o.note.contains("general-purpose"));
-            assert!(o.note.contains("krystal-worker-"));
+            assert!(o.note.contains(WORKER_PREFIX));
         }
+    }
+
+    #[test]
+    fn orchestrator_note_names_the_current_delegation_tool() {
+        // The delegation tool is `Agent` today and was `Task` before. Pointing the
+        // orchestrator at a tool that no longer exists, while telling it to route
+        // all work through that tool, is exactly how a turn hangs — so the note has
+        // to name the current one (and may mention the legacy alias).
+        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]).expect("agents dir writable");
+        assert!(o.note.contains("`Agent` tool"));
+        assert!(o.note.contains("subagent_type"));
+    }
+
+    #[test]
+    fn orchestrator_note_keeps_targeted_reads_and_caps_parallelism() {
+        // The mode used to demand delegating *every* action, including a single
+        // Read — a fresh-context agent boot per look-up, which is what made simple
+        // requests crawl. The note must keep targeted reads with the orchestrator
+        // and bound how many workers run at once.
+        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]).expect("agents dir writable");
+        assert!(o.note.contains("Read/Grep/Glob"));
+        assert!(o.note.contains("2–4 workers in parallel"));
+        assert!(o.note.contains("Stop conditions"));
+        // …and it must not go back to the all-or-nothing rule.
+        assert!(!o.note.contains("NEVER use tools yourself"));
+    }
+
+    #[test]
+    fn worker_brief_forbids_nesting_and_sets_a_stop_condition() {
+        // A worker that delegates further turns one task into a tree; a worker with
+        // no stop condition grinds on a failing loop. Both are turn-length bugs.
+        assert!(WORKER_BODY.contains("Do NOT delegate"));
+        assert!(WORKER_BODY.contains("fails twice"));
+    }
+
+    #[test]
+    fn stale_worker_files_are_swept_but_live_ones_survive() {
+        let dir = std::env::temp_dir().join(format!("krystal-sweep-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // u32::MAX is above every real pid on both platforms (and, unlike 0, isn't
+        // Windows' System Idle Process); our own pid is always alive.
+        let dead = u32::MAX;
+        let stale = write_worker_agent(&dir, &format!("{WORKER_PREFIX}fast-{dead}-1"), "d", "m").unwrap();
+        let mine = write_worker_agent(
+            &dir,
+            &format!("{WORKER_PREFIX}fast-{}-1", std::process::id()),
+            "d",
+            "m",
+        )
+        .unwrap();
+        // Anything that isn't ours is left alone, whatever its name looks like.
+        let theirs = dir.join("my-own-agent.md");
+        std::fs::write(&theirs, "---\nname: my-own-agent\n---\nmine\n").unwrap();
+
+        sweep_stale_worker_agents(&dir);
+
+        assert!(!stale.exists(), "a dead process's worker file is swept");
+        assert!(mine.exists(), "this process's worker file survives");
+        assert!(theirs.exists(), "the user's own agents are never touched");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

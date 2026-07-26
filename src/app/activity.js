@@ -9,9 +9,9 @@
 
 const ACTIVITY_SVG =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
-const ACTIVITY_TOOLS = new Set(['Bash', 'Task']);   // shells & sub-agents
-const ACT_ICON = { Bash: '⚡', Task: '🧩' };
-const isActivityTool = (name) => ACTIVITY_TOOLS.has(name);
+const ACT_ICON = { Bash: '⚡', Agent: '🧩', Task: '🧩' };
+// Shells & sub-agents — the two kinds of thing worth logging here.
+const isActivityTool = (name) => name === 'Bash' || isAgentTool(name);
 
 // Rebuild the activity list from a thread's saved messages (tool segments).
 function activityFromSegments(messages) {
@@ -216,7 +216,7 @@ function renderActivityBody(body) {
     item.className = 'activity-item';
     const cls = a.isError ? 'error' : (a.running ? 'running' : 'done');
     const stateLbl = tr('activity.state.' + cls);
-    const kind = a.name === 'Task' ? tr('activity.kindAgent') : tr('activity.kindShell');
+    const kind = isAgentTool(a.name) ? tr('activity.kindAgent') : tr('activity.kindShell');
     const head = document.createElement('div');
     head.className = 'activity-item-head';
     head.innerHTML =
@@ -225,7 +225,7 @@ function renderActivityBody(body) {
       `<span class="activity-target">${escapeHtml(a.target || '')}</span>` +
       `<span class="activity-state ${cls}">${a.running ? '<span class="activity-spin"></span>' : ''}${escapeHtml(stateLbl)}</span>`;
     // A sub-agent has a run of its own — offer the inspector right here.
-    if (a.name === 'Task' && hasAgentRun(a.id)) {
+    if (isAgentTool(a.name) && hasAgentRun(a.id)) {
       const open = document.createElement('button');
       open.className = 'activity-open';
       open.textContent = tr('agent.openBtn');

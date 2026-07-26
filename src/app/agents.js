@@ -49,8 +49,62 @@ function trimAgentRuns() {
   }
 }
 
-/* A Task tool event — the sub-agent was just launched (the second event for the
- * same id carries its brief, so this runs twice and refines in place). */
+/* The run behind an agent event, adopting the tool call it belongs to if we
+ * haven't recognised it as delegation yet.
+ *
+ * Recognising it by tool name alone is brittle — the CLI has renamed this tool
+ * before (`Task` → `Agent`), and an unknown name meant every agent event was
+ * silently dropped. So: the CLI reporting progress under a tool_use id that has a
+ * chip in the transcript IS the proof that chip launched a sub-agent, whatever the
+ * tool is called. The chip is upgraded in place and tracked from here on.
+ *
+ * No chip for the id → a worker a worker spawned itself. Those are nested inside
+ * their parent's run and get no inspector of their own. */
+function adoptAgentRun(id) {
+  const known = agentRun(id);
+  if (known) return known;
+  const chip = els.feed.querySelector(`.action-chip[data-id="${cssEsc(id)}"]`);
+  if (!chip) return null;
+  const r = ensureAgentRun(id, state.activeId);
+  const seg = chip._seg || {};
+  r.description = seg.detail || seg.target || '';
+  upgradeChipToAgent(chip, r);
+  return r;
+}
+
+/* Turn an ordinary tool chip into a sub-agent chip, in place — mutating rather
+ * than replacing so the stream's reference to the live chip stays valid. */
+function upgradeChipToAgent(chip, r) {
+  if (chip.classList.contains('agent-chip')) return;
+  chip.classList.add('agent-chip');
+  chip.classList.remove('expandable', 'open');
+  const details = chip.querySelector('.chip-details');
+  if (details) details.remove();
+  const row = chip.querySelector('.chip-row');
+  if (!row) return;
+  row.title = tr('agent.openTitle');
+  const ico = row.querySelector('.chip-ico');
+  if (ico) ico.textContent = TOOL_ICON.Agent;
+  const caret = row.querySelector('.chip-caret');
+  if (caret) caret.remove();
+  if (!row.querySelector('.chip-tally')) {
+    const tally = document.createElement('span');
+    tally.className = 'chip-tally';
+    row.appendChild(tally);
+  }
+  if (!row.querySelector('.chip-open')) {
+    const open = document.createElement('span');
+    open.className = 'chip-open';
+    open.setAttribute('aria-hidden', 'true');
+    open.textContent = '⤢';
+    row.appendChild(open);
+  }
+  row.onclick = () => openAgentPanel(r.id);
+  syncAgentChip(chip, r);
+}
+
+/* An Agent/Task tool event — the sub-agent was just launched (the second event
+ * for the same id carries its brief, so this runs twice and refines in place). */
 function agentTaskSeen(threadId, msg) {
   if (!msg || !msg.id) return;
   const r = ensureAgentRun(msg.id, threadId);
@@ -59,12 +113,10 @@ function agentTaskSeen(threadId, msg) {
   agentRunChanged(r);
 }
 
-/* The CLI's periodic tally for a running worker (tokens, steps, last tool).
- * Unknown ids are workers a worker spawned itself — they have no chip of their
- * own, so there's nothing to inspect and nothing to track. */
+/* The CLI's periodic tally for a running worker (tokens, steps, last tool). */
 function agentProgressSeen(msg) {
   if (!msg || !msg.id) return;
-  const r = agentRun(msg.id);
+  const r = adoptAgentRun(msg.id);
   if (!r) return;
   if (msg.subagent) r.subagent = msg.subagent;
   if (msg.description) r.description = msg.description;
@@ -79,7 +131,7 @@ function agentProgressSeen(msg) {
 /* One line of what the worker is saying or doing right now → the timeline. */
 function agentActivitySeen(msg) {
   if (!msg || !msg.id) return;
-  const r = agentRun(msg.id);
+  const r = adoptAgentRun(msg.id);
   if (!r) return;
   const entry = {
     kind: msg.kind === 'tool' ? 'tool' : 'text',
@@ -122,7 +174,7 @@ function hydrateAgentRuns(threadId, messages) {
   for (const m of (messages || [])) {
     if (m.role !== 'assistant' || !Array.isArray(m.segments)) continue;
     for (const s of m.segments) {
-      if (!s || s.type !== 'tool' || s.name !== 'Task' || !s.id) continue;
+      if (!s || s.type !== 'tool' || !isAgentTool(s.name) || !s.id) continue;
       if (agentRuns.has(s.id)) continue;
       const r = ensureAgentRun(s.id, threadId, { live: false });
       r.description = s.detail || s.target || '';
@@ -181,8 +233,8 @@ function renderAgentChip(seg, working) {
   row.title = tr('agent.openTitle');
   row.innerHTML =
     '<span class="chip-status" aria-hidden="true"></span>' +
-    `<span class="chip-ico" aria-hidden="true">${TOOL_ICON.Task}</span>` +
-    `<span class="chip-label">${escapeHtml(toolLabel('Task') + (seg.target ? ' · ' + seg.target : ''))}</span>` +
+    `<span class="chip-ico" aria-hidden="true">${TOOL_ICON.Agent}</span>` +
+    `<span class="chip-label">${escapeHtml(toolLabel(seg.name || 'Agent') + (seg.target ? ' · ' + seg.target : ''))}</span>` +
     '<span class="chip-tally"></span>' +
     '<span class="chip-open" aria-hidden="true">⤢</span>';
   el.appendChild(row);

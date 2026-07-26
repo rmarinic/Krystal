@@ -273,6 +273,10 @@
       'tasks.needBriefBody': 'Write a sentence or two about what you want to do first.',
       'tasks.addedLabel': 'Tasks added',
       'tasks.addedBody': 'Added <strong>{n}</strong> task(s) to this project.',
+      'tasks.syncedLabel': 'Task list updated',
+      'tasks.syncedDone': 'Claude ticked off <strong>{n}</strong> — <strong>{open}</strong> still open.',
+      'tasks.syncedBody': 'Claude updated the list — <strong>{open}</strong> still open.',
+      'tasks.syncedOpen': 'Show tasks',
 
       /* ---- stream chips / tools ---- */
       'chip.thinking': 'Thinking…',
@@ -295,6 +299,7 @@
       'tool.Grep': 'Searching',
       'tool.WebSearch': 'Searching the web',
       'tool.WebFetch': 'Fetching a page',
+      'tool.Agent': 'Delegating to a subagent',
       'tool.Task': 'Delegating to a subagent',
       'tool.TodoWrite': 'Planning',
       'tool.AskUserQuestion': 'Asking you a question',
@@ -799,6 +804,10 @@
       'tasks.needBriefBody': 'Prvo napiši rečenicu-dvije o tome što želiš napraviti.',
       'tasks.addedLabel': 'Zadaci dodani',
       'tasks.addedBody': 'Dodano <strong>{n}</strong> zadataka u ovaj projekt.',
+      'tasks.syncedLabel': 'Popis zadataka ažuriran',
+      'tasks.syncedDone': 'Claude je označio <strong>{n}</strong> kao dovršeno — još <strong>{open}</strong> otvoreno.',
+      'tasks.syncedBody': 'Claude je ažurirao popis — još <strong>{open}</strong> otvoreno.',
+      'tasks.syncedOpen': 'Prikaži zadatke',
 
       /* ---- stream chips / tools ---- */
       'chip.thinking': 'Razmišljam…',
@@ -821,6 +830,7 @@
       'tool.Grep': 'Pretražujem',
       'tool.WebSearch': 'Pretražujem web',
       'tool.WebFetch': 'Dohvaćam stranicu',
+      'tool.Agent': 'Delegiram pod-agentu',
       'tool.Task': 'Delegiram pod-agentu',
       'tool.TodoWrite': 'Planiram',
       'tool.AskUserQuestion': 'Postavlja ti pitanje',

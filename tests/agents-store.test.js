@@ -42,6 +42,7 @@ function loadAgents() {
   });
   const ctx = {
     els,
+    isAgentTool: (n) => n === 'Agent' || n === 'Task',
     state: { activeId: 'thread-1', live: new Map() },
     document: { addEventListener() {}, createElement: () => stubEl() },
     tr: (k) => k,
@@ -51,13 +52,13 @@ function loadAgents() {
     fmtTokens: (n) => String(n),
     fmtDur: (ms) => Math.round(ms / 1000) + 's',
     toolLabel: (n) => n,
-    TOOL_ICON: { Task: '🧩' },
+    TOOL_ICON: { Agent: '🧩', Task: '🧩' },
     api: { stopChat: async () => {} },
     stopActiveTurn: async () => {},
     setInterval, clearInterval, Date, Number, Math, console,
   };
   const exported = [
-    'agentRuns', 'agentRun', 'hasAgentRun', 'agentTaskSeen', 'agentProgressSeen',
+    'els', 'agentRuns', 'agentRun', 'hasAgentRun', 'agentTaskSeen', 'agentProgressSeen',
     'agentActivitySeen', 'agentResultSeen', 'agentTurnEnded', 'hydrateAgentRuns',
     'agentState', 'agentElapsed', 'AGENT_LOG_MAX',
   ];
@@ -86,7 +87,7 @@ function eq(actual, expected, what) {
 
 console.log('agent run store');
 
-check('a Task tool event opens a running run with its brief', () => {
+check('a delegation tool event opens a running run with its brief', () => {
   const A = loadAgents();
   A.agentTaskSeen('t1', { id: 'tu_1', name: 'Task', target: 'research the API', detail: 'research the API surface' });
   const r = A.agentRun('tu_1');
@@ -187,11 +188,53 @@ check('events for a worker a worker spawned are ignored (no chip, no run)', () =
   eq(A.agentRuns.size, 0, 'store empty');
 });
 
+check('both names the CLI has used for delegation are recognised', () => {
+  const A = loadAgents();
+  A.hydrateAgentRuns('t9', [{
+    role: 'assistant',
+    segments: [
+      { type: 'tool', name: 'Agent', id: 'tu_a', detail: 'current name' },
+      { type: 'tool', name: 'Task', id: 'tu_t', detail: 'older name' },
+      { type: 'tool', name: 'Read', id: 'tu_r', detail: 'not delegation' },
+    ],
+  }]);
+  eq(A.hasAgentRun('tu_a'), true, 'Agent tracked');
+  eq(A.hasAgentRun('tu_t'), true, 'Task tracked');
+  eq(A.hasAgentRun('tu_r'), false, 'ordinary tool left alone');
+});
+
+check('an unfamiliar delegation tool is adopted from its progress events', () => {
+  const A = loadAgents();
+  // A future rename: the chip is in the transcript under a name we don't know, so
+  // only the CLI's progress event can tell us it launched a sub-agent.
+  const row = { onclick: null, querySelector: () => null, appendChild() {} };
+  const chip = {
+    _seg: { name: 'Delegate', id: 'tu_new', detail: 'do the thing' },
+    dataset: { id: 'tu_new' },
+    classList: (() => {
+      const s = new Set(['action-chip', 'expandable', 'working']);
+      return { add: (c) => s.add(c), remove: (c) => s.delete(c), contains: (c) => s.has(c), toggle: (c, on) => (on ? s.add(c) : s.delete(c)) };
+    })(),
+    querySelector: (sel) => (sel === '.chip-row' ? row : null),
+  };
+  A.els.feed.querySelector = () => chip;
+
+  A.agentProgressSeen({ id: 'tu_new', subagent: 'Explore', toolUses: 2, tokens: 500 });
+
+  const r = A.agentRun('tu_new');
+  eq(!!r, true, 'run adopted');
+  eq(r.description, 'do the thing', 'brief taken from the chip');
+  eq(r.subagent, 'Explore', 'progress applied');
+  eq(chip.classList.contains('agent-chip'), true, 'chip upgraded');
+  eq(chip.classList.contains('expandable'), false, 'no longer expands inline');
+  eq(typeof row.onclick, 'function', 'clicking it opens the inspector');
+});
+
 check('reopening a chat rebuilds finished runs from the transcript', () => {
   const A = loadAgents();
   A.hydrateAgentRuns('t9', [{
     role: 'assistant',
-    segments: [{ type: 'tool', name: 'Task', id: 'tu_old', detail: 'earlier brief', output: 'earlier report' }],
+    segments: [{ type: 'tool', name: 'Agent', id: 'tu_old', detail: 'earlier brief', output: 'earlier report' }],
   }]);
   const r = A.agentRun('tu_old');
   eq(r.running, false, 'not running');
@@ -208,7 +251,7 @@ check('hydrating does not clobber a run from this session', () => {
   A.agentActivitySeen({ id: 'tu_1', kind: 'text', text: 'step' });
   A.hydrateAgentRuns('t1', [{
     role: 'assistant',
-    segments: [{ type: 'tool', name: 'Task', id: 'tu_1', detail: 'saved brief', output: 'saved' }],
+    segments: [{ type: 'tool', name: 'Agent', id: 'tu_1', detail: 'saved brief', output: 'saved' }],
   }]);
   const r = A.agentRun('tu_1');
   eq(r.description, 'live brief', 'kept the live brief');

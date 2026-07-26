@@ -4,6 +4,12 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.15.1
+- Fixed the sub-agent window from v0.15.0: it never opened. Claude Code's delegation tool is called **Agent** and the new code was looking for the old name (`Task`), so sub-agent chips stayed ordinary chips — gear icon, the raw word "Agent", no live steps at all. Both names are recognised now, and if the CLI ever renames it again the chip repairs itself the moment the first progress arrives. Sub-agents also show up in the Activity panel again, and their chips carry the brief they were given plus a live step/token tally.
+- The task list now keeps itself current on its own. When work in a chat finishes something on your list, Claude ticks it off as part of that reply; ask it to track something new and the task appears. A small note tells you what changed, and edits are no longer lost if you stop a reply half-way.
+- Orchestrator mode got a serious tune-up: it was pointing the orchestrator at a delegation tool that no longer existed, and it insisted on delegating *every* action — even a single file read, each one booting a fresh sub-agent — which is what made simple requests crawl. Quick look-ups now stay with the orchestrator, only the heavy work is handed off, worker briefs are far more specific, workers can no longer spawn their own sub-agents (a turn could quietly become a tree of them), no more than a handful run at once, and in Plan mode workers are kept read-only so nothing stalls waiting for a permission prompt. Leftover worker files from a crashed run are cleaned up automatically.
+- A worker's own commentary now streams through as it works, so the Activity panel and the sub-agent window show what it's doing rather than sitting blank until it finishes.
+
 ## v0.15.0
 - Sub-agents now open in a window of their own. Click a sub-agent chip and you can follow exactly what it's doing, step by step, as it happens: every file it reads, every command it runs, everything it says — with its token count, step count and elapsed time on top, and the report it hands back at the end. You can stop it from in there too. Also reachable from Activity → Inspect.
 - Scrolling up to re-read something while a reply is still coming in no longer drags you back down to the bottom. The moment you scroll up, following stops; scroll back to the bottom and it picks the newest text up again.

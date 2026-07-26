@@ -1,5 +1,5 @@
 /* orchestrator.js — Orchestrator mode: run a premium model as a supervisor that
-   delegates the heavy lifting to cheaper worker sub-agents (via the Task tool),
+   delegates the heavy lifting to cheaper worker sub-agents (via the Agent tool),
    spending the expensive model's tokens on planning & synthesis, not grunt work.
    The button sits left of Compact; its popover picks the orchestrator model and
    the sub-agent model (or Auto — let the orchestrator choose a tier per task).

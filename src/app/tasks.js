@@ -24,7 +24,9 @@ function projectPath() { return state.project && state.project.path; }
 function openTaskCount() { return taskUI.tasks.filter((t) => !t.done).length; }
 
 /* The sidebar-foot button shows how many tasks are still open. */
+let lastOpenCount = null;      // so a sync can say what actually changed
 function setTaskBadge(n) {
+  lastOpenCount = n;
   if (!els.tasksCount) return;
   if (n > 0) { els.tasksCount.textContent = String(n); els.tasksCount.hidden = false; }
   else els.tasksCount.hidden = true;
@@ -414,18 +416,31 @@ async function applyGenerated(tasks) {
   setTaskBadge(openTaskCount());
   renderTaskList();
   showTip({ key: 'status', icon: '✨', label: tr('tasks.addedLabel'),
-    body: escapeHtml(tr('tasks.addedBody', { n: clean.length })) });
+    body: tr('tasks.addedBody', { n: clean.length }) });   // the count is the only value; keep its <strong>
 }
 
 /* Claude edited the task list (via the snapshot file) during a chat turn. Update
  * the badge from the counts it reported, and reload the panel if it's open so the
- * change shows immediately. A little pulse on the button flags that it moved. */
-function onTasksSynced() {
+ * change shows immediately. A little pulse on the button flags that it moved, and
+ * a side-tip says what happened — the list keeping itself current is only useful
+ * if you can see it happen without opening the panel. */
+function onTasksSynced(msg) {
+  const before = lastOpenCount;
   // Re-query the current project's count (rather than trust the event) so the
   // badge stays correct even if focus moved while a background turn finished.
   refreshTaskCount();
   if (els.tasksBtn && !els.tasksBtn.hidden) replayClass(els.tasksBtn, 'tasks-bump', 700);
   if (els.tasksOverlay && !els.tasksOverlay.hidden && taskUI.view === 'list') loadTasks();
+
+  const open = msg && msg.open != null ? msg.open : null;
+  if (open == null) return;
+  const closed = before != null ? before - open : 0;
+  showTip({
+    key: 'tasks', icon: '✓', label: tr('tasks.syncedLabel'),
+    // Interpolated values are counts, so the string's own <strong> can stay live.
+    body: closed > 0 ? tr('tasks.syncedDone', { n: closed, open }) : tr('tasks.syncedBody', { open }),
+    actions: [{ text: tr('tasks.syncedOpen'), run: (close) => { close(); openTasks(); } }],
+  });
 }
 
 /* Re-render the open panel after a language switch (keeps the current view). */

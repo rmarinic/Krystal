@@ -9,7 +9,7 @@ function toolLabel(name) { return tr('tool.' + name, null, name); }
 const TOOL_ICON = {
   Read: '📖', Write: '✍️', Edit: '✏️', MultiEdit: '✏️', NotebookEdit: '✏️',
   Bash: '⚡', Glob: '🔎', Grep: '🔎', WebSearch: '🌐', WebFetch: '🌐',
-  Task: '🧩', TodoWrite: '🗒️', AskUserQuestion: '🗳️', ExitPlanMode: '📋',
+  Agent: '🧩', Task: '🧩', TodoWrite: '🗒️', AskUserQuestion: '🗳️', ExitPlanMode: '📋',
 };
 
 /* ExitPlanMode (Plan mode): Claude proposes a plan; render its markdown as a
@@ -222,7 +222,7 @@ function renderActionChip(seg, working) {
   const name = seg.name || '';
   // A sub-agent is a whole run, not a blob of output: its chip opens the agent
   // inspector instead of expanding inline (see agents.js).
-  if (name === 'Task' && seg.id) return renderAgentChip(seg, working);
+  if (isAgentTool(name) && seg.id) return renderAgentChip(seg, working);
   const target = seg.target || '';
   const label = toolLabel(name) + (target ? ' · ' + target : '');
   const el = document.createElement('div');
