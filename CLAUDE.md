@@ -22,7 +22,7 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - `src/app/core.js` — foundation: Tauri IPC handles, `$`, `tr`, the `els` element map, `state`, context-window constants, the `api` wrapper, and shared utils (`basename`, `escapeHtml`, `closeOverlay`/`openOverlay`, `replayClass`, `cssEsc`, …).
 - `src/app/sidebar.js` — thread list rendering, inline rename, search/saved results list.
 - `src/app/chat.js` — thread view (`openThread`/`showEmpty`), usage meter + context-rot tips, message bubbles (`appendMessage`), star/favorite.
-- `src/app/projects.js` — project picker (entry screen), `startNewChat`, welcome-screen Initialize/Reinitialize.
+- `src/app/projects.js` — project picker (entry screen), `startNewChat`, welcome-screen Initialize/Reinitialize, and **change a project's folder** (`moveProjectFolder` → `move_project`: the project keeps its chats/tasks/run command, which the backend re-keys from the old path to the new one; each moved chat's `session_id` is dropped because Claude Code keys its own sessions by working directory).
 - `src/app/controls.js` — model/mode pickers (`createPicker`), compact/clear/hint actions, the compact/clear progress overlay.
 - `src/app/activity.js` — Activity panel: live shells & sub-agents (track/render tool runs).
 - `src/app/agents.js` — the **agent inspector**: a run record per sub-agent (Task) keyed by its `tool_use` id, kept outside `state.live` so a finished agent stays inspectable. Its chip opens a dedicated window with a live step-by-step timeline, token/step/elapsed tiles, the agent's report, and Stop (which ends the owning turn — the CLI can't kill one worker).

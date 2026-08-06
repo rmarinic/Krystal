@@ -205,6 +205,8 @@ aside.sidebar {
   margin-bottom: 3px;
   letter-spacing: 0.02em;
 }
+/* Today's chats read a touch brighter, so the freshest rows stand out at a glance. */
+.sidebar-list .time.today { color: var(--fg-muted); }
 .sidebar-list .sum,
 .archive-list .sum {
   display: block;

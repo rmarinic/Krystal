@@ -154,6 +154,7 @@ const api = {
   projects() { return invoke('list_projects'); },
   createProject(path) { return invoke('create_project', { path }); },
   selectProject(id) { return invoke('select_project', { id }); },
+  moveProject(id, path) { return invoke('move_project', { id, path }); },
   deleteProject(id) { return invoke('delete_project', { id }); },
   threads(project) { return invoke('list_threads', { project }); },
   thread(id) { return invoke('get_thread', { id }); },
@@ -228,6 +229,37 @@ function timeLabel(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+/* Whole calendar days between a timestamp and today — 0 today, 1 yesterday.
+ * Counted by date, not elapsed hours, so 23:50 last night reads as yesterday
+ * rather than "0 days ago". Returns null for a missing/unparsable stamp. */
+function dayDiff(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return Math.round((midnight(new Date()) - midnight(d)) / 86400000);
+}
+/* A friendly day marker: “Today” / “Yesterday” / “3 days ago”, and a short date
+ * once a week has passed (with the year on anything older than this one). */
+function dayLabel(iso) {
+  const days = dayDiff(iso);
+  if (days === null) return '';
+  if (days <= 0) return tr('time.today');
+  if (days === 1) return tr('time.yesterday');
+  if (days < 7) return tr('time.daysAgo', { n: days });
+  const d = new Date(iso);
+  const opts = { day: 'numeric', month: 'short' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(window.I18N ? window.I18N.getLang() : [], opts);
+}
+/* The chat row's time line: “Today · 14:23”. The clock rides along only while
+ * it still says something — past a couple of days the date alone is the story. */
+function stampLabel(iso) {
+  const days = dayDiff(iso);
+  if (days === null) return '';
+  const day = dayLabel(iso);
+  return days <= 1 ? `${day} · ${timeLabel(iso)}` : day;
 }
 function renderMarkdown(md) {
   const html = window.marked ? marked.parse(md || '') : (md || '');

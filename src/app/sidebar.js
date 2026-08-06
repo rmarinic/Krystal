@@ -42,9 +42,14 @@ function renderSidebar() {
     if (draft) li.classList.add('has-draft');
     const draftDot = draft
       ? `<span class="draft-dot" title="${tr('sidebar.draftTitle')}" aria-hidden="true">✎</span>` : '';
+    // When it last saw activity — “Today · 14:23”, “Yesterday · 09:10”, “4 days ago”.
+    const days = dayDiff(t.updatedAt);
+    const fresh = days !== null && days <= 0 ? ' today' : '';
+    const stampTitle = t.updatedAt
+      ? ` title="${escapeHtml(new Date(t.updatedAt).toLocaleString(window.I18N ? window.I18N.getLang() : []))}"` : '';
     li.innerHTML = `
       <a>
-        <span class="time">${timeLabel(t.updatedAt)}${liveDot}${draftDot}</span>
+        <span class="time${fresh}"${stampTitle}>${stampLabel(t.updatedAt)}${liveDot}${draftDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
@@ -63,6 +68,9 @@ function renderSidebar() {
       await api.remove(t.id);
       if (typeof dropDraft === 'function') dropDraft(t.id);   // its draft goes with it
       if (state.activeId === t.id) { state.activeId = null; showEmpty(); }
+      // …and so do anything it had queued: attachments and #-references.
+      if (typeof clearComposerAttachments === 'function') clearComposerAttachments(t.id);
+      if (typeof clearComposerRefs === 'function') clearComposerRefs(t.id);
       setTimeout(loadThreads, 220);
     };
     els.threadList.appendChild(li);

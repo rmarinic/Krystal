@@ -23,6 +23,9 @@ function showEmpty() {
   els.feed.appendChild(els.empty);
   els.empty.hidden = false;
   state.activeId = null;
+  // No chat on screen → nothing queued on screen either (each chat keeps its own).
+  if (typeof setAttachmentThread === 'function') setAttachmentThread(null);
+  if (typeof setRefsThread === 'function') setRefsThread(null);
   replayClass(els.empty, 'enter');   // gentle entrance so the welcome feels intentional
   refreshWelcomeInit();              // sets the Initialize / Reinitialize label
 }
@@ -80,6 +83,10 @@ async function openThread(id, focusMid) {
 
   // Restore this chat's unsent draft (kept per chat, persisted across restarts).
   els.input.value = getDraft(id);
+  // Its queued attachments and #-reference pills come back with it — and the
+  // chat you just left keeps its own instead of them following you here.
+  if (typeof setAttachmentThread === 'function') setAttachmentThread(id);
+  if (typeof setRefsThread === 'function') setRefsThread(id);
   autosize();
   syncShellMode();
 

@@ -885,15 +885,70 @@ fn ask_emit_text(result: &mut ChatResult, channel: &Channel<Value>, t: &str) {
     let _ = channel.send(json!({ "type": "token", "text": t }));
 }
 
-/// Pull the `questions` array out of a ```krystal-ask block body. Accepts either
-/// the full `{"questions":[…]}` object or a bare `[…]` array; returns None if the
-/// body isn't valid JSON or doesn't hold an array of questions.
-fn parse_ask_questions(body: &str) -> Option<Value> {
-    let v: Value = serde_json::from_str(body.trim()).ok()?;
+/// The `questions` array of a parsed body — either `{"questions":[…]}` or the
+/// bare `[…]` array itself.
+fn questions_of(v: &Value) -> Option<Value> {
     v.get("questions")
         .cloned()
         .filter(|q| q.is_array())
-        .or_else(|| if v.is_array() { Some(v) } else { None })
+        .or_else(|| if v.is_array() { Some(v.clone()) } else { None })
+}
+
+/// The `[ … ]` slice that starts at `from`, honouring strings and escapes so a
+/// bracket inside an option's text can't close it early. None if it never closes.
+fn balanced_array(s: &str, from: usize) -> Option<&str> {
+    let b = s.as_bytes();
+    let (mut depth, mut in_str, mut esc) = (0i32, false, false);
+    for i in from..b.len() {
+        let c = b[i];
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == b'\\' {
+                esc = true;
+            } else if c == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_str = true,
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[from..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Pull the `questions` array out of a ```krystal-ask block body. Accepts either
+/// the full `{"questions":[…]}` object or a bare `[…]` array; returns None if the
+/// body doesn't hold an array of questions.
+///
+/// A strict parse is tried first, then a lenient recovery: models do sometimes
+/// close a long block one brace short, or trail a line of prose after the JSON.
+/// The `questions` array itself is intact in both cases, so we lift it out on its
+/// own rather than losing the whole card to a stray character.
+fn parse_ask_questions(body: &str) -> Option<Value> {
+    let body = body.trim();
+    if let Some(q) = serde_json::from_str::<Value>(body).ok().as_ref().and_then(questions_of) {
+        return Some(q);
+    }
+    let from = match body.find("\"questions\"") {
+        Some(k) => k + body[k..].find('[')?,
+        None => body.find('[')?,
+    };
+    let v: Value = serde_json::from_str(balanced_array(body, from)?).ok()?;
+    // Only a real list of question objects — never a stray array of scalars.
+    let ok = v
+        .as_array()
+        .is_some_and(|a| !a.is_empty() && a.iter().all(|q| q.is_object()));
+    if ok { Some(v) } else { None }
 }
 
 /// Turn a captured ```krystal-ask body into the same `{questions}` tool segment the
@@ -1795,6 +1850,24 @@ fn main() {}
     #[test]
     fn parse_accepts_bare_array() {
         let body = "[{\"question\":\"Pick\"}]";
+        assert!(parse_ask_questions(body).is_some());
+    }
+
+    // The real-world slip: a long block closed one brace short of the root object.
+    #[test]
+    fn parse_recovers_a_missing_closing_brace() {
+        let body = "{\"questions\":[{\"question\":\"What next?\",\"header\":\"Next step\",\
+                     \"multiSelect\":true,\"options\":[{\"label\":\"4.2 [gate]\",\
+                     \"description\":\"a ] inside the text\"},{\"label\":\"B\"}]}]";
+        let q = parse_ask_questions(body).expect("should recover");
+        let a = q.as_array().unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0]["options"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn parse_recovers_with_trailing_prose() {
+        let body = "{\"questions\":[{\"question\":\"Pick\",\"options\":[{\"label\":\"A\"}]}]}\nLet me know.";
         assert!(parse_ask_questions(body).is_some());
     }
 

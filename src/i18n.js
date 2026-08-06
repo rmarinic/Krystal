@@ -26,8 +26,14 @@
       'project.initBtn': '✨ Initialize new project',
       'project.none': 'No projects yet. Click “✨ Initialize new project” to pick a folder.',
       'project.removeTitle': 'Remove project',
+      'project.moveTitle': 'Change this project’s folder',
       'project.meta': '{n} {chats} · last used {when}',
       'project.removeConfirm': 'Remove project “{label}” and its {n} {chats}? This cannot be undone.',
+      'project.moveConfirm': 'Move project “{label}” to a different folder?\n\nFrom:  {from}\nTo:      {to}\n\nIts {n} {chats}, tasks and run command come along. The transcripts stay exactly as they are — only Claude starts a fresh session in the new folder on the next message.',
+      'project.moveErrTaken': 'Another project already uses that folder.',
+      'project.moveErrMissing': 'That folder doesn’t exist any more.',
+      'project.moveErrRunning': 'This project has an app running. Stop it first, then change the folder.',
+      'project.moveErrFailed': 'Could not change the folder ({err}).',
       'word.chat.one': 'chat',
       'word.chat.many': 'chats',
 
@@ -81,6 +87,9 @@
       'sidebar.deleteTitle': 'Delete',
       'sidebar.deleteConfirm': 'Delete this conversation for good?',
       'sidebar.renameTitle': 'Rename',
+      'time.today': 'Today',
+      'time.yesterday': 'Yesterday',
+      'time.daysAgo': '{n} days ago',
       'rename.placeholder': 'Name this chat…',
       'rename.title': 'Rename chat',
       'rename.headerTitle': 'Double-click to rename',
@@ -314,6 +323,7 @@
 
       /* ---- folder picker / errors ---- */
       'dialog.chooseFolder': 'Choose a project folder',
+      'dialog.chooseNewFolder': 'Choose the project’s new folder',
       'dialog.pickerError': 'Could not open folder picker: {err}',
 
       /* ---- model blurbs: per-id first, then per-tier (for dynamically
@@ -557,8 +567,14 @@
       'project.initBtn': '✨ Pokreni novi projekt',
       'project.none': 'Još nema projekata. Klikni “✨ Pokreni novi projekt” da odabereš mapu.',
       'project.removeTitle': 'Ukloni projekt',
+      'project.moveTitle': 'Promijeni mapu ovog projekta',
       'project.meta': '{n} {chats} · zadnje korišteno {when}',
       'project.removeConfirm': 'Ukloniti projekt “{label}” i njegovih {n} {chats}? Ovo se ne može poništiti.',
+      'project.moveConfirm': 'Premjestiti projekt “{label}” u drugu mapu?\n\nIz:  {from}\nU:    {to}\n\n{n} {chats}, zadaci i naredba za pokretanje idu s njim. Razgovori ostaju točno takvi kakvi jesu — samo Claude kreće s novom sesijom u novoj mapi kod sljedeće poruke.',
+      'project.moveErrTaken': 'Drugi projekt već koristi tu mapu.',
+      'project.moveErrMissing': 'Ta mapa više ne postoji.',
+      'project.moveErrRunning': 'U ovom projektu je pokrenuta aplikacija. Prvo je zaustavi, pa promijeni mapu.',
+      'project.moveErrFailed': 'Nije moguće promijeniti mapu ({err}).',
       'word.chat.one': 'razgovor',
       'word.chat.many': 'razgovora',
 
@@ -612,6 +628,9 @@
       'sidebar.deleteTitle': 'Izbriši',
       'sidebar.deleteConfirm': 'Trajno izbrisati ovaj razgovor?',
       'sidebar.renameTitle': 'Preimenuj',
+      'time.today': 'Danas',
+      'time.yesterday': 'Jučer',
+      'time.daysAgo': 'prije {n} dana',
       'rename.placeholder': 'Naziv razgovora…',
       'rename.title': 'Preimenuj razgovor',
       'rename.headerTitle': 'Dvostruki klik za preimenovanje',
@@ -845,6 +864,7 @@
 
       /* ---- folder picker / errors ---- */
       'dialog.chooseFolder': 'Odaberi mapu projekta',
+      'dialog.chooseNewFolder': 'Odaberi novu mapu projekta',
       'dialog.pickerError': 'Nije moguće otvoriti odabir mape: {err}',
 
       /* ---- model blurbs (per-id, then per-tier, then backend value) ---- */

@@ -73,6 +73,7 @@ fn main() {
             commands::list_projects,
             commands::create_project,
             commands::select_project,
+            commands::move_project,
             commands::delete_project,
             commands::list_threads,
             commands::get_thread,

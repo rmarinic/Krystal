@@ -2285,14 +2285,28 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .proj-meta { font-size: 11.5px; color: var(--fg-muted); }
-.project-card .proj-del {
+.project-card .proj-del,
+.project-card .proj-move {
   position: absolute; top: 9px; right: 9px;
   width: 22px; height: 22px; border: none; background: transparent;
   color: var(--fg-dim); cursor: pointer; border-radius: 5px; font-size: 15px; line-height: 1;
   display: none;
 }
-.project-card:hover .proj-del { display: block; }
+.project-card .proj-move { right: 33px; font-size: 12px; }
+.project-card:hover .proj-del,
+.project-card:hover .proj-move { display: block; }
 .project-card .proj-del:hover { background: var(--bg-elev); color: var(--warn); }
+.project-card .proj-move:hover { background: var(--bg-elev); }
+
+/* The folder a project points at just changed — one quiet ring settles on it. */
+.project-card.moved .project-open { animation: proj-moved .55s ease; }
+@keyframes proj-moved {
+  from { box-shadow: 0 0 0 1px var(--accent-2) inset; }
+  to   { box-shadow: 0 0 0 1px transparent inset; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-card.moved .project-open { animation: none; }
+}
 
 /* ===================== Self-update overlay ===================== */
 /* Full-screen gate shown on launch when a newer release is found. */

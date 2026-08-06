@@ -465,7 +465,7 @@ async function send() {
   const refs = typeof resolveComposerRefs === 'function' ? resolveComposerRefs(text) : [];
   // Pasted/dropped attachments become file paths Claude is told to Read. Awaits
   // any in-flight save of a just-pasted screenshot so its path is ready.
-  const files = typeof collectAttachmentPaths === 'function' ? await collectAttachmentPaths() : [];
+  const files = typeof collectAttachmentPaths === 'function' ? await collectAttachmentPaths(threadId) : [];
   if (!text && !files.length) return;   // everything (e.g. a failed paste) dropped out
 
   // render the user message + clear composer. Sending re-engages auto-follow
@@ -475,8 +475,8 @@ async function send() {
   appendMessage('user', text, files, null);
   els.input.value = '';
   saveDraft(threadId, '');           // the draft was just sent — clear it
-  if (typeof clearComposerRefs === 'function') clearComposerRefs();
-  if (typeof clearComposerAttachments === 'function') clearComposerAttachments();
+  if (typeof clearComposerRefs === 'function') clearComposerRefs(threadId);
+  if (typeof clearComposerAttachments === 'function') clearComposerAttachments(threadId);
   autosize();
   scrollFeed();
 

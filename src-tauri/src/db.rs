@@ -36,15 +36,9 @@ fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-/// Open (creating if needed) the database, run migrations and the schema.
-pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
-    if let Some(parent) = db_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let conn = Connection::open(db_path)?;
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
-    conn.execute_batch(
-        r#"
+/// The full schema, applied on every open (and by the tests against an in-memory
+/// database, so they exercise the same tables the app runs on).
+const SCHEMA: &str = r#"
         CREATE TABLE IF NOT EXISTS threads (
           id         TEXT PRIMARY KEY,
           title      TEXT,
@@ -101,8 +95,16 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
           command    TEXT,
           updated_at TEXT
         );
-        "#,
-    )?;
+        "#;
+
+/// Open (creating if needed) the database, run migrations and the schema.
+pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
+    if let Some(parent) = db_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let conn = Connection::open(db_path)?;
+    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+    conn.execute_batch(SCHEMA)?;
 
     // Migrations for databases created before these columns existed.
     // Errors (e.g. column already present) are intentionally ignored.
@@ -810,6 +812,76 @@ pub fn select_project(conn: &Connection, id: &str) -> Option<Value> {
     get_project(conn, id)
 }
 
+/// The folder a project currently points at.
+pub fn project_path(conn: &Connection, id: &str) -> Option<String> {
+    conn.query_row("SELECT path FROM projects WHERE id = ?1", [id], |r| r.get(0))
+        .optional()
+        .ok()
+        .flatten()
+}
+
+/// Point a project at a different folder — the project keeps its identity and
+/// takes everything keyed by its path with it: its chats (`threads.cwd`), its
+/// tasks and its run command.
+///
+/// Every moved chat's `session_id` is dropped on purpose. Claude Code keys its
+/// own session store by working directory, so resuming one of those sessions from
+/// the new folder would look for a transcript that isn't there and fail the turn.
+/// Krystal's own transcript is untouched — only the CLI-side continuation starts
+/// fresh, the same way Clear already works.
+///
+/// Returns the updated project, or None if the move didn't happen (unknown
+/// project, or another project already lives in that folder).
+pub fn move_project(conn: &Connection, id: &str, new_path: &str) -> Option<Value> {
+    let old = project_path(conn, id)?;
+    if old == new_path {
+        return get_project(conn, id);
+    }
+    if project_path_taken(conn, new_path) {
+        return None;
+    }
+    // A name that still matches the old folder follows along; one the user picked
+    // themselves stays as it is.
+    let name = get_project(conn, id)
+        .and_then(|p| p.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .filter(|n| *n != base_name(&old))
+        .unwrap_or_else(|| base_name(new_path));
+
+    let t = now();
+    let _ = conn.execute_batch("BEGIN");
+    let done = (|| -> rusqlite::Result<()> {
+        conn.execute(
+            "UPDATE projects SET path = ?1, name = ?2, updated_at = ?3 WHERE id = ?4",
+            params![new_path, name, t, id],
+        )?;
+        conn.execute(
+            "UPDATE threads SET cwd = ?1, session_id = NULL WHERE cwd = ?2",
+            params![new_path, old],
+        )?;
+        conn.execute("UPDATE tasks SET project = ?1 WHERE project = ?2", params![new_path, old])?;
+        // run_config is keyed by path, so clear any stale row at the destination
+        // before the old one takes its place.
+        conn.execute("DELETE FROM run_config WHERE project = ?1", [new_path])?;
+        conn.execute(
+            "UPDATE run_config SET project = ?1 WHERE project = ?2",
+            params![new_path, old],
+        )?;
+        Ok(())
+    })();
+    let _ = conn.execute_batch(if done.is_ok() { "COMMIT" } else { "ROLLBACK" });
+    done.ok()?;
+    get_project(conn, id)
+}
+
+/// Whether some project already points at this folder.
+pub fn project_path_taken(conn: &Connection, path: &str) -> bool {
+    conn.query_row("SELECT 1 FROM projects WHERE path = ?1", [path], |r| r.get::<_, i64>(0))
+        .optional()
+        .ok()
+        .flatten()
+        .is_some()
+}
+
 /// Bump a project's recency by its folder path (called when a chat is created).
 pub fn touch_project(conn: &Connection, path: &str) {
     let _ = conn.execute("UPDATE projects SET updated_at = ?1 WHERE path = ?2", params![now(), path]);
@@ -959,4 +1031,105 @@ pub fn delete_project(conn: &Connection, id: &str) {
         let _ = conn.execute("DELETE FROM run_config WHERE project = ?1", [&path]);
     }
     let _ = conn.execute("DELETE FROM projects WHERE id = ?1", [id]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A blank database with the real schema, in memory.
+    fn db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn
+    }
+
+    fn id_of(p: &Value) -> String {
+        p["id"].as_str().unwrap().to_string()
+    }
+
+    fn cwd_of(conn: &Connection, thread: &str) -> String {
+        conn.query_row("SELECT cwd FROM threads WHERE id = ?1", [thread], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn moving_a_project_takes_its_chats_tasks_and_run_command_along() {
+        let conn = db();
+        let p = create_project(&conn, "/old/place").unwrap();
+        let id = id_of(&p);
+        let t = create(&conn, "/old/place", "claude-opus-5").unwrap();
+        let tid = t["id"].as_str().unwrap().to_string();
+        add_task(&conn, "/old/place", "ship it", None).unwrap();
+        set_run_command(&conn, "/old/place", "npm run dev");
+        // A chat elsewhere must stay put.
+        let other = create(&conn, "/somewhere/else", "claude-opus-5").unwrap();
+        let oid = other["id"].as_str().unwrap().to_string();
+
+        let moved = move_project(&conn, &id, "/new/place").expect("should move");
+        assert_eq!(moved["path"], "/new/place");
+        assert_eq!(moved["name"], "place");
+        assert_eq!(moved["chatCount"], 1);
+        assert_eq!(cwd_of(&conn, &tid), "/new/place");
+        assert_eq!(cwd_of(&conn, &oid), "/somewhere/else");
+        assert_eq!(list_tasks(&conn, "/new/place").len(), 1);
+        assert!(list_tasks(&conn, "/old/place").is_empty());
+        assert_eq!(get_run_command(&conn, "/new/place").as_deref(), Some("npm run dev"));
+        assert!(get_run_command(&conn, "/old/place").is_none());
+    }
+
+    // Resuming a session from a folder Claude Code never ran in fails the turn,
+    // so a moved chat starts a fresh CLI session instead.
+    #[test]
+    fn moving_a_project_drops_its_chats_claude_sessions() {
+        let conn = db();
+        let id = id_of(&create_project(&conn, "/old").unwrap());
+        let t = create(&conn, "/old", "claude-opus-5").unwrap();
+        let tid = t["id"].as_str().unwrap().to_string();
+        conn.execute("UPDATE threads SET session_id = 'sess-1' WHERE id = ?1", [&tid])
+            .unwrap();
+
+        move_project(&conn, &id, "/new").expect("should move");
+        let sid: Option<String> = conn
+            .query_row("SELECT session_id FROM threads WHERE id = ?1", [&tid], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sid, None);
+    }
+
+    #[test]
+    fn a_hand_picked_name_survives_the_move() {
+        let conn = db();
+        let id = id_of(&create_project(&conn, "/old/place").unwrap());
+        conn.execute("UPDATE projects SET name = 'Novel' WHERE id = ?1", [&id]).unwrap();
+        let moved = move_project(&conn, &id, "/new/place").unwrap();
+        assert_eq!(moved["name"], "Novel");
+    }
+
+    #[test]
+    fn a_folder_another_project_already_uses_is_refused() {
+        let conn = db();
+        let a = id_of(&create_project(&conn, "/a").unwrap());
+        create_project(&conn, "/b").unwrap();
+        assert!(move_project(&conn, &a, "/b").is_none());
+        // …and nothing moved.
+        assert_eq!(project_path(&conn, &a).as_deref(), Some("/a"));
+    }
+
+    #[test]
+    fn moving_a_project_onto_its_own_folder_is_a_no_op() {
+        let conn = db();
+        let id = id_of(&create_project(&conn, "/same").unwrap());
+        let p = move_project(&conn, &id, "/same").expect("should be fine");
+        assert_eq!(p["path"], "/same");
+    }
+
+    #[test]
+    fn a_stale_run_command_at_the_destination_is_replaced() {
+        let conn = db();
+        let id = id_of(&create_project(&conn, "/old").unwrap());
+        set_run_command(&conn, "/old", "npm run dev");
+        set_run_command(&conn, "/new", "left over from before");
+        move_project(&conn, &id, "/new").expect("should move");
+        assert_eq!(get_run_command(&conn, "/new").as_deref(), Some("npm run dev"));
+    }
 }

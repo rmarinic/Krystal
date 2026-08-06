@@ -468,6 +468,48 @@ pub fn select_project(state: State<'_, AppState>, id: String) -> CmdResult {
     db::select_project(&conn, &id).ok_or_else(|| "not found".into())
 }
 
+/// Point a project at a different folder — after moving/renaming it on disk, or
+/// when the same work lives somewhere else now. The project keeps its identity,
+/// its chats, its tasks and its run command; only their location changes.
+/// Errors are short codes the frontend turns into localized text.
+#[tauri::command]
+pub fn move_project(state: State<'_, AppState>, id: String, path: String) -> CmdResult {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err("path-required".into());
+    }
+    if !std::path::Path::new(&path).is_dir() {
+        return Err("not-a-folder".into());
+    }
+    // Locks taken one at a time, never nested (the run panel holds them the other
+    // way round).
+    let old = {
+        let conn = state.db.lock().unwrap();
+        db::project_path(&conn, &id).ok_or_else(|| "not-found".to_string())?
+    };
+    // A live RUN belongs to the folder it was started in — its process is keyed by
+    // that path and still executing there. Ask for it to be stopped first rather
+    // than orphaning it beyond the reach of the Stop button.
+    if state.run_procs.lock().unwrap().contains_key(&old) {
+        return Err("run-in-flight".into());
+    }
+    let conn = state.db.lock().unwrap();
+    if old != path && db::project_path_taken(&conn, &path) {
+        return Err("folder-taken".into());
+    }
+    let project = db::move_project(&conn, &id, &path).ok_or_else(|| "move-failed".to_string())?;
+    // The task snapshot Claude reads is keyed by the folder path, so the old
+    // file is now orphaned — drop it; the next turn writes one under the new key.
+    if old != path {
+        let stale = state
+            .data_dir
+            .join("task-lists")
+            .join(format!("{}.md", project_key(&old)));
+        let _ = std::fs::remove_file(stale);
+    }
+    Ok(project)
+}
+
 #[tauri::command]
 pub fn delete_project(state: State<'_, AppState>, id: String) -> Value {
     let conn = state.db.lock().unwrap();

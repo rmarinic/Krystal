@@ -16,6 +16,13 @@
 const composerAttachments = [];   // { key, name, path, thumb, isImage, ready, failed }
 let attachSeq = 0;
 
+/* An attachment belongs to the chat you queued it in, exactly like the composer
+   draft: `composerAttachments` is only ever the tray of `attachThread`, and every
+   other chat's queue waits in `attachQueues` until you come back to it. Without
+   this a pasted screenshot follows you into whatever chat you open next. */
+const attachQueues = new Map();   // threadId -> parked attachment records
+let attachThread = null;          // the chat the tray currently belongs to
+
 const ATTACH_IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 function isImageName(n) { return ATTACH_IMAGE_RE.test(n || ''); }
 function extForMime(m) {
@@ -36,6 +43,31 @@ function bytesToBase64(buf) {
     bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   }
   return btoa(bin);
+}
+
+/* ------------------------------- per chat -------------------------------- */
+
+/* The queue backing a chat — the live tray for the one that's open. */
+function attachmentsFor(id) {
+  if (!id || id === attachThread) return composerAttachments;
+  return attachQueues.get(id) || [];
+}
+
+/* Point the tray at another chat: park what's queued here, restore what was
+   queued there. Called on every thread switch (with null on the welcome screen),
+   so the tray always shows the open chat's own attachments and nothing else. */
+function setAttachmentThread(id) {
+  id = id || null;
+  if (id === attachThread) return;
+  if (attachThread) {
+    if (composerAttachments.length) attachQueues.set(attachThread, composerAttachments.slice());
+    else attachQueues.delete(attachThread);
+  }
+  const parked = id ? attachQueues.get(id) : null;
+  composerAttachments.length = 0;
+  if (parked) composerAttachments.push(...parked);
+  attachThread = id;
+  renderAttachmentTray();
 }
 
 /* ------------------------------- add/remove ------------------------------ */
@@ -118,17 +150,27 @@ function renderAttachmentTray() {
 }
 
 /* Paths for this turn's `files`, once any in-flight saves have settled. Drops any
-   attachment whose save failed (its pill already shows the failure). */
-async function collectAttachmentPaths() {
-  if (!composerAttachments.length) return [];
-  await Promise.allSettled(composerAttachments.map((a) => a.ready));
-  return composerAttachments.filter((a) => a.path).map((a) => a.path);
+   attachment whose save failed (its pill already shows the failure). Snapshotted
+   up front: switching chats during the await swaps the tray out from under us. */
+async function collectAttachmentPaths(id) {
+  const list = attachmentsFor(id === undefined ? attachThread : id).slice();
+  if (!list.length) return [];
+  await Promise.allSettled(list.map((a) => a.ready));
+  return list.filter((a) => a.path).map((a) => a.path);
 }
 
-function clearComposerAttachments() {
-  for (const a of composerAttachments) if (a.objectUrl) URL.revokeObjectURL(a.objectUrl);
-  composerAttachments.length = 0;
-  renderAttachmentTray();
+/* Empty a chat's queue — its turn was sent, or the chat itself is gone. Defaults
+   to the chat on screen; an explicit id also reaches a parked queue, so a turn
+   sent just before you switched away still clears the right one. */
+function clearComposerAttachments(id) {
+  const list = attachmentsFor(id === undefined ? attachThread : id);
+  for (const a of list) if (a.objectUrl) URL.revokeObjectURL(a.objectUrl);
+  if (list === composerAttachments) {
+    composerAttachments.length = 0;
+    renderAttachmentTray();
+  } else {
+    attachQueues.delete(id);
+  }
 }
 
 function hasComposerAttachments() { return composerAttachments.length > 0; }

@@ -8,6 +8,9 @@ async function showProjectPicker() {
   state.project = null;
   state.activeId = null;
   state.view = 'threads';
+  // Back at the picker there's no chat to queue for — park what each one holds.
+  if (typeof setAttachmentThread === 'function') setAttachmentThread(null);
+  if (typeof setRefsThread === 'function') setRefsThread(null);
   showTasksBtn(false);
   setRunBtn(false);
   els.projectScreen.classList.remove('leaving');
@@ -32,14 +35,20 @@ async function renderProjects() {
     const chats = n === 1 ? tr('word.chat.one') : tr('word.chat.many');
     const li = document.createElement('li');
     li.className = 'project-card';
+    li.dataset.pid = p.id;
     li.innerHTML = `
       <button class="project-open">
         <span class="proj-name">${escapeHtml(p.name || basename(p.path))}</span>
         <span class="proj-path">${escapeHtml(p.path || '')}</span>
         <span class="proj-meta">${escapeHtml(tr('project.meta', { n, chats, when }))}</span>
       </button>
+      <button class="proj-move" title="${escapeHtml(tr('project.moveTitle'))}">📁</button>
       <button class="proj-del" title="${tr('project.removeTitle')}">×</button>`;
     li.querySelector('.project-open').onclick = () => enterProject(p);
+    li.querySelector('.proj-move').onclick = (e) => {
+      e.stopPropagation();
+      moveProjectFolder(p);
+    };
     li.querySelector('.proj-del').onclick = async (e) => {
       e.stopPropagation();
       const label = p.name || basename(p.path);
@@ -49,6 +58,47 @@ async function renderProjects() {
     };
     els.projectList.appendChild(li);
   }
+}
+
+/* Point a project at a different folder — you moved or renamed it on disk, or the
+ * same work lives somewhere else now. The project keeps its identity: its chats,
+ * tasks and run command all follow it (the backend re-keys them). What doesn't
+ * follow is Claude's own session per chat — that store is keyed by folder, so the
+ * next message starts a fresh one. The confirmation says so out loud. */
+const MOVE_ERRORS = {
+  'not-a-folder': 'project.moveErrMissing',
+  'folder-taken': 'project.moveErrTaken',
+  'run-in-flight': 'project.moveErrRunning',
+};
+
+async function moveProjectFolder(p) {
+  let path;
+  try {
+    path = await dialog.open({
+      directory: true,
+      multiple: false,
+      defaultPath: p.path || undefined,
+      title: tr('dialog.chooseNewFolder'),
+    });
+  } catch (e) {
+    return alert(tr('dialog.pickerError', { err: (e && e.message) || e }));
+  }
+  if (!path || path === p.path) return;            // cancelled, or the same folder
+  const n = p.chatCount || 0;
+  const chats = n === 1 ? tr('word.chat.one') : tr('word.chat.many');
+  const label = p.name || basename(p.path);
+  if (!confirm(tr('project.moveConfirm', { label, from: p.path || '—', to: path, n, chats }))) return;
+
+  try {
+    await api.moveProject(p.id, path);
+  } catch (e) {
+    const err = String((e && e.message) || e);
+    return alert(tr(MOVE_ERRORS[err] || 'project.moveErrFailed', { err }));
+  }
+  await renderProjects();
+  // Settle a quiet ring on the card that just changed folder.
+  const card = els.projectList.querySelector(`[data-pid="${cssEsc(p.id)}"]`);
+  if (card) replayClass(card, 'moved', 700);
 }
 
 async function enterProject(project) {

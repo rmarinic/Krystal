@@ -4,6 +4,12 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.16.0
+- A project can now be pointed at a different folder. Moved or renamed the folder on disk? Hover the project on the picker screen and click 📁 to choose where it lives now — its chats, tasks and run command all come along, and the transcripts stay exactly as they are. Claude simply starts a fresh session in the new folder on your next message, which the confirmation tells you before anything changes.
+- Fixed: a pasted screenshot followed you into whatever chat you opened next, and would ride along with the next message you sent there. Attachments now belong to the chat you queued them in — just like drafts — so they wait where you left them. The same fix applies to the `#`-referenced chats above the input.
+- Fixed: an occasional reply where a set of choices arrived as a wall of raw code instead of clickable cards. If the card data is slightly malformed the app now repairs it and shows the cards anyway.
+- The chat list now says when each conversation last saw activity — "Today · 14:23", "Yesterday · 09:10", "4 days ago" — instead of a bare clock time that told you nothing about which day it was. Today's chats read a touch brighter.
+
 ## v0.15.1
 - Fixed the sub-agent window from v0.15.0: it never opened. Claude Code's delegation tool is called **Agent** and the new code was looking for the old name (`Task`), so sub-agent chips stayed ordinary chips — gear icon, the raw word "Agent", no live steps at all. Both names are recognised now, and if the CLI ever renames it again the chip repairs itself the moment the first progress arrives. Sub-agents also show up in the Activity panel again, and their chips carry the brief they were given plus a live step/token tally.
 - The task list now keeps itself current on its own. When work in a chat finishes something on your list, Claude ticks it off as part of that reply; ask it to track something new and the task appears. A small note tells you what changed, and edits are no longer lost if you stop a reply half-way.

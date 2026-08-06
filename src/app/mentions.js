@@ -173,8 +173,34 @@ function resolveComposerRefs(text) {
   return out;
 }
 
-function clearComposerRefs() {
+/* Empty a chat's references — its turn was sent, or the chat itself is gone.
+   Defaults to the chat on screen; an explicit id also reaches a parked set. */
+function clearComposerRefs(id) {
+  if (id !== undefined && id !== refThread) { refQueues.delete(id); return; }
   composerRefs.clear();
+  renderRefPills();
+  closeMentionPop();
+}
+
+/* --------------------------- refs are per chat ---------------------------- *
+ * Like the composer draft, the references you queue belong to the chat you
+ * queued them in. Switching chats parks this set and restores that chat's, then
+ * reconciles against its restored draft — so pills never follow you into a
+ * different conversation, and they're still here when you come back. */
+const refQueues = new Map();   // threadId -> parked refs
+let refThread = null;          // the chat the pills currently belong to
+
+function setRefsThread(id) {
+  id = id || null;
+  if (id === refThread) return;
+  if (refThread) {
+    if (composerRefs.size) refQueues.set(refThread, [...composerRefs.values()]);
+    else refQueues.delete(refThread);
+  }
+  composerRefs.clear();
+  for (const ref of (id && refQueues.get(id)) || []) composerRefs.set(ref.id, ref);
+  refThread = id;
+  reconcileRefs();             // the restored text decides which of them survive
   renderRefPills();
   closeMentionPop();
 }
