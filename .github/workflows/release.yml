@@ -15,6 +15,15 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual fallback: build any existing tag from the Actions tab (or
+  # `gh workflow run release.yml -f tag=v0.16.1`). Needed when the tag push
+  # doesn't trigger a run on its own — the tag is already on the remote by then,
+  # so this builds exactly the same commit.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build, e.g. v0.16.1'
+        required: true
 
 # tauri-action needs to create the release + upload assets.
 permissions:
@@ -24,9 +33,15 @@ jobs:
   release:
     runs-on: windows-latest
 
+    # The tag being released: the pushed ref, or the one typed into the dispatch.
+    env:
+      VERSION_TAG: ${{ inputs.tag || github.ref_name }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -51,7 +66,7 @@ jobs:
         id: notes
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}"
+          $ver = "${{ env.VERSION_TAG }}"
           $notes = ""
           if (Test-Path CHANGELOG.md) {
             $md = Get-Content -Raw CHANGELOG.md
@@ -73,8 +88,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Krystal ${{ github.ref_name }}'
+          tagName: ${{ env.VERSION_TAG }}
+          releaseName: 'Krystal ${{ env.VERSION_TAG }}'
           releaseBody: ${{ steps.notes.outputs.notes }}
           releaseDraft: false
           prerelease: false
