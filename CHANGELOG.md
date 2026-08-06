@@ -4,7 +4,7 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
-## v0.16.0
+## v0.16.1
 - A project can now be pointed at a different folder. Moved or renamed the folder on disk? Hover the project on the picker screen and click 📁 to choose where it lives now — its chats, tasks and run command all come along, and the transcripts stay exactly as they are. Claude simply starts a fresh session in the new folder on your next message, which the confirmation tells you before anything changes.
 - Fixed: a pasted screenshot followed you into whatever chat you opened next, and would ride along with the next message you sent there. Attachments now belong to the chat you queued them in — just like drafts — so they wait where you left them. The same fix applies to the `#`-referenced chats above the input.
 - Fixed: an occasional reply where a set of choices arrived as a wall of raw code instead of clickable cards. If the card data is slightly malformed the app now repairs it and shows the cards anyway.
