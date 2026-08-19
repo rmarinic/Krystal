@@ -9,6 +9,7 @@ updateLangBtn();
 // Tell the backend the current UI language so it can pick the reply-language
 // tie-break for messages too short to identify (never an override).
 api.setUiLanguage(window.I18N.getLang()).catch(() => {});
+api.setSuggestions(settingOn('promptSuggestions')).catch(() => {});
 updateSettingsBtn();
 scheduleLogoLife();
 applyExtraEffects();   // reflect the Extra effects setting onto the chat glow at boot

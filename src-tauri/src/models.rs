@@ -164,6 +164,69 @@ pub const ORCH_FAST_MODEL: &str = "claude-haiku-4-5-20251001";
 pub const ORCH_BALANCED_MODEL: &str = "claude-sonnet-5";
 pub const ORCH_DEEP_MODEL: &str = "claude-opus-5";
 
+/* -------------------------------- effort --------------------------------- */
+/// How hard the model thinks before it answers (`claude --effort`). Newer Claude
+/// models treat this as the reasoning-depth dial, so it is the single biggest
+/// quality lever a chat has after the model itself — terminal Claude Code
+/// exposes it, and Krystal would otherwise leave every turn on the CLI default.
+///
+/// Krystal defaults to `high`: this is an app for considered work, not a
+/// throughput pipe. `low`/`medium` are there for quick back-and-forth, `xhigh`
+/// and `max` for the genuinely hard turn that is worth waiting for.
+
+#[derive(Serialize, Clone, Copy)]
+pub struct Effort {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub blurb: &'static str,
+}
+
+pub const DEFAULT_EFFORT: &str = "high";
+
+pub const EFFORTS: &[Effort] = &[
+    Effort { id: "low",    name: "Low",    blurb: "Answers quickly, thinks little" },
+    Effort { id: "medium", name: "Medium", blurb: "Everyday balance" },
+    Effort { id: "high",   name: "High",   blurb: "Thinks it through" },
+    Effort { id: "xhigh",  name: "Higher", blurb: "For genuinely hard problems" },
+    Effort { id: "max",    name: "Max",    blurb: "Slowest & most thorough" },
+];
+
+/// Whether the given id is one of the offered effort levels.
+pub fn is_valid_effort(id: &str) -> bool {
+    EFFORTS.iter().any(|e| e.id == id)
+}
+
+/* ------------------------------- fallback -------------------------------- */
+
+/// The `--fallback-model` chain for a turn whose primary model is `primary`.
+///
+/// Without it, an overloaded or unavailable model is simply a failed turn — the
+/// CLI retries the primary at the start of each user turn, so falling back costs
+/// nothing once the pressure passes. We aim at the balanced tier first and the
+/// cheap one last, skipping the primary itself (a model can't fall back to
+/// itself) and anything the catalogue doesn't offer.
+///
+/// Note this can fall *upward*: a Haiku turn falls back to Sonnet, because the
+/// alternative is no answer at all. It only ever fires while the picked model is
+/// unavailable, so the cost of that is bounded and rare. Returns `None` only when
+/// there is genuinely nothing else to try.
+pub fn fallback_chain(catalog: &[ModelInfo], primary: &str) -> Option<String> {
+    let seeded;
+    let list = if catalog.is_empty() {
+        seeded = seed_models();
+        &seeded[..]
+    } else {
+        catalog
+    };
+    let chain: Vec<String> = ["sonnet", "haiku"]
+        .iter()
+        .filter_map(|tier| list.iter().find(|m| m.tier == *tier))
+        .map(|m| m.id.clone())
+        .filter(|id| id != primary)
+        .collect();
+    (!chain.is_empty()).then(|| chain.join(","))
+}
+
 /* --------------------------------- modes --------------------------------- */
 /// How much latitude Claude has on a chat turn. Only the live `chat` turns honour
 /// this; internal one-off calls (compact/hint/init) always run at full power.
@@ -190,6 +253,36 @@ pub fn is_valid_mode(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_effort_is_one_we_offer() {
+        assert!(is_valid_effort(DEFAULT_EFFORT));
+        // Anything else must be refused rather than forwarded — `--effort <garbage>`
+        // fails the whole turn.
+        assert!(!is_valid_effort("turbo"));
+        assert!(!is_valid_effort(""));
+    }
+
+    #[test]
+    fn fallback_chain_skips_the_primary_and_orders_by_capability() {
+        let cat = seed_models();
+        let opus = fallback_chain(&cat, "claude-opus-5").expect("opus can fall back");
+        assert_eq!(opus, "claude-sonnet-5,claude-haiku-4-5-20251001");
+        // A model can't fall back to itself.
+        let sonnet = fallback_chain(&cat, "claude-sonnet-5").expect("sonnet can fall back");
+        assert_eq!(sonnet, "claude-haiku-4-5-20251001");
+        // The cheapest tier falls upward rather than failing the turn outright.
+        assert_eq!(
+            fallback_chain(&cat, "claude-haiku-4-5-20251001").as_deref(),
+            Some("claude-sonnet-5")
+        );
+    }
+
+    #[test]
+    fn fallback_chain_falls_back_to_the_static_list_when_the_catalogue_is_empty() {
+        // A failed catalogue fetch must not silently drop the safety net.
+        assert!(fallback_chain(&[], "claude-opus-5").is_some());
+    }
 
     #[test]
     fn orchestrator_tier_models_are_real() {

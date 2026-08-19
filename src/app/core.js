@@ -50,6 +50,8 @@ const els = {
   chatTools: $('#chat-tools'),
   modelPicker: $('#model-picker'),
   modePicker: $('#mode-picker'),
+  effortPicker: $('#effort-picker'),
+  composerSuggest: $('#composer-suggest'),
   branchBtn: $('#branch-btn'),
   compactBtn: $('#compact-btn'),
   clearBtn: $('#clear-btn'),
@@ -129,6 +131,8 @@ let state = {
   live: new Map(),      // threadId -> liveTurn; in-flight turns, one per streaming thread
   models: [],
   modes: [],
+  efforts: [],           // reasoning-depth levels offered by the effort picker
+  defaultEffort: 'high', // what a chat opens on before its own value loads
   activity: [],          // this chat's shells & sub-agents (for the Activity panel)
   activityOrch: null,    // latest orchestrator token-split summary for this chat (or null)
   activityFilter: 'all', // Activity panel filter: 'all' | 'active' | 'done'
@@ -167,6 +171,8 @@ const api = {
   refreshModels() { return invoke('refresh_models'); },
   setModel(id, model) { return invoke('set_model', { id, model }); },
   setMode(id, mode) { return invoke('set_mode', { id, mode }); },
+  setEffort(id, effort) { return invoke('set_effort', { id, effort }); },
+  setSuggestions(enabled) { return invoke('set_suggestions', { enabled }); },
   setOrchestration(id, enabled, subModel) { return invoke('set_orchestration', { id, enabled, subModel }); },
   clear(id) { return invoke('clear_thread', { id }); },
   compact(id) { return invoke('compact_thread', { id }); },

@@ -39,6 +39,8 @@ function syncDiscordProject() {
 const SETTINGS_KEY = 'krystal.settings';
 const SETTINGS_DEFAULTS = {
   gitStatus: true, logoLife: true, discordShareName: true, linkOpen: 'ask',
+  // Ask the CLI to predict a sensible next message after each turn.
+  promptSuggestions: true,
   // Claude-usage calibration caps (weighted tokens). null = not calibrated yet.
   usageCap5h: null, usageCap7d: null,
   // Weekly reset anchor read off Claude's /usage (local weekday 0=Sun..6=Sat + "HH:MM").
@@ -67,6 +69,7 @@ function setSettingVal(k, v) {           // non-boolean (e.g. the link-open choi
 }
 function applySetting(k) {
   if (k === 'gitStatus') refreshGit();
+  else if (k === 'promptSuggestions') pushSuggestionsSetting();
   else if (k === 'logoLife') { scheduleLogoLife(); applyExtraEffects(); }
   else if (k === 'discordShareName') {
     api.discordSetShareName(settingOn(k)).catch(() => {});
@@ -92,6 +95,7 @@ const SETTINGS_TABS = [
   { id: 'general', rows: [
     { key: 'linkOpen', type: 'choice', choices: ['ask', 'browser', 'app'] },
     { key: 'gitStatus' },
+    { key: 'promptSuggestions' },
     { key: 'logoLife' },
     { key: 'claudeUpdate', type: 'action' },
   ] },
@@ -105,6 +109,13 @@ const SETTINGS_TABS = [
   { id: 'activity', custom: 'runs' },
 ];
 let settingsTab = 'general';
+
+// Mirror the prompt-suggestion switch down to the backend, which decides whether
+// to add `--prompt-suggestions` to the next turn. Called on every flip and once
+// at boot (the backend defaults to on, so the two only ever differ after a flip).
+function pushSuggestionsSetting() {
+  api.setSuggestions(settingOn('promptSuggestions')).catch(() => {});
+}
 
 /* Claude Code self-update row: shows the installed CLI version and a button that
  * runs `claude update` in the background (same as the terminal), streaming the

@@ -50,6 +50,7 @@ async function openThread(id, focusMid) {
   els.cwd.textContent = t.cwd;
   if (modelSel) modelSel.set(t.model || (state.models[0] && state.models[0].id) || '');
   if (modeSel) modeSel.set(t.mode || (state.modes[0] && state.modes[0].id) || 'auto');
+  if (effortSel) effortSel.set(t.effort || state.defaultEffort);
   if (typeof syncOrchestratorThread === 'function') syncOrchestratorThread(t);
   state.seed = t.seed || null;              // compaction summary, if this thread was just compacted
   state.summary = state.seed;                // readable copy: survives the turn that folds the seed in
@@ -77,6 +78,7 @@ async function openThread(id, focusMid) {
   els.activityBtn.hidden = false;
   showTasksBtn(true);
   syncComposer();
+  syncSuggestion();   // re-show this chat's predicted next message, if it has one
   refreshGit();
   activityMinH = 0;                 // new chat → re-measure the activity panel size
   if (!els.activityOverlay.hidden) refreshActivityPanel();

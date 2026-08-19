@@ -13,8 +13,9 @@ use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+use crate::session::Session;
 use crate::models::{
-    is_safe_model_arg, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
+    self, is_safe_model_arg, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
     ORCH_FAST_MODEL, SUB_MODEL_AUTO, TITLE_MODEL,
 };
 
@@ -54,48 +55,91 @@ pub fn lang_label(code: &str) -> &'static str {
     }
 }
 
-/// System prompt prepended on every turn. Kept to a SINGLE LINE (no newlines)
-/// so it can be passed safely as a command-line argument to the `claude.cmd`
-/// shim on Windows — Rust refuses to escape newlines into a batch invocation.
+/// System prompt appended on every turn.
+///
+/// This used to be forced onto a SINGLE line, because it was passed as a literal
+/// command-line argument and Rust refuses to escape newlines into the Windows
+/// `claude.cmd` batch shim. That constraint is gone: `spill_system_prompt` writes
+/// the whole thing to a file and switches the flag to `--append-system-prompt-file`
+/// before it ever reaches the CLI. So it is written the way instructions are
+/// actually best read — short sections under headings, one rule per line.
 ///
 /// `ui_lang` is the app's interface language ('en' | 'hr'); it only decides the
 /// tie-break for messages that carry no language signal of their own.
 pub fn capability_prompt(caps: Caps, ui_lang: &str) -> String {
-    let mut lines: Vec<String> = vec![
-        "You are helping the user with the files and work in the current project folder.".into(),
-        "Read CLAUDE.md (if present) for what this project is about.".into(),
-        // The reply language used to be one clause tacked onto the CLAUDE.md line,
-        // which lost every time the project's own files were written in another
-        // language — an English opener could still come back in Croatian. It is
-        // now its own explicit rule with a stated tie-break.
-        format!(
-            "LANGUAGE — decide this before you write anything: reply in the SAME language as the user's LATEST message, judged from that message alone. \
-             The language of CLAUDE.md, of the project's files, folder names, earlier chats, or of the app's interface NEVER decides your reply language — if the user writes in English you answer in English even when everything around you is in another language, and vice versa. \
-             Only when a message carries no language signal at all (\"ok\", a bare path, a link, an emoji) do you keep the language of the last message that did; if there is none, use {}.",
-            lang_label(ui_lang)
-        ),
-        "When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.".into(),
-        "When you want the user to choose between a few clear options, present a choice card instead of asking in prose: output a fenced code block tagged krystal-ask whose body is valid JSON of the form {\"questions\":[{\"question\":\"…\",\"header\":\"short label\",\"multiSelect\":false,\"options\":[{\"label\":\"…\",\"description\":\"…\"}]}]} — this app renders it as clickable cards with a custom-answer box.".into(),
-        "Emit that block as the very last thing in your reply and then STOP; the user's selection (or typed answer) arrives as their next message, so just continue naturally from it. Use it only for genuine forks where the choice changes what you do — never for routine questions.".into(),
-        // Each turn is a separate headless `claude -p` process (see run_chat_stream);
-        // when it exits, harness-tracked background work dies with it — a background
-        // shell can never outlive the reply that started it, and its "you'll be
-        // notified" promise silently breaks. Steer Claude away from ever relying on it.
-        "IMPORTANT: this app runs each reply as a separate headless claude process that EXITS as soon as the reply finishes, so background work does NOT survive between replies: never run Bash/PowerShell commands with run_in_background=true and never launch background agents or tasks you intend to check later — their processes and completion notifications die with the reply. Run long commands in the FOREGROUND with a generous timeout (up to 10 minutes) and wait for them inside the same reply; if something would take longer, break it into explicit steps the user triggers one reply at a time.".into(),
-    ];
+    let mut p = String::new();
+
+    p.push_str(
+        "You are helping the user with the files and work in the current project folder.
+         Read CLAUDE.md (if present) for what this project is about.
+
+",
+    );
+
+    // The reply language used to be one clause tacked onto the CLAUDE.md line,
+    // which lost every time the project's own files were written in another
+    // language — an English opener could still come back in Croatian. It is now
+    // its own section with a stated tie-break.
+    p.push_str(&format!(
+        "## Reply language
+         Decide this before you write anything: reply in the SAME language as the user's LATEST message, judged from that message alone.
+         The language of CLAUDE.md, of the project's files, folder names, earlier chats, or of the app's interface NEVER decides your reply language — if the user writes in English you answer in English even when everything around you is in another language, and vice versa.
+         Only when a message carries no language signal at all (\"ok\", a bare path, a link, an emoji) do you keep the language of the last message that did; if there is none, use {}.
+         When you write any file that may contain Croatian text, always use UTF-8 so diacritics (č, ć, ž, š, đ) are preserved exactly.
+
+",
+        lang_label(ui_lang)
+    ));
+
+    p.push_str(
+        "## Choice cards
+         When you want the user to choose between a few clear options, present a choice card instead of asking in prose: output a fenced code block tagged krystal-ask whose body is valid JSON of the form {\"questions\":[{\"question\":\"…\",\"header\":\"short label\",\"multiSelect\":false,\"options\":[{\"label\":\"…\",\"description\":\"…\"}]}]} — this app renders it as clickable cards with a custom-answer box.
+         Emit that block as the very last thing in your reply and then STOP; the user's selection (or typed answer) arrives as their next message, so just continue naturally from it.
+         Use it only for genuine forks where the choice changes what you do — never for routine questions.
+
+",
+    );
+
+    // The process now survives between turns (see session.rs), so the old reason
+    // for this rule — "your process is about to exit" — is no longer true. The rule
+    // itself still is, for a different reason: Krystal renders exactly one reply per
+    // message and stops listening at the turn's `result` event, so anything that
+    // reports back later has nowhere to appear. It is also not guaranteed a session
+    // survives: changing model/effort/mode, compacting, or going idle retires it.
+    p.push_str(
+        "## No background work
+         IMPORTANT: this app shows exactly one reply per message and stops listening the moment your reply ends, so anything that reports back later has nowhere to appear. The session may also be restarted between messages.
+         Never run Bash/PowerShell commands with run_in_background=true, and never launch background agents or tasks you intend to check later — you will not get to report what they found.
+         Run long commands in the FOREGROUND with a generous timeout (up to 10 minutes) and wait for them inside the same reply; if something would take longer, break it into explicit steps the user triggers one reply at a time.
+
+",
+    );
+
+    p.push_str("## Word documents
+");
     if caps.pandoc {
-        lines.push("Word documents (.docx) ARE supported via pandoc:".into());
-        lines.push("to READ a .docx, run: pandoc 'file.docx' -t markdown (then read its text);".into());
-        lines.push("to CREATE/replace a .docx from markdown, run: pandoc 'draft.md' -o 'out.docx';".into());
-        lines.push("a reference doc can carry styling: pandoc in.md -o out.docx --reference-doc=ref.docx.".into());
+        p.push_str(
+            "Word documents (.docx) ARE supported via pandoc.
+             To READ a .docx, run: pandoc 'file.docx' -t markdown (then read its text).
+             To CREATE/replace a .docx from markdown, run: pandoc 'draft.md' -o 'out.docx'.
+             A reference doc can carry styling: pandoc in.md -o out.docx --reference-doc=ref.docx.
+",
+        );
     }
     if caps.python_docx {
-        lines.push("For SURGICAL edits that must preserve a .docx's existing formatting, use the python-docx library from a short python script (import docx) rather than pandoc.".into());
+        p.push_str(
+            "For SURGICAL edits that must preserve a .docx's existing formatting, use the python-docx library from a short python script (import docx) rather than pandoc.
+",
+        );
     }
     if !caps.pandoc && !caps.python_docx {
-        lines.push("NOTE: Word (.docx) tooling is not installed, so you cannot open or write .docx files directly. If asked, tell the user to install pandoc and python-docx to enable Word support.".into());
+        p.push_str(
+            "NOTE: Word (.docx) tooling is not installed, so you cannot open or write .docx files directly. If asked, tell the user to install pandoc and python-docx to enable Word support.
+",
+        );
     }
-    lines.join(" ")
+
+    p
 }
 
 /* --------------------------- resolving claude ---------------------------- */
@@ -401,31 +445,72 @@ pub fn apply_mode(args: &mut Vec<String>, mode: &str) {
     }
 }
 
-/* ---------------------------- orchestrator ------------------------------- */
+/// Flags that only make sense on a live chat turn, layered on top of `base_args`.
+/// The internal one-off calls (naming a chat, drafting tasks, the Initialize
+/// wizard) deliberately skip these: they are short, single-shot and disposable.
+///
+/// * `--effort` — reasoning depth (see `models::EFFORTS`). The biggest quality
+///   lever after the model itself, and the one terminal Claude Code users have
+///   had all along.
+/// * `--fallback-model` — an overloaded primary model degrades to the next tier
+///   instead of failing the turn outright. Print-mode only, which is all we run.
+/// * `--autocompact auto` — let the CLI compact a conversation that outgrows its
+///   window, natively and mid-turn. Krystal's own Compact button still exists for
+///   when the *user* wants a reset; this is the safety net underneath it.
+/// * `--prompt-suggestions` — asks the CLI to predict a sensible next message and
+///   emit it as a `prompt_suggestion` event. It only fires once a conversation has
+///   some history, and only when the model has a confident guess, so treat it as
+///   a bonus rather than something the UI can count on.
+/// Turn a chat invocation into a *session*: messages arrive as JSON lines on
+/// stdin instead of one prompt followed by EOF, so the process serves every turn
+/// of the chat rather than exiting after the first (see `session.rs`).
+pub fn apply_session_flags(args: &mut Vec<String>) {
+    args.push("--input-format".into());
+    args.push("stream-json".into());
+}
 
-/// RAII guard for the temporary worker-agent `.md` files written under
-/// `~/.claude/agents` for a single orchestrator turn. Removed on drop — i.e.
-/// once the claude child has exited and the chat handler returns — so they never
-/// linger to pollute the user's own Claude Code agents. Mirrors `SysPromptFile`.
-pub struct OrchestratorGuard(Vec<PathBuf>);
-
-impl Drop for OrchestratorGuard {
-    fn drop(&mut self) {
-        for p in self.0.drain(..) {
-            let _ = std::fs::remove_file(p);
-        }
+pub fn apply_chat_flags(
+    args: &mut Vec<String>,
+    effort: &str,
+    fallback: Option<&str>,
+    suggestions: bool,
+) {
+    if models::is_valid_effort(effort) {
+        args.push("--effort".into());
+        args.push(effort.into());
+    }
+    if let Some(chain) = fallback.filter(|c| !c.is_empty()) {
+        args.push("--fallback-model".into());
+        args.push(chain.into());
+    }
+    args.push("--autocompact".into());
+    args.push("auto".into());
+    if suggestions {
+        args.push("--prompt-suggestions".into());
     }
 }
 
-/// Everything a chat turn needs to run in orchestrator mode: a system-prompt
-/// note steering the orchestrator to delegate, plus the guard that cleans up the
-/// worker-agent files it references.
+/* ---------------------------- orchestrator ------------------------------- */
+
+/// Everything a chat turn needs to run in orchestrator mode: the system-prompt
+/// note that steers the orchestrator to delegate, plus the worker definitions
+/// that note refers to, ready to hand straight to `claude --agents`.
+///
+/// The workers used to be `.md` files written into the user's real
+/// `~/.claude/agents` and swept away again after the turn (with a pid-tagged
+/// name so a crashed Krystal could be cleaned up later). `--agents` takes the
+/// same definitions inline as JSON, which removes the whole file dance — and,
+/// more importantly, lets the names be *stable*. A name that changed every turn
+/// changed the appended system prompt every turn, which invalidated the prompt
+/// cache on the very first block and made every orchestrated turn pay full
+/// price for its prefix.
 pub struct Orchestration {
     /// Appended to the system prompt for this turn. Multi-line is fine: the whole
     /// system prompt is spilled to a file before it reaches the CLI (see
     /// `spill_system_prompt`), so nothing here has to survive shell tokenizing.
     pub note: String,
-    _guard: OrchestratorGuard,
+    /// The `--agents` payload: a JSON object of `name -> {description, prompt, model}`.
+    pub agents: String,
 }
 
 // NOTE: an earlier version of this mode also hard-blocked the orchestrator's own
@@ -438,10 +523,9 @@ pub struct Orchestration {
 // stalling the whole turn. A silently-broken delegation is worse than the
 // token-waste this mode exists to prevent, so enforcement is prompt-only again.
 
-static ORCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Shared prefix of every worker file/agent name we write, so a stale sweep can
-/// recognise our own leftovers without touching the user's real agents.
+/// Shared prefix of every worker name we define, so a worker can never collide
+/// with an agent the user defined themselves. Stable across turns — see the
+/// prompt-cache note on `Orchestration`.
 const WORKER_PREFIX: &str = "krystal-worker-";
 
 /// Opening of the orchestrator note — how to call a worker at all.
@@ -491,11 +575,6 @@ Stop conditions. If a worker comes back blocked or wrong, re-dispatch at most on
 pub const ORCH_PLAN_NOTE: &str = "\
 This turn also runs in Plan mode: nothing may be created, edited or deleted. Delegate reading, searching and research only, and say explicitly in every brief that the worker must not write anything — a worker that tries to write will stall waiting for a permission prompt nobody can answer. Finish by presenting the plan yourself.";
 
-fn claude_agents_dir() -> Option<PathBuf> {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
-    Some(PathBuf::from(home).join(".claude").join("agents"))
-}
-
 /// The worker brief. A sub-agent starts with a *fresh, isolated context* — it
 /// cannot see the conversation — so the brief spells out how to work from the
 /// delegation message alone, forbids delegating further (Claude Code lets
@@ -514,33 +593,25 @@ Stop condition: if the same approach fails twice, stop. Return what you learned,
 
 Return a tight, self-contained report the orchestrator can act on directly: what you did, which files (and roughly which lines) you touched, what you verified, and anything it must know. No preamble, no restating the brief.";
 
-/// Write one worker-agent definition file. The `model:` frontmatter pins the
-/// sub-agent's model; the body is its (deliberately generic, full-tool) brief —
-/// we never restrict a worker's toolset. Returns the path on success.
-fn write_worker_agent(dir: &std::path::Path, name: &str, description: &str, model: &str) -> Option<PathBuf> {
-    let path = dir.join(format!("{name}.md"));
-    let content = format!("---\nname: {name}\ndescription: {description}\nmodel: {model}\n---\n{WORKER_BODY}\n");
-    std::fs::write(&path, content).ok()?;
-    Some(path)
+/// One worker definition for the `--agents` payload. `model` pins the sub-agent's
+/// model; the prompt is its (deliberately generic, full-tool) brief — we never
+/// restrict a worker's toolset, so `tools` is left off and the worker inherits
+/// everything.
+fn worker_def(description: &str, model: &str) -> Value {
+    json!({ "description": description, "prompt": WORKER_BODY, "model": model })
 }
 
-/// Delete worker files left behind by a Krystal that died mid-turn (a crash or a
-/// force-quit skips the `OrchestratorGuard` drop). Every file we write is tagged
-/// with the writing process's pid, so anything tagged with a pid that is no
-/// longer alive is certainly stale. Best-effort; a failure here never blocks a
-/// turn.
-fn sweep_stale_worker_agents(dir: &std::path::Path) {
-    let me = std::process::id();
+/// Delete worker `.md` files left in `~/.claude/agents` by a Krystal old enough
+/// to have written them there (pre-`--agents`), including ones a crash left
+/// behind. Called once at startup; the app never writes to that directory now,
+/// so anything carrying our prefix is certainly ours and certainly stale.
+pub fn sweep_legacy_worker_agents() {
+    let Some(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok() else { return };
+    let dir = PathBuf::from(home).join(".claude").join("agents");
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        let Some(rest) = name.strip_prefix(WORKER_PREFIX) else { continue };
-        let Some(stem) = rest.strip_suffix(".md") else { continue };
-        // …-<pid>-<seq>: the pid is the second-to-last dash segment.
-        let mut parts = stem.rsplitn(3, '-');
-        let (_seq, pid) = (parts.next(), parts.next());
-        let Some(pid) = pid.and_then(|p| p.parse::<u32>().ok()) else { continue };
-        if pid != me && !pid_alive(pid) {
+        if name.starts_with(WORKER_PREFIX) && name.ends_with(".md") {
             let _ = std::fs::remove_file(e.path());
         }
     }
@@ -567,53 +638,79 @@ fn pick_tier(catalog: &[ModelInfo], tier: &str, fallback: &str) -> (String, Stri
     }
 }
 
-/// Prepare the worker sub-agents for one orchestrator turn and the note that
+/// Build the worker sub-agents for one orchestrator turn and the note that
 /// steers the orchestrator to delegate to them. `sub_model` is a concrete model
 /// id, or `auto` to offer a fast/balanced/deep trio (drawn from the live
-/// `catalog`) the orchestrator picks from per task. Returns `None` (mode
-/// silently off) if the agents dir is unwritable.
-pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Option<Orchestration> {
-    let dir = claude_agents_dir()?;
-    std::fs::create_dir_all(&dir).ok()?;
-    sweep_stale_worker_agents(&dir);
-    // Unique per process + call so concurrent turns never share (and so cleaning
-    // up one turn's files can't yank an agent out from under another).
-    let seq = ORCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tag = format!("{}-{}", std::process::id(), seq);
-    let mut files = Vec::new();
+/// `catalog`) the orchestrator picks from per task.
+///
+/// Nothing is written to disk and nothing can fail: the definitions ride along
+/// on the turn's `--agents` flag and disappear with the process.
+pub fn prepare_orchestration(sub_model: &str, catalog: &[ModelInfo]) -> Orchestration {
+    let mut defs = serde_json::Map::new();
 
     let note = if sub_model == SUB_MODEL_AUTO {
         // Tiers track the live catalogue; the ORCH_* ids are only fallbacks.
         let (fast_id, fast_m) = pick_tier(catalog, "haiku", ORCH_FAST_MODEL);
         let (bal_id, bal_m) = pick_tier(catalog, "sonnet", ORCH_BALANCED_MODEL);
         let (deep_id, deep_m) = pick_tier(catalog, "opus", ORCH_DEEP_MODEL);
-        let fast = format!("{WORKER_PREFIX}fast-{tag}");
-        let bal = format!("{WORKER_PREFIX}balanced-{tag}");
-        let deep = format!("{WORKER_PREFIX}deep-{tag}");
-        files.push(write_worker_agent(&dir, &fast, "Fast, cheap worker for simple or mechanical delegated tasks.", &fast_id)?);
-        files.push(write_worker_agent(&dir, &bal, "Balanced worker for typical coding, analysis and writing tasks.", &bal_id)?);
-        files.push(write_worker_agent(&dir, &deep, "Most-capable worker, for genuinely hard reasoning tasks.", &deep_id)?);
+        let fast = format!("{WORKER_PREFIX}fast");
+        let bal = format!("{WORKER_PREFIX}balanced");
+        let deep = format!("{WORKER_PREFIX}deep");
+        defs.insert(fast.clone(), worker_def("Fast, cheap worker for simple or mechanical delegated tasks.", &fast_id));
+        defs.insert(bal.clone(), worker_def("Balanced worker for typical coding, analysis and writing tasks.", &bal_id));
+        defs.insert(deep.clone(), worker_def("Most-capable worker, for genuinely hard reasoning tasks.", &deep_id));
         format!(
-            "{ORCH_HEAD}\n\nYour workers for this turn — pick the cheapest one that can do the job well:\n\
-             - `{fast}` ({fast_m}) — mechanical, fully-specified work.\n\
-             - `{bal}` ({bal_m}) — normal coding, analysis and writing. Your default.\n\
-             - `{deep}` ({deep_m}) — genuinely hard reasoning only.\n\n{ORCH_RULES}",
+            "{ORCH_HEAD}
+
+Your workers for this turn — pick the cheapest one that can do the job well:
+             - `{fast}` ({fast_m}) — mechanical, fully-specified work.
+             - `{bal}` ({bal_m}) — normal coding, analysis and writing. Your default.
+             - `{deep}` ({deep_m}) — genuinely hard reasoning only.
+
+{ORCH_RULES}",
         )
     } else {
-        let name = format!("{WORKER_PREFIX}{tag}");
-        files.push(write_worker_agent(&dir, &name, "Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model)?);
+        let name = format!("{WORKER_PREFIX}main");
+        defs.insert(
+            name.clone(),
+            worker_def("Worker sub-agent for delegated tasks; runs on a cheaper model to conserve budget.", sub_model),
+        );
         format!(
-            "{ORCH_HEAD}\n\nYou have one worker for this turn: `{name}` (runs on {mname}). Every delegated task goes to it.\n\n{ORCH_RULES}",
+            "{ORCH_HEAD}
+
+You have one worker for this turn: `{name}` (runs on {mname}). Every delegated task goes to it.
+
+{ORCH_RULES}",
             mname = resolve_model_name(catalog, sub_model),
         )
     };
 
-    Some(Orchestration { note, _guard: OrchestratorGuard(files) })
+    Orchestration { note, agents: Value::Object(defs).to_string() }
 }
 
-/// Assemble the prompt fed over stdin. Mirrors `buildPrompt` in server.js.
-pub fn build_prompt(text: &str, files: &[String], seed: Option<&str>, references: Option<&str>) -> String {
+/// Assemble the message sent for one turn.
+///
+/// `notes` is per-turn context that used to be appended to the system prompt —
+/// today only the task-list note. It can't live there any more: the system prompt
+/// is fixed when the session process starts, and the task list changes whenever
+/// Claude ticks something off. It leads the message so it reads as standing
+/// context for what follows, and is fenced off from the user's own words.
+pub fn build_prompt(
+    text: &str,
+    files: &[String],
+    seed: Option<&str>,
+    references: Option<&str>,
+    notes: Option<&str>,
+) -> String {
     let mut p = String::new();
+    if let Some(notes) = notes.filter(|n| !n.is_empty()) {
+        p.push_str(notes);
+        p.push_str("
+
+---
+
+");
+    }
     if let Some(seed) = seed {
         if !seed.is_empty() {
             p.push_str("Summary of our conversation so far (use it to continue seamlessly):\n");
@@ -752,7 +849,7 @@ fn tool_change(name: &str, input: &Value) -> Option<Vec<(&'static str, Value)>> 
 
 /// Temp file holding a spilled `--append-system-prompt` value. Removed on drop
 /// (i.e. once the claude child has exited and the spawn fn returns).
-struct SysPromptFile(Option<PathBuf>);
+pub struct SysPromptFile(Option<PathBuf>);
 
 impl Drop for SysPromptFile {
     fn drop(&mut self) {
@@ -773,7 +870,7 @@ impl Drop for SysPromptFile {
 /// with `error: unknown option '-t'`. Keeping the prompt off the command line
 /// sidesteps the shim's quoting entirely. Falls back to the original args if the
 /// file can't be written, so a temp-dir hiccup never blocks a chat.
-fn spill_system_prompt(args: &[String]) -> (Vec<String>, SysPromptFile) {
+pub fn spill_system_prompt(args: &[String]) -> (Vec<String>, SysPromptFile) {
     if let Some(i) = args.iter().position(|a| a == "--append-system-prompt") {
         if let Some(value) = args.get(i + 1) {
             // Unique per process + call; avoids Date/random (unavailable here)
@@ -794,7 +891,7 @@ fn spill_system_prompt(args: &[String]) -> (Vec<String>, SysPromptFile) {
 
 static SYS_PROMPT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn claude_command(bin: &str, args: &[String], cwd: &str) -> Command {
+pub fn claude_command(bin: &str, args: &[String], cwd: &str) -> Command {
     let mut cmd = Command::new(bin);
     cmd.args(args)
         .current_dir(cwd)
@@ -1070,57 +1167,29 @@ fn strip_ask_blocks(s: &str) -> String {
     out.trim().to_string()
 }
 
-/// Spawn claude, stream the answer to the frontend over `channel`, and return
-/// the accumulated result. Mirrors `handleChat`'s routeEvent loop.
-pub async fn run_chat_stream(
-    bin: &str,
-    args: &[String],
-    cwd: &str,
+/// Run one turn on a warm session (see `session.rs`).
+///
+/// The old shape of this function was "spawn a process, read until it exits".
+/// A session outlives the turn, so the loop now ends where the *turn* ends — at
+/// the `result` event — and everything else about the process (its stdout reader,
+/// its context, its session id) carries on to the next message.
+///
+/// A turn can therefore end three ways: the `result` arrives (normal, including a
+/// turn the user interrupted, which the CLI reports as an errored result), the
+/// event stream closes (the process died under us), or the caller drops us.
+pub async fn run_turn(
+    session: &Session,
     prompt: &str,
     channel: &Channel<Value>,
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
     orchestrating: bool,
 ) -> Result<ChatResult, String> {
-    let (args, _sys_file) = spill_system_prompt(args);
-    let mut cmd = claude_command(bin, &args, cwd);
-    if orchestrating {
-        // Guardrails the prompt can't enforce on its own. Claude Code lets a
-        // sub-agent spawn sub-agents of its own (three layers deep by default) and
-        // run twenty at once — both are how an orchestrated turn quietly grows into
-        // a tree of agents that takes an hour. Depth 1 keeps workers doing the work
-        // themselves; 5 concurrent matches the parallelism the note asks for.
-        // Env vars rather than CLI flags on purpose: an unknown flag aborts the
-        // whole turn, an unknown env var is simply ignored by an older CLI.
-        cmd.env("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "1")
-            .env("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "5");
-    }
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("failed to start claude: {e}"))?;
+    let mut events = session.begin_turn(prompt).await?;
 
-    // Register the PID so `stop_chat` can interrupt this turn mid-stream.
-    if let Some(pid) = child.id() {
-        running.lock().unwrap().insert(thread_id.to_string(), pid);
-    }
-
-    let mut stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-
-    // Feed the prompt over stdin (in the background) so quotes/newlines never
-    // hit the shell, and so a large prompt can't deadlock against stdout.
-    let prompt_owned = prompt.to_string();
-    let writer = tokio::spawn(async move {
-        let _ = stdin.write_all(prompt_owned.as_bytes()).await;
-        let _ = stdin.shutdown().await;
-    });
-    let err_task = tokio::spawn(async move {
-        let mut s = String::new();
-        let mut r = stderr;
-        let _ = r.read_to_string(&mut s).await;
-        s
-    });
+    // Register the PID for the Activity panel's "running turns" list; `stop_chat`
+    // interrupts through the session rather than killing this.
+    running.lock().unwrap().insert(thread_id.to_string(), session.pid);
 
     let mut result = ChatResult::default();
     // index -> (tool name, accumulating input JSON, tool_use id)
@@ -1129,17 +1198,10 @@ pub async fn run_chat_stream(
     // Sub-agent message ids already forwarded as live activity (dedupes the
     // repeats `--include-partial-messages` produces).
     let mut seen_agent_msgs: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut lines = BufReader::new(stdout).lines();
+    let mut got_result = false;
 
-    while let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let ev: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+    while let Some(ev) = events.recv().await {
+        let is_result = ev.get("type").and_then(|v| v.as_str()) == Some("result");
         route_event(
             &ev,
             &mut result,
@@ -1148,7 +1210,13 @@ pub async fn run_chat_stream(
             &mut seen_agent_msgs,
             channel,
         );
+        if is_result {
+            got_result = true;
+            break;
+        }
     }
+    running.lock().unwrap().remove(thread_id);
+
     // Release anything the ask-block parser is still holding (e.g. a turn that
     // ended without a trailing text block to trigger the per-block flush).
     ask.flush(&mut result, channel);
@@ -1165,29 +1233,21 @@ pub async fn run_chat_stream(
         result.segments.push(json!({ "type": "text", "text": result.final_text.clone() }));
     }
 
-    let _ = writer.await;
-    let status = child.wait().await.map_err(|e| e.to_string())?;
-    running.lock().unwrap().remove(thread_id);
-    let errout = err_task.await.unwrap_or_default();
-    let code = status.code().unwrap_or(-1);
-
-    if code != 0 && result.final_text.is_empty() && !result.is_error {
+    // No `result` means the stream ended early — the process died mid-turn. Say so
+    // with whatever it wrote to stderr, the same way the old per-turn spawn did.
+    if !got_result && result.final_text.is_empty() && !result.is_error {
         result.is_error = true;
-        let msg = if errout.trim().is_empty() {
-            format!("claude exited with code {code}")
+        let errout = session.stderr_text();
+        let msg = if errout.is_empty() {
+            "the claude session ended unexpectedly".to_string()
         } else {
-            errout.trim().to_string()
+            errout
         };
         let _ = channel.send(json!({ "type": "error", "message": msg }));
     }
     Ok(result)
 }
 
-/// Forward one sub-agent lifecycle event (`task_started`/`task_progress`/
-/// `task_updated`) to the frontend as a compact `agent_progress` message. Keyed
-/// by `id` (the Task's `tool_use_id`) so the Activity panel can match it to the
-/// running Task chip. Live-only — the Task's final output is persisted separately
-/// via its `tool_result`, so nothing here needs to touch `ChatResult`.
 fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {
     let id = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
     if id.is_empty() {
@@ -1409,6 +1469,18 @@ fn route_event(
                 result.main_model = Some(m.to_string());
             }
             let _ = channel.send(json!({ "type": "start", "sessionId": result.session_id }));
+        }
+        // A predicted next message for the user (`--prompt-suggestions`). The CLI
+        // only offers one once a conversation has some history, and only when it
+        // has a confident guess, so this arrives on some turns and not others —
+        // the UI treats it as a bonus chip, never as something it waits for.
+        "prompt_suggestion" => {
+            if let Some(t) = ev.get("suggestion").and_then(|v| v.as_str()) {
+                let t = t.trim();
+                if !t.is_empty() {
+                    let _ = channel.send(json!({ "type": "suggestion", "text": t }));
+                }
+            }
         }
         // Live sub-agent progress: while a Task runs, the CLI streams what the
         // worker is doing (its evolving description, the tool it last used, and a
@@ -1926,18 +1998,11 @@ fn main() {}
     }
 
     #[test]
-    fn worker_agent_file_has_frontmatter_and_pinned_model() {
-        let dir = std::env::temp_dir().join(format!("krystal-agents-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = write_worker_agent(&dir, "krystal-worker-x", "A worker", "claude-sonnet-4-6")
-            .expect("writes the agent file");
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert!(body.starts_with("---\n"));
-        assert!(body.contains("name: krystal-worker-x"));
-        assert!(body.contains("model: claude-sonnet-4-6"));
-        assert!(body.contains("worker sub-agent")); // the fixed brief
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
+    fn worker_definition_pins_its_model_and_keeps_the_fixed_brief() {
+        let def = worker_def("A worker", "claude-sonnet-4-6");
+        assert_eq!(def.get("description").and_then(|v| v.as_str()), Some("A worker"));
+        assert_eq!(def.get("model").and_then(|v| v.as_str()), Some("claude-sonnet-4-6"));
+        assert!(def.get("prompt").and_then(|v| v.as_str()).unwrap().contains("worker sub-agent"));
     }
 
     #[test]
@@ -1948,11 +2013,10 @@ fn main() {}
         // permission set and would silently inherit the deny if the model drifted to
         // one instead of the pinned custom worker. So the note must both name the
         // exact worker and explicitly forbid the generic fallbacks.
-        if let Some(o) = prepare_orchestration("claude-haiku-4-5-20251001", &[]) {
-            assert!(o.note.contains("ORCHESTRATOR MODE"));
-            assert!(o.note.contains("general-purpose"));
-            assert!(o.note.contains(WORKER_PREFIX));
-        }
+        let o = prepare_orchestration("claude-haiku-4-5-20251001", &[]);
+        assert!(o.note.contains("ORCHESTRATOR MODE"));
+        assert!(o.note.contains("general-purpose"));
+        assert!(o.note.contains(WORKER_PREFIX));
     }
 
     #[test]
@@ -1961,7 +2025,7 @@ fn main() {}
         // orchestrator at a tool that no longer exists, while telling it to route
         // all work through that tool, is exactly how a turn hangs — so the note has
         // to name the current one (and may mention the legacy alias).
-        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]).expect("agents dir writable");
+        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]);
         assert!(o.note.contains("`Agent` tool"));
         assert!(o.note.contains("subagent_type"));
     }
@@ -1972,7 +2036,7 @@ fn main() {}
         // Read — a fresh-context agent boot per look-up, which is what made simple
         // requests crawl. The note must keep targeted reads with the orchestrator
         // and bound how many workers run at once.
-        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]).expect("agents dir writable");
+        let o = prepare_orchestration(SUB_MODEL_AUTO, &[]);
         assert!(o.note.contains("Read/Grep/Glob"));
         assert!(o.note.contains("2–4 workers in parallel"));
         assert!(o.note.contains("Stop conditions"));
@@ -1989,29 +2053,107 @@ fn main() {}
     }
 
     #[test]
-    fn stale_worker_files_are_swept_but_live_ones_survive() {
-        let dir = std::env::temp_dir().join(format!("krystal-sweep-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // u32::MAX is above every real pid on both platforms (and, unlike 0, isn't
-        // Windows' System Idle Process); our own pid is always alive.
-        let dead = u32::MAX;
-        let stale = write_worker_agent(&dir, &format!("{WORKER_PREFIX}fast-{dead}-1"), "d", "m").unwrap();
-        let mine = write_worker_agent(
-            &dir,
-            &format!("{WORKER_PREFIX}fast-{}-1", std::process::id()),
-            "d",
-            "m",
-        )
-        .unwrap();
-        // Anything that isn't ours is left alone, whatever its name looks like.
-        let theirs = dir.join("my-own-agent.md");
-        std::fs::write(&theirs, "---\nname: my-own-agent\n---\nmine\n").unwrap();
+    fn orchestration_defines_its_workers_inline_with_stable_names() {
+        // The definitions ride on `--agents`, so nothing is written to the user's
+        // ~/.claude/agents any more — and the names must not vary from turn to
+        // turn, or the appended system prompt (and with it the prompt cache
+        // prefix) changes on every single orchestrated turn.
+        let a = prepare_orchestration(SUB_MODEL_AUTO, &[]);
+        let b = prepare_orchestration(SUB_MODEL_AUTO, &[]);
+        assert_eq!(a.agents, b.agents, "worker definitions are stable across turns");
+        assert_eq!(a.note, b.note, "so is the note that names them");
 
-        sweep_stale_worker_agents(&dir);
+        let defs: Value = serde_json::from_str(&a.agents).expect("valid --agents JSON");
+        let obj = defs.as_object().expect("an object of name -> definition");
+        assert_eq!(obj.len(), 3, "auto offers a fast/balanced/deep trio");
+        for (name, def) in obj {
+            assert!(name.starts_with(WORKER_PREFIX), "{name} is namespaced to us");
+            assert!(a.note.contains(name.as_str()), "the note names {name}");
+            assert!(def.get("description").and_then(|v| v.as_str()).is_some());
+            assert!(def.get("model").and_then(|v| v.as_str()).is_some());
+            assert_eq!(def.get("prompt").and_then(|v| v.as_str()), Some(WORKER_BODY));
+            // Full tool freedom is a project rule: a worker inherits everything.
+            assert!(def.get("tools").is_none(), "we never restrict a worker's toolset");
+        }
+    }
 
-        assert!(!stale.exists(), "a dead process's worker file is swept");
-        assert!(mine.exists(), "this process's worker file survives");
-        assert!(theirs.exists(), "the user's own agents are never touched");
-        let _ = std::fs::remove_dir_all(&dir);
+    #[test]
+    fn a_pinned_sub_model_gets_one_worker_on_that_model() {
+        let o = prepare_orchestration("claude-haiku-4-5-20251001", &[]);
+        let defs: Value = serde_json::from_str(&o.agents).unwrap();
+        let obj = defs.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        let (name, def) = obj.iter().next().unwrap();
+        assert!(o.note.contains(name.as_str()));
+        assert_eq!(def.get("model").and_then(|v| v.as_str()), Some("claude-haiku-4-5-20251001"));
+    }
+
+    #[test]
+    fn per_turn_notes_lead_the_message_and_are_fenced_off() {
+        // The task note can't live in the system prompt any more (it changes every
+        // time a task is ticked off, which would retire the session each turn), so
+        // it rides on the message — ahead of, and separated from, the user's words.
+        let p = build_prompt("do the thing", &[], None, None, Some("OPEN TASKS: one, two"));
+        assert!(p.starts_with("OPEN TASKS: one, two"));
+        assert!(p.contains("---"));
+        assert!(p.trim_end().ends_with("do the thing"));
+
+        // No notes, no fence — an ordinary message is untouched.
+        let plain = build_prompt("hello", &[], None, None, None);
+        assert_eq!(plain, "hello");
+        assert_eq!(build_prompt("hello", &[], None, None, Some("")), "hello");
+    }
+
+    #[test]
+    fn session_flags_make_the_process_reusable() {
+        let mut args = base_args("claude-opus-5", "sys");
+        apply_session_flags(&mut args);
+        let i = args
+            .iter()
+            .position(|a| a == "--input-format")
+            .expect("--input-format present");
+        assert_eq!(args[i + 1], "stream-json");
+    }
+
+    #[test]
+    fn chat_flags_carry_effort_fallback_and_autocompact() {
+        let mut args = base_args("claude-opus-5", "sys");
+        apply_chat_flags(&mut args, "xhigh", Some("claude-sonnet-5"), true);
+        let at = |flag: &str| args.iter().position(|a| a == flag);
+        assert_eq!(args[at("--effort").expect("--effort present") + 1], "xhigh");
+        assert_eq!(
+            args[at("--fallback-model").expect("--fallback-model present") + 1],
+            "claude-sonnet-5"
+        );
+        assert_eq!(args[at("--autocompact").expect("--autocompact present") + 1], "auto");
+        assert!(at("--prompt-suggestions").is_some());
+    }
+
+    #[test]
+    fn chat_flags_skip_what_they_have_no_value_for() {
+        // An unknown effort must not reach the CLI as `--effort <garbage>` (that
+        // fails the whole turn); no fallback and no suggestions simply add nothing.
+        let mut args = base_args("claude-opus-5", "sys");
+        apply_chat_flags(&mut args, "turbo", None, false);
+        assert!(!args.iter().any(|a| a == "--effort"));
+        assert!(!args.iter().any(|a| a == "--fallback-model"));
+        assert!(!args.iter().any(|a| a == "--prompt-suggestions"));
+    }
+
+    #[test]
+    fn the_system_prompt_survives_being_multi_line() {
+        // The single-line rule is gone because the prompt is spilled to a file.
+        // Guard the mechanism that made that safe, not the old constraint.
+        let sys = capability_prompt(Caps { pandoc: true, python_docx: true }, "hr");
+        assert!(sys.contains('\n'), "written as sections, not one run-on line");
+        assert!(sys.contains("## Reply language"));
+        let args = base_args("claude-opus-5", &sys);
+        let (out, _guard) = spill_system_prompt(&args);
+        assert!(!out.iter().any(|a| a == "--append-system-prompt"));
+        let i = out
+            .iter()
+            .position(|a| a == "--append-system-prompt-file")
+            .expect("spilled to a file");
+        assert_eq!(std::fs::read_to_string(&out[i + 1]).unwrap(), sys);
     }
 }

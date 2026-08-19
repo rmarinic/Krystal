@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::path::Path;
 
-use crate::models::{DEFAULT_MODE, DEFAULT_MODEL};
+use crate::models::{DEFAULT_EFFORT, DEFAULT_MODE, DEFAULT_MODEL};
 
 /// Lightweight thread metadata used by the chat/action code paths.
 #[allow(dead_code)] // id/title are kept for completeness even if unused by callers
@@ -29,6 +29,8 @@ pub struct ThreadMeta {
     pub orch: bool,
     /// Worker sub-agent model when orchestrating, or `auto` to let it choose.
     pub orch_sub: String,
+    /// Reasoning depth for the turn (`claude --effort`); see `models::EFFORTS`.
+    pub effort: String,
 }
 
 /// ISO-8601 millisecond timestamp, matching JS `new Date().toISOString()`.
@@ -48,6 +50,7 @@ const SCHEMA: &str = r#"
           mode       TEXT DEFAULT 'auto',
           orch       INTEGER DEFAULT 0,
           orch_sub   TEXT DEFAULT 'auto',
+          effort     TEXT DEFAULT 'high',
           seed       TEXT,
           turns      INTEGER DEFAULT 0,
           in_tok     INTEGER DEFAULT 0,
@@ -112,6 +115,7 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN mode TEXT DEFAULT 'auto'", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch_sub TEXT DEFAULT 'auto'", []);
+    let _ = conn.execute("ALTER TABLE threads ADD COLUMN effort TEXT DEFAULT 'high'", []);
 
     let json_file = db_path
         .parent()
@@ -300,7 +304,7 @@ pub fn list_threads(conn: &Connection, project: Option<&str>) -> Vec<Value> {
 
 pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
     conn.query_row(
-        "SELECT id,title,cwd,session_id,model,mode,seed,orch,orch_sub FROM threads WHERE id = ?1",
+        "SELECT id,title,cwd,session_id,model,mode,seed,orch,orch_sub,effort FROM threads WHERE id = ?1",
         [id],
         |r| {
             Ok(ThreadMeta {
@@ -319,6 +323,9 @@ pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
                 orch_sub: r
                     .get::<_, Option<String>>(8)?
                     .unwrap_or_else(|| "auto".to_string()),
+                effort: r
+                    .get::<_, Option<String>>(9)?
+                    .unwrap_or_else(|| DEFAULT_EFFORT.to_string()),
             })
         },
     )
@@ -330,7 +337,7 @@ pub fn get_meta(conn: &Connection, id: &str) -> Option<ThreadMeta> {
 pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
     let mut meta = conn
         .query_row(
-            "SELECT id,title,cwd,session_id,model,mode,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at,orch,orch_sub
+            "SELECT id,title,cwd,session_id,model,mode,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at,orch,orch_sub,effort
              FROM threads WHERE id = ?1",
             [id],
             |r| {
@@ -350,6 +357,7 @@ pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
                     "updatedAt": r.get::<_, Option<String>>(13)?,
                     "orch": r.get::<_, Option<i64>>(14)?.unwrap_or(0) != 0,
                     "orchSub": r.get::<_, Option<String>>(15)?.unwrap_or_else(|| "auto".to_string()),
+                    "effort": r.get::<_, Option<String>>(16)?.unwrap_or_else(|| DEFAULT_EFFORT.to_string()),
                 }))
             },
         )
@@ -452,9 +460,9 @@ fn build_branch_seed(conn: &Connection, source_id: &str, prior_seed: Option<&str
 /// session itself can't be forked, so we reconstruct context the same way a
 /// compaction summary is carried forward). The original thread is untouched.
 pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
-    let (title, cwd, model, mode, orch, orch_sub, seed) = conn
+    let (title, cwd, model, mode, orch, orch_sub, effort, seed) = conn
         .query_row(
-            "SELECT title,cwd,model,mode,orch,orch_sub,seed FROM threads WHERE id = ?1",
+            "SELECT title,cwd,model,mode,orch,orch_sub,effort,seed FROM threads WHERE id = ?1",
             [source_id],
             |r| {
                 Ok((
@@ -464,7 +472,8 @@ pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
                     r.get::<_, Option<String>>(3)?.unwrap_or_else(|| DEFAULT_MODE.to_string()),
                     r.get::<_, Option<i64>>(4)?.unwrap_or(0),
                     r.get::<_, Option<String>>(5)?.unwrap_or_else(|| "auto".to_string()),
-                    r.get::<_, Option<String>>(6)?,
+                    r.get::<_, Option<String>>(6)?.unwrap_or_else(|| DEFAULT_EFFORT.to_string()),
+                    r.get::<_, Option<String>>(7)?,
                 ))
             },
         )
@@ -479,9 +488,9 @@ pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
 
     // A fresh session (usage reset to 0); the transcript is carried via the seed.
     conn.execute(
-        "INSERT INTO threads (id,title,cwd,session_id,model,mode,orch,orch_sub,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at)
-         VALUES (?1,?2,?3,NULL,?4,?5,?6,?7,?8,0,0,0,0,0,?9,?9)",
-        params![new_id, new_title, cwd, model, mode, orch, orch_sub, branch_seed, t],
+        "INSERT INTO threads (id,title,cwd,session_id,model,mode,orch,orch_sub,effort,seed,turns,in_tok,out_tok,cost_usd,context,created_at,updated_at)
+         VALUES (?1,?2,?3,NULL,?4,?5,?6,?7,?8,?9,0,0,0,0,0,?10,?10)",
+        params![new_id, new_title, cwd, model, mode, orch, orch_sub, effort, branch_seed, t],
     )
     .ok()?;
 
@@ -514,6 +523,10 @@ pub fn set_orchestration(conn: &Connection, id: &str, orch: bool, sub_model: &st
         "UPDATE threads SET orch = ?1, orch_sub = ?2 WHERE id = ?3",
         params![orch as i64, sub_model, id],
     );
+}
+
+pub fn set_effort(conn: &Connection, id: &str, effort: &str) {
+    let _ = conn.execute("UPDATE threads SET effort = ?1 WHERE id = ?2", params![effort, id]);
 }
 
 pub fn set_seed(conn: &Connection, id: &str, seed: Option<&str>) {

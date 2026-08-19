@@ -69,6 +69,7 @@ function createPicker(root, { items, value, tag, up, right, onChange }) {
 
 let modelSel = null;
 let modeSel = null;
+let effortSel = null;
 
 // Localized blurb for a model: prefer a per-id string, then a per-tier string,
 // then the backend-derived blurb. Dynamic (fetched) models fall through to the
@@ -95,6 +96,7 @@ function buildPickers() {
     }
   }
   const curMode = modeSel ? modeSel.getValue() : ((state.modes[0] && state.modes[0].id) || 'auto');
+  const curEffort = effortSel ? effortSel.getValue() : (state.defaultEffort || 'high');
   modelSel = createPicker(els.modelPicker, {
     tag: tr('model.tag'),
     items: state.models.map((m) => ({
@@ -122,14 +124,31 @@ function buildPickers() {
       await api.setMode(state.activeId, v);
     },
   });
+  // How hard Claude thinks before answering. Lives beside the mode picker and,
+  // like it, is remembered per chat.
+  effortSel = createPicker(els.effortPicker, {
+    tag: tr('effort.tag'),
+    up: true,
+    items: state.efforts.map((e) => ({
+      value: e.id,
+      name: tr('effort.' + e.id + '.name', null, e.name),
+      blurb: tr('effort.' + e.id + '.blurb', null, e.blurb),
+    })),
+    value: curEffort,
+    onChange: async (v) => {
+      if (!state.activeId) return;
+      await api.setEffort(state.activeId, v);
+    },
+  });
   if (typeof buildOrchestrator === 'function') buildOrchestrator();   // keep the orchestrator popover in lock-step
 }
 
 async function populatePickers() {
   try {
-    const { models, modes } = await api.config();
+    const { models, modes, efforts } = await api.config();
     state.models = models || [];
     state.modes = modes || [];
+    state.efforts = efforts || [];
     buildPickers();
   } catch {}
   refreshModelsLive();   // then pull the latest catalogue from the Models API

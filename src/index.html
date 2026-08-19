@@ -163,6 +163,9 @@
     <div class="composer" id="composer" hidden>
       <div class="composer-tools">
         <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Plan only researches and proposes"></div>
+        <!-- How hard Claude thinks before answering. Persisted per chat, next to
+             the model and the mode. -->
+        <div class="picker" id="effort-picker" data-i18n-title="effort.pickerTitle" title="How hard Claude thinks before it answers — higher is slower but more thorough"></div>
         <div class="composer-tools-spacer"></div>
         <!-- Orchestrator: run a premium model as a supervisor that delegates the
              heavy lifting to cheaper worker sub-agents. Opens a popover to pick
@@ -178,6 +181,9 @@
       <!-- Chats the message #-references (added via the # autocomplete). Their
            transcripts ride along as background context for this turn. -->
       <div class="composer-refs" id="composer-refs" hidden></div>
+      <!-- Predicted next message (--prompt-suggestions). Appears only when the
+           CLI offers one; click to drop it into the box. -->
+      <div class="composer-suggest" id="composer-suggest" hidden></div>
       <!-- Pasted screenshots / dropped files queued for the next message. No
            upload button by design: attach by pasting (Ctrl+V) or drag-and-drop. -->
       <div class="composer-atts" id="composer-attachments" hidden></div>

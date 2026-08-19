@@ -899,6 +899,34 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .composer-ref .ref-x:hover { color: #ff8a8a; }
 @keyframes ref-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
+/* ---- Suggested next message: the CLI's predicted follow-up, offered under the
+   composer after a turn. One calm rise-in; click to drop it in the box. ---- */
+.composer-suggest {
+  display: flex; align-items: center; gap: 6px;
+  max-width: 880px; margin: 0 auto 8px;
+}
+.composer-suggest.in .suggest-chip { animation: suggest-in .22s ease; }
+.suggest-chip {
+  display: inline-flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-size: 12px; color: var(--fg-muted); text-align: left;
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.suggest-chip:hover { color: var(--fg); border-color: var(--border-1); }
+.suggest-label { font-weight: 700; opacity: .7; flex: none; }
+.suggest-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-x {
+  border: none; background: transparent; color: var(--fg-dim); flex: none;
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.suggest-x:hover { color: #ff8a8a; }
+@keyframes suggest-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .composer-suggest.in .suggest-chip { animation: none; }
+}
+
 /* ---- Attachments tray: pasted screenshots / dropped files above the input.
    Mirrors the #-reference pills, with an optional thumbnail for images. ---- */
 .composer-atts {

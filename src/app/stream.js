@@ -69,9 +69,10 @@ els.sendBtn.onclick = () => {
   else send();
 };
 
-/* Interrupt the active thread's in-flight turn. The backend kills the claude
- * process; the stream then ends and finishLive runs. We mark `stopped` so the
- * resulting error event is treated as a clean stop, not a failure. */
+/* Interrupt the active thread's in-flight turn. The backend asks the CLI to
+ * abandon it (the chat keeps its warm process — see session.rs), which comes back
+ * as an errored `result` and ends the turn. We mark `stopped` so that error event
+ * is treated as a clean stop, not a failure. */
 async function stopActiveTurn() {
   const id = state.activeId;
   const live = state.live.get(id);
@@ -376,6 +377,48 @@ function finishLive(live) {
   if (state.view === 'threads') loadThreads();   // refresh sidebar title/time
 }
 
+/* ------------------------- suggested next message ------------------------ */
+/* The CLI can predict what the user is likely to ask next (--prompt-suggestions)
+ * and emits it after a turn. It only offers one once a conversation has history,
+ * and only when it has a confident guess — so this strip is a bonus that appears
+ * on some turns, never a fixture. Click it to drop the text in the composer. */
+
+function showSuggestion(text) {
+  const el = els.composerSuggest;
+  if (!el || !text) return;
+  el.innerHTML =
+    `<button type="button" class="suggest-chip" title="${escapeHtml(tr('suggest.title'))}">` +
+      `<span class="suggest-label">${escapeHtml(tr('suggest.label'))}</span>` +
+      `<span class="suggest-text">${escapeHtml(text)}</span>` +
+    `</button>` +
+    `<button type="button" class="suggest-x" title="${escapeHtml(tr('suggest.dismiss'))}" aria-label="${escapeHtml(tr('suggest.dismiss'))}">×</button>`;
+  el.querySelector('.suggest-chip').onclick = () => {
+    els.input.value = text;
+    els.input.focus();
+    autosize();
+    hideSuggestion();
+  };
+  el.querySelector('.suggest-x').onclick = hideSuggestion;
+  el.hidden = false;
+  replayClass(el, 'in');
+}
+
+function hideSuggestion() {
+  const el = els.composerSuggest;
+  if (!el || el.hidden) return;
+  el.hidden = true;
+  el.innerHTML = '';
+  const live = state.live.get(state.activeId);
+  if (live) live.suggestion = null;   // dismissed for good, not just until a redraw
+}
+
+/* Re-show whatever the on-screen chat last suggested (thread switch / reopen). */
+function syncSuggestion() {
+  const live = state.activeId ? state.live.get(state.activeId) : null;
+  if (live && live.suggestion) showSuggestion(live.suggestion);
+  else hideSuggestion();
+}
+
 /* The channel callback. Runs for every event of `live` regardless of which
  * thread is currently on screen. */
 function handleLiveEvent(live, msg) {
@@ -437,6 +480,11 @@ function handleLiveEvent(live, msg) {
       if (typeof refreshActivityBtn === 'function') refreshActivityBtn();
       if (typeof refreshActivityPanel === 'function') refreshActivityPanel();
     }
+  } else if (event === 'suggestion') {
+    // A predicted next message. Stash it on the turn so switching away and back
+    // doesn't lose it, and show it under the composer if this chat is on screen.
+    live.suggestion = msg.text;
+    if (active) showSuggestion(msg.text);
   } else if (event === 'tasks') {
     // Claude added/edited tasks via the snapshot file this turn — refresh the UI.
     if (typeof onTasksSynced === 'function') onTasksSynced(msg);

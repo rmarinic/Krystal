@@ -11,6 +11,7 @@ use crate::claude::{self, Caps};
 use crate::db;
 use crate::discord;
 use crate::models;
+use crate::session;
 
 /// Shared app state managed by Tauri.
 pub struct AppState {
@@ -40,6 +41,12 @@ pub struct AppState {
     /// reply language for text that carries no language signal of its own — a
     /// Croatian UI never turns an English message into a Croatian answer.
     pub ui_lang: std::sync::Mutex<String>,
+    /// Whether to ask the CLI for a predicted next message after each chat turn
+    /// (`--prompt-suggestions`). Pushed down from the Settings panel; on by
+    /// default. Costs a small extra generation per turn, hence the switch.
+    pub suggestions: std::sync::Mutex<bool>,
+    /// Warm `claude` processes, one per chat (see `session.rs`).
+    pub sessions: session::Pool,
 }
 
 impl AppState {
@@ -50,6 +57,11 @@ impl AppState {
     /// Current UI language code (owned clone — never held across an await).
     pub fn ui_lang(&self) -> String {
         self.ui_lang.lock().unwrap().clone()
+    }
+
+    /// Whether prompt suggestions are enabled (copied out — never held across an await).
+    pub fn suggestions(&self) -> bool {
+        *self.suggestions.lock().unwrap()
     }
 
     /// Current claude executable path (owned clone — never held across an await).
@@ -71,7 +83,7 @@ type CmdResult = Result<Value, String>;
 #[tauri::command]
 pub fn get_config(state: State<'_, AppState>) -> Value {
     let models = state.models.lock().unwrap().clone();
-    json!({ "models": models, "modes": models::MODES })
+    json!({ "models": models, "modes": models::MODES, "efforts": models::EFFORTS })
 }
 
 /// Tell the backend which language the app's interface is in. It never forces a
@@ -473,7 +485,7 @@ pub fn select_project(state: State<'_, AppState>, id: String) -> CmdResult {
 /// its chats, its tasks and its run command; only their location changes.
 /// Errors are short codes the frontend turns into localized text.
 #[tauri::command]
-pub fn move_project(state: State<'_, AppState>, id: String, path: String) -> CmdResult {
+pub async fn move_project(state: State<'_, AppState>, id: String, path: String) -> CmdResult {
     let path = path.trim().to_string();
     if path.is_empty() {
         return Err("path-required".into());
@@ -493,11 +505,17 @@ pub fn move_project(state: State<'_, AppState>, id: String, path: String) -> Cmd
     if state.run_procs.lock().unwrap().contains_key(&old) {
         return Err("run-in-flight".into());
     }
-    let conn = state.db.lock().unwrap();
-    if old != path && db::project_path_taken(&conn, &path) {
-        return Err("folder-taken".into());
-    }
-    let project = db::move_project(&conn, &id, &path).ok_or_else(|| "move-failed".to_string())?;
+    // Scoped so the DB lock is released before the await below.
+    let project = {
+        let conn = state.db.lock().unwrap();
+        if old != path && db::project_path_taken(&conn, &path) {
+            return Err("folder-taken".into());
+        }
+        db::move_project(&conn, &id, &path).ok_or_else(|| "move-failed".to_string())?
+    };
+    // Every warm process is pinned to the folder it started in, and the move drops
+    // the moved chats' session ids — so none of them may serve another turn.
+    state.sessions.retire_all().await;
     // The task snapshot Claude reads is keyed by the folder path, so the old
     // file is now orphaned — drop it; the next turn writes one under the new key.
     if old != path {
@@ -518,10 +536,13 @@ pub fn delete_project(state: State<'_, AppState>, id: String) -> Value {
 }
 
 #[tauri::command]
-pub fn delete_thread(state: State<'_, AppState>, id: String) -> Value {
-    let conn = state.db.lock().unwrap();
-    db::remove(&conn, &id);
-    json!({ "ok": true })
+pub async fn delete_thread(state: State<'_, AppState>, id: String) -> CmdResult {
+    state.sessions.retire(&id).await;
+    {
+        let conn = state.db.lock().unwrap();
+        db::remove(&conn, &id);
+    }
+    Ok(json!({ "ok": true }))
 }
 
 #[tauri::command]
@@ -544,6 +565,26 @@ pub fn set_mode(state: State<'_, AppState>, id: String, mode: String) -> CmdResu
     Ok(json!({ "mode": mode }))
 }
 
+/// How hard Claude thinks before answering on this thread's turns
+/// (`claude --effort`). Persisted per chat, like the model and the mode, so a
+/// thread that needs deep reasoning keeps it without re-picking every time.
+#[tauri::command]
+pub fn set_effort(state: State<'_, AppState>, id: String, effort: String) -> CmdResult {
+    if !models::is_valid_effort(&effort) {
+        return Err("unknown effort".into());
+    }
+    let conn = state.db.lock().unwrap();
+    db::set_effort(&conn, &id, &effort);
+    Ok(json!({ "effort": effort }))
+}
+
+/// Turn the after-turn prompt suggestion on or off (see `AppState::suggestions`).
+#[tauri::command]
+pub fn set_suggestions(state: State<'_, AppState>, enabled: bool) -> Value {
+    *state.suggestions.lock().unwrap() = enabled;
+    json!({ "ok": true })
+}
+
 /// Toggle orchestrator mode for a thread and set its worker sub-agent model
 /// (`auto` = let the orchestrator choose per task). The thread's own `model`
 /// stays the orchestrator model; only chat turns honour this (internal one-off
@@ -564,10 +605,16 @@ pub fn set_orchestration(
 }
 
 #[tauri::command]
-pub fn clear_thread(state: State<'_, AppState>, id: String) -> Value {
-    let conn = state.db.lock().unwrap();
-    db::clear(&conn, &id);
-    json!({ "ok": true })
+pub async fn clear_thread(state: State<'_, AppState>, id: String) -> CmdResult {
+    // `db::clear` drops the chat's session id; the warm process still holds the
+    // conversation we just threw away, so it goes too. The next message starts
+    // a genuinely fresh one.
+    state.sessions.retire(&id).await;
+    {
+        let conn = state.db.lock().unwrap();
+        db::clear(&conn, &id);
+    }
+    Ok(json!({ "ok": true }))
 }
 
 /// Rename a chat. Trims the title and caps its length; an empty title is
@@ -771,7 +818,26 @@ pub async fn generate_tasks(
     let answers = answers.unwrap_or_default();
 
     let sys = state.sys_prompt();
-    let args = claude::base_args(models::DEFAULT_MODEL, &sys);
+    // Either shape is valid here — a task list, or the clarifying questions that
+    // have to come first — so the contract admits both and nothing else.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "tasks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string" },
+                        "note":  { "type": "string" }
+                    },
+                    "required": ["title"]
+                }
+            },
+            "questions": question_schema()
+        }
+    });
+    let args = with_json_schema(&claude::base_args(models::DEFAULT_MODEL, &sys), schema);
     let prompt = tasks_prompt(brief.trim(), &answers, &state.ui_lang());
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &cwd, &prompt).await?;
 
@@ -821,33 +887,50 @@ pub async fn chat(
     // Let Claude KNOW a task list exists (a cheap one-liner) and drop a fresh
     // markdown snapshot it can read — and optionally edit — on demand, without
     // injecting the tasks into context unless the conversation calls for them.
+    // The note travels in the user message (see `claude::build_prompt`): a session
+    // process fixes its system prompt at spawn, and this note changes whenever the
+    // task list does — putting it there would retire the session on every turn.
     let task_awareness = prepare_task_awareness(&state.data_dir, &state.db, &meta.cwd);
     let mut sys = state.sys_prompt();
-    if let Some(t) = &task_awareness {
-        sys.push(' ');
-        sys.push_str(&t.note);
-    }
 
     // Orchestrator mode: run `meta.model` as a supervisor that delegates to
-    // cheaper worker sub-agents. `_orch` holds the RAII guard that cleans up the
-    // temporary agent files — keep it alive until the stream finishes below.
-    let _orch = if meta.orch {
+    // cheaper worker sub-agents, defined inline for this turn via `--agents`.
+    let orch = meta.orch.then(|| {
         let catalog = state.models.lock().unwrap().clone();
         claude::prepare_orchestration(&meta.orch_sub, &catalog)
-    } else {
-        None
-    };
-    if let Some(o) = &_orch {
-        sys.push(' ');
+    });
+    if let Some(o) = &orch {
+        sys.push_str("
+
+");
         sys.push_str(&o.note);
         if meta.mode == "plan" {
-            sys.push(' ');
+            sys.push_str("
+
+");
             sys.push_str(claude::ORCH_PLAN_NOTE);
         }
     }
 
+    // The fallback chain is read off the same catalogue the picker uses, so a
+    // turn degrades to a live model rather than a hardcoded (possibly retired) id.
+    let fallback = {
+        let catalog = state.models.lock().unwrap();
+        models::fallback_chain(&catalog, &meta.model)
+    };
+
     let mut args = claude::base_args(&meta.model, &sys);
     claude::apply_mode(&mut args, &meta.mode);   // Auto = full power; Plan = research only
+    claude::apply_chat_flags(&mut args, &meta.effort, fallback.as_deref(), state.suggestions());
+    claude::apply_session_flags(&mut args);      // one warm process serves the whole chat
+    if let Some(o) = &orch {
+        args.push("--agents".into());
+        args.push(o.agents.clone());
+    }
+    // Only needed when a session has to be *started* for a chat that already has
+    // history (app restart, a settings change, an evicted session). A warm session
+    // already holds the conversation, and these args are its identity — so this
+    // stays in the key rather than being stripped once the process is up.
     if let Some(sid) = &meta.session_id {
         args.push("--resume".into());
         args.push(sid.clone());
@@ -860,7 +943,13 @@ pub async fn chat(
     };
 
     let seed = meta.seed.clone();
-    let prompt = claude::build_prompt(&text, &files, seed.as_deref(), references.as_deref());
+    let prompt = claude::build_prompt(
+        &text,
+        &files,
+        seed.as_deref(),
+        references.as_deref(),
+        task_awareness.as_ref().map(|t| t.note.as_str()),
+    );
     // A one-time compact seed is folded into this prompt, then cleared.
     if seed.is_some() {
         let conn = state.db.lock().unwrap();
@@ -900,10 +989,20 @@ pub async fn chat(
         }
     };
 
-    let res = match claude::run_chat_stream(
-        &state.claude_bin(),
-        &args,
-        &meta.cwd,
+    let session = match state
+        .sessions
+        .acquire(&thread_id, &state.claude_bin(), &args, &meta.cwd, meta.orch)
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            sync_tasks();
+            return Err(e);
+        }
+    };
+
+    let res = match claude::run_turn(
+        &session,
         &prompt,
         &on_event,
         &state.running,
@@ -914,6 +1013,8 @@ pub async fn chat(
     {
         Ok(r) => r,
         Err(e) => {
+            // A session that failed mid-turn is not trustworthy for the next one.
+            state.sessions.retire(&thread_id).await;
             sync_tasks();
             return Err(e);
         }
@@ -979,6 +1080,17 @@ pub async fn chat(
 /// produced is still persisted by the `chat` handler.
 #[tauri::command]
 pub async fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Result<Value, String> {
+    // Interrupt rather than kill. The CLI abandons the turn in flight, answers
+    // with an errored `result` (which settles the turn the same way a finished one
+    // does) and then waits for the next message — so the chat keeps its warm
+    // process, its context and its session id instead of paying to resume.
+    if let Some(sess) = state.sessions.get(&thread_id).await {
+        if sess.interrupt().await.is_ok() {
+            return Ok(json!({ "ok": true }));
+        }
+        // Stdin is gone — the process is past saving; fall through and kill it.
+        state.sessions.retire(&thread_id).await;
+    }
     let pid = state.running.lock().unwrap().get(&thread_id).copied();
     if let Some(pid) = pid {
         // Kill off the main thread: `taskkill /T /F` on the claude → node tree can
@@ -1380,6 +1492,12 @@ pub async fn compact_thread(state: State<'_, AppState>, id: String) -> CmdResult
     args.push("--resume".into());
     args.push(session_id);
 
+    // Retire the chat's warm process first: compaction resumes the very session
+    // that process is holding open, and afterwards the conversation is replaced by
+    // a summary and the session id is dropped — so it must not still be running,
+    // and it must not serve another turn.
+    state.sessions.retire(&id).await;
+
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, COMPACT_PROMPT).await?;
     {
         let conn = state.db.lock().unwrap();
@@ -1715,7 +1833,16 @@ pub async fn init_analyze(state: State<'_, AppState>, id: String, brief: Option<
     .ok_or("not found")?;
 
     let sys = state.sys_prompt();
-    let args = claude::base_args(&meta.model, &sys);
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "title":     { "type": "string" },
+            "summary":   { "type": "string" },
+            "questions": question_schema()
+        },
+        "required": ["summary", "questions"]
+    });
+    let args = with_json_schema(&claude::base_args(&meta.model, &sys), schema);
     let prompt = analyze_prompt(brief.as_deref().unwrap_or(""), &state.ui_lang());
     let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
 
@@ -2163,6 +2290,37 @@ fn strip_md_fence(s: &str) -> String {
         }
     }
     t.to_string()
+}
+
+/// The clarifying-question shape both the task generator and the Initialize
+/// wizard ask for. Used to build their `--json-schema` contracts below.
+fn question_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "id":          { "type": "string" },
+                "question":    { "type": "string" },
+                "why":         { "type": "string" },
+                "multi":       { "type": "boolean" },
+                "options":     { "type": "array", "items": { "type": "string" } },
+                "allowCustom": { "type": "boolean" }
+            },
+            "required": ["id", "question", "options"]
+        }
+    })
+}
+
+/// Attach a `--json-schema` contract to a one-off call whose reply we parse as
+/// JSON. The CLI validates the model's structured output against it, which turns
+/// "the reply *should* be JSON" into "the reply *is* JSON of this shape".
+/// `extract_json` stays as the safety net for a CLI too old to know the flag.
+fn with_json_schema(args: &[String], schema: Value) -> Vec<String> {
+    let mut out = args.to_vec();
+    out.push("--json-schema".into());
+    out.push(schema.to_string());
+    out
 }
 
 /// Pull the first balanced JSON object/array out of a model reply (tolerates

@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod discord;
 mod models;
+mod session;
 
 use commands::AppState;
 use tauri::Manager;
@@ -16,6 +17,10 @@ fn main() {
     // Probe the environment once at startup (mirrors server.js boot).
     let caps = claude::probe_caps();
     let claude_bin = claude::resolve_claude();
+    // Older Krystals defined orchestrator workers by writing `.md` files into the
+    // user's own ~/.claude/agents. Those definitions now ride on `--agents`, so
+    // clear out anything an earlier version (or a crash) left behind.
+    claude::sweep_legacy_worker_agents();
     println!("\n  Krystal — local Claude Code chat");
     println!("  claude binary: {claude_bin}");
     if caps.pandoc && caps.python_docx {
@@ -57,6 +62,8 @@ fn main() {
                 models: std::sync::Mutex::new(models),
                 // Overwritten by the frontend at boot (and on every flag flip).
                 ui_lang: std::sync::Mutex::new("en".to_string()),
+                suggestions: std::sync::Mutex::new(true),
+                sessions: Default::default(),
             });
             Ok(())
         })
@@ -82,6 +89,8 @@ fn main() {
             commands::delete_thread,
             commands::set_model,
             commands::set_mode,
+            commands::set_effort,
+            commands::set_suggestions,
             commands::set_orchestration,
             commands::clear_thread,
             commands::rename_thread,
@@ -129,6 +138,15 @@ fn main() {
             commands::discord_set_project,
             commands::discord_set_share_name,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Krystal");
+        .build(tauri::generate_context!())
+        .expect("error while building Krystal")
+        .run(|app, event| {
+            // Warm `claude` processes must not outlive the window that owns them.
+            // `kill_on_drop` covers a normal teardown; clearing the pool here makes
+            // sure the drop actually happens before the process goes away.
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                let state = app.state::<AppState>();
+                tauri::async_runtime::block_on(state.sessions.retire_all());
+            }
+        });
 }
