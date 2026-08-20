@@ -6,6 +6,7 @@
 
 async function showProjectPicker() {
   state.project = null;
+  if (typeof renderPins === 'function') renderPins();     // no project → no rail
   state.activeId = null;
   state.view = 'threads';
   // Back at the picker there's no chat to queue for — park what each one holds.
@@ -105,6 +106,7 @@ async function enterProject(project) {
   try { project = (await api.selectProject(project.id)) || project; } catch {}
   state.project = project;
   syncDiscordProject();
+  if (typeof refreshPins === 'function') refreshPins();   // this project's pinned files
   els.cpName.textContent = project.name || basename(project.path);
   els.cpName.title = project.path || '';
   refreshRunBtn();   // a run may already be in flight for this folder

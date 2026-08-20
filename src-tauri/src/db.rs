@@ -93,6 +93,18 @@ const SCHEMA: &str = r#"
         );
         CREATE INDEX IF NOT EXISTS idx_task_project ON tasks(project);
 
+        CREATE TABLE IF NOT EXISTS pins (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          project    TEXT NOT NULL,
+          path       TEXT NOT NULL,
+          label      TEXT,
+          created_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_pin_project ON pins(project);
+        -- One row per file per project: pinning the same file twice is a no-op
+        -- rather than a duplicate chip.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pin_unique ON pins(project, path);
+
         CREATE TABLE IF NOT EXISTS run_config (
           project    TEXT PRIMARY KEY,
           command    TEXT,
@@ -872,6 +884,14 @@ pub fn move_project(conn: &Connection, id: &str, new_path: &str) -> Option<Value
             params![new_path, old],
         )?;
         conn.execute("UPDATE tasks SET project = ?1 WHERE project = ?2", params![new_path, old])?;
+        // Pins are re-keyed to the new project path, and any that pointed *inside*
+        // the old folder are rewritten to their new home — otherwise every pin
+        // would silently turn into a dead path after a move.
+        conn.execute(
+            "UPDATE pins SET path = ?1 || substr(path, length(?2) + 1) WHERE project = ?2 AND path LIKE ?2 || '%'",
+            params![new_path, old],
+        )?;
+        conn.execute("UPDATE pins SET project = ?1 WHERE project = ?2", params![new_path, old])?;
         // run_config is keyed by path, so clear any stale row at the destination
         // before the old one takes its place.
         conn.execute("DELETE FROM run_config WHERE project = ?1", [new_path])?;
@@ -1022,6 +1042,43 @@ pub fn get_run_command(conn: &Connection, project: &str) -> Option<String> {
 }
 
 /// Set (or overwrite) a project's run command.
+/* ---------------------------------- pins --------------------------------- */
+/// Files the user has pinned to the side of the chat for quick reference — a
+/// task list, a brief, notes. Scoped to a project, ordered oldest-first so the
+/// rail doesn't reshuffle itself as pins come and go.
+
+pub fn list_pins(conn: &Connection, project: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT id, path, label FROM pins WHERE project = ?1 ORDER BY id ASC",
+    ) {
+        if let Ok(rows) = stmt.query_map([project], |r| {
+            Ok(json!({
+                "id": r.get::<_, i64>(0)?,
+                "path": r.get::<_, String>(1)?,
+                "label": r.get::<_, Option<String>>(2)?,
+            }))
+        }) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// Pin a file. Pinning one that is already pinned just returns the whole list
+/// again, so the caller never has to special-case a duplicate.
+pub fn add_pin(conn: &Connection, project: &str, path: &str, label: &str) -> Vec<Value> {
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO pins (project, path, label, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![project, path, label, now()],
+    );
+    list_pins(conn, project)
+}
+
+pub fn remove_pin(conn: &Connection, id: i64) {
+    let _ = conn.execute("DELETE FROM pins WHERE id = ?1", [id]);
+}
+
 pub fn set_run_command(conn: &Connection, project: &str, command: &str) {
     let t = now();
     let _ = conn.execute(
@@ -1064,6 +1121,44 @@ mod tests {
     fn cwd_of(conn: &Connection, thread: &str) -> String {
         conn.query_row("SELECT cwd FROM threads WHERE id = ?1", [thread], |r| r.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn pinning_the_same_file_twice_is_a_no_op() {
+        let conn = db();
+        let pins = add_pin(&conn, "/proj", "/proj/TODO.md", "TODO.md");
+        assert_eq!(pins.len(), 1);
+        // Pinning it again must not produce a second chip for the same file.
+        let pins = add_pin(&conn, "/proj", "/proj/TODO.md", "TODO.md");
+        assert_eq!(pins.len(), 1);
+        // The same path under a *different* project is a separate pin.
+        assert_eq!(add_pin(&conn, "/other", "/proj/TODO.md", "TODO.md").len(), 1);
+        assert_eq!(list_pins(&conn, "/proj").len(), 1);
+
+        let id = pins[0]["id"].as_i64().unwrap();
+        remove_pin(&conn, id);
+        assert!(list_pins(&conn, "/proj").is_empty());
+        assert_eq!(list_pins(&conn, "/other").len(), 1, "another project's pin is untouched");
+    }
+
+    #[test]
+    fn moving_a_project_repoints_pins_that_lived_inside_it() {
+        let conn = db();
+        let p = create_project(&conn, "/old/place").unwrap();
+        let id = id_of(&p);
+        // One pin inside the folder, one outside it.
+        add_pin(&conn, "/old/place", "/old/place/docs/TODO.md", "TODO.md");
+        add_pin(&conn, "/old/place", "/elsewhere/brief.md", "brief.md");
+
+        move_project(&conn, &id, "/new/place").expect("should move");
+
+        let pins = list_pins(&conn, "/new/place");
+        assert_eq!(pins.len(), 2, "both pins follow the project");
+        assert!(list_pins(&conn, "/old/place").is_empty());
+        let paths: Vec<&str> = pins.iter().map(|p| p["path"].as_str().unwrap()).collect();
+        // The one inside the folder is rewritten; the one outside is left alone.
+        assert!(paths.contains(&"/new/place/docs/TODO.md"), "got {paths:?}");
+        assert!(paths.contains(&"/elsewhere/brief.md"), "got {paths:?}");
     }
 
     #[test]

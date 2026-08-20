@@ -198,6 +198,14 @@
            when the feature is off or the project folder isn't a git repo. -->
       <div class="git-status" id="git-status" hidden></div>
     </div>
+
+    <!-- Pinned files: a quiet rail down the right edge of the chat. Rests
+         nearly invisible, opens on hover, and a click reads the file into the
+         viewer overlay. Populated by app/pins.js. -->
+    <div class="pin-rail" id="pin-rail" hidden aria-label="Pinned files">
+      <ul class="pin-list" id="pin-list"></ul>
+      <button class="pin-add" id="pin-add" data-i18n-title="pins.addTitle" title="Pin a file for quick reference">+</button>
+    </div>
   </main>
 
   <!-- Side tips: context-rot nudges + hint results slide in here -->
@@ -223,6 +231,20 @@
       <img id="lightbox-img" alt="">
       <figcaption class="lightbox-cap" id="lightbox-cap"></figcaption>
     </figure>
+  </div>
+
+  <!-- ====== Pinned-file viewer: a light panel with the file's contents ====== -->
+  <div class="modal-overlay pin-view-overlay" id="pin-view-overlay" hidden>
+    <div class="pin-view" role="dialog" aria-modal="true" aria-labelledby="pin-view-title">
+      <header class="pin-view-head">
+        <div class="pin-view-text">
+          <div class="pin-view-title" id="pin-view-title"></div>
+          <div class="pin-view-path" id="pin-view-path"></div>
+        </div>
+        <button class="pin-view-x" id="pin-view-close" data-i18n-title="pins.close" title="Close" aria-label="Close">×</button>
+      </header>
+      <div class="pin-view-body" id="pin-view-body"></div>
+    </div>
   </div>
 
   <!-- ============= Activity panel: live shells & sub-agents ============= -->
@@ -417,6 +439,7 @@
   <script defer src="app/logo.js"></script>
   <script defer src="app/usage.js"></script>
   <script defer src="app/orchestrator.js"></script>
+  <script defer src="app/pins.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

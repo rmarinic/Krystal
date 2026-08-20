@@ -2904,3 +2904,130 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
 @media (prefers-reduced-motion: reduce) {
   .app-version { animation: none; }
 }
+
+/* ============================ Pinned files ================================
+   A quiet rail down the right edge of the chat: files you want to glance at
+   mid-conversation (a task list, a brief) without leaving the chat.
+
+   Resting state IS the resting state — the rail sits collapsed to its icon
+   column at low opacity, taking no visual attention and no layout space (it's
+   absolutely positioned over the gutter, not in the flow). Pointing at it
+   raises the opacity and slides the names out. Exactly one thing animates: the
+   width. Shape and colour snap; nothing overshoots. -------------------------- */
+
+.pin-rail {
+  position: absolute; z-index: 12;
+  top: 50%; right: 10px; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding: 6px;
+  opacity: .26;
+  transition: opacity .22s ease;
+}
+.pin-rail[hidden] { display: none; }
+.pin-rail:hover, .pin-rail:focus-within { opacity: 1; }
+.pin-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 62vh; overflow-y: auto; overflow-x: visible;
+}
+.pin-list::-webkit-scrollbar { width: 0; }
+
+.pin { position: relative; display: flex; align-items: center; justify-content: flex-end; }
+
+/* The chip. Collapsed it is an icon square; on hover the name slides out of it.
+   `max-width` carries the whole open/close — the border-radius and background
+   stay put, so nothing morphs mid-slide. */
+.pin-open {
+  display: flex; align-items: center; gap: 0;
+  max-width: 34px; overflow: hidden; white-space: nowrap;
+  padding: 7px 8px;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 9px; cursor: pointer;
+  transition: max-width .26s ease, gap .26s ease, color .15s, border-color .15s;
+}
+.pin-rail:hover .pin-open, .pin-rail:focus-within .pin-open { max-width: min(232px, 22vw); gap: 8px; }
+.pin-open:hover { color: var(--fg); border-color: var(--accent-2); }
+.pin-ico { flex: none; font-size: 14px; line-height: 1; }
+.pin-name { overflow: hidden; text-overflow: ellipsis; }
+
+/* Unpin: only reachable once the rail is open, so it can't be hit by accident. */
+.pin-x {
+  flex: none; width: 0; opacity: 0; overflow: hidden;
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 15px; line-height: 1; cursor: pointer; padding: 0;
+  transition: width .22s ease, opacity .22s ease, color .15s;
+}
+.pin-rail:hover .pin-x, .pin-rail:focus-within .pin-x { width: 18px; opacity: 1; }
+.pin-x:hover { color: #ff8a8a; }
+
+/* Add. Sits under the list; the same collapsed square as a chip. */
+.pin-add {
+  flex: none; width: 34px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1; color: var(--fg-dim);
+  background: var(--bg-card); border: 1px dashed var(--border-2);
+  border-radius: 9px; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.pin-add:hover { color: var(--accent-2); border-color: var(--accent-2); }
+/* With nothing pinned the + is the whole rail, so let it be a touch more present. */
+.pin-rail.empty { opacity: .34; }
+
+/* A pin just landed: one gentle pulse of presence, then back to resting. */
+.pin-rail.just-pinned { animation: pin-landed 1.2s ease; }
+@keyframes pin-landed {
+  0%   { opacity: .26; }
+  18%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: .26; }
+}
+
+/* ---- The viewer: a light panel with the file's contents ---- */
+.pin-view {
+  width: min(720px, 100%); max-height: min(82vh, 860px);
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  overflow: hidden;
+}
+.pin-view-head {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.pin-view-text { min-width: 0; }
+.pin-view-title { font-weight: 600; font-size: 15px; }
+.pin-view-path {
+  font-size: 11px; color: var(--fg-dim); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pin-view-x {
+  margin-left: auto; flex: none;
+  background: none; border: none; color: var(--fg-dim);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;
+  transition: color .15s;
+}
+.pin-view-x:hover { color: var(--fg); }
+.pin-view-body { padding: 18px 20px; overflow-y: auto; }
+.pin-view-loading, .pin-view-msg { color: var(--fg-muted); text-align: center; padding: 34px 10px; }
+.pin-view-note {
+  margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--fg-dim);
+}
+.pin-raw {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; line-height: 1.6; color: var(--fg-muted);
+}
+.pin-md > :first-child { margin-top: 0; }
+.pin-md > :last-child { margin-bottom: 0; }
+
+.modal-overlay.closing .pin-view { animation: modal-pop-out .18s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-rail, .pin-open, .pin-x, .pin-add { transition: none; }
+  /* Without the slide there's nothing to reveal the name, so keep it open. */
+  .pin-open { max-width: min(232px, 22vw); gap: 8px; }
+  .pin-x { width: 18px; opacity: 1; }
+  .pin-rail.just-pinned { animation: none; }
+  .modal-overlay.closing .pin-view { animation: none !important; }
+}

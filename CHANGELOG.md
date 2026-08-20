@@ -4,6 +4,10 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.18.0
+- **New: pin files to the side of the chat.** Hover the right edge of a conversation and a slim rail slides open; the **+** lets you pin any file you want to keep an eye on — a task list, a brief, your notes. Click one and it opens in a light panel right over the chat, so you can check what a file actually says mid-conversation without leaving the chat or asking Claude to read it back to you. The file is read fresh every time you open it, so you always see the current version — handy for a task list Claude has just ticked something off.
+- The rail is deliberately unobtrusive: it rests almost invisible and takes up no room, so it never competes with the conversation, and only comes forward when you point at it. Pinned files belong to the project, so they're waiting for you in every chat in that folder — and if you later point the project at a different folder, the pins come along.
+
 ## v0.17.0
 - **Replies come back faster, and Claude keeps its train of thought.** Until now every message started a brand-new Claude process, which had to re-read the whole conversation from scratch before it could begin answering — a cost that grew with every message you exchanged. A chat now keeps one Claude running for as long as you're using it, so the second message and every one after it starts answering noticeably sooner, especially in long conversations.
 - **Stopping a reply no longer throws the conversation away.** Stop used to kill Claude outright, and the next message had to rebuild everything. It now simply asks Claude to put the work down — the chat keeps its place and carries straight on.

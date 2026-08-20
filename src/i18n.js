@@ -356,6 +356,16 @@
       'effort.max.name': 'Max',
       'effort.max.blurb': 'Slowest & most thorough',
       /* ---- suggested next message ---- */
+      /* ---- pinned files ---- */
+      'pins.addTitle': 'Pin a file here for quick reference — a task list, a brief, notes',
+      'pins.dialogTitle': 'Choose a file to pin',
+      'pins.unpin': 'Unpin',
+      'pins.close': 'Close',
+      'pins.loading': 'Reading…',
+      'pins.missing': "This file isn't there any more. It may have been moved or deleted — unpin it, or pin it again from its new home.",
+      'pins.unreadable': 'That file could not be read: {err}',
+      'pins.truncated': 'Long file — showing the beginning only.',
+      'pins.addFailed': "Couldn't pin that file",
       'suggest.label': 'Next:',
       'suggest.title': 'Suggested next message — click to put it in the box',
       'suggest.dismiss': 'Dismiss',
@@ -915,6 +925,16 @@
       'effort.max.name': 'Maks.',
       'effort.max.blurb': 'Najsporije i najtemeljitije',
       /* ---- prijedlog sljedeće poruke ---- */
+      /* ---- prikvačene datoteke ---- */
+      'pins.addTitle': 'Prikvači datoteku za brzi uvid — popis zadataka, upute, bilješke',
+      'pins.dialogTitle': 'Odaberi datoteku za prikvačiti',
+      'pins.unpin': 'Otkvači',
+      'pins.close': 'Zatvori',
+      'pins.loading': 'Čitam…',
+      'pins.missing': 'Ove datoteke više nema. Možda je premještena ili obrisana — otkvači je ili je ponovno prikvači s nove lokacije.',
+      'pins.unreadable': 'Datoteku nije bilo moguće pročitati: {err}',
+      'pins.truncated': 'Duga datoteka — prikazan je samo početak.',
+      'pins.addFailed': 'Nije uspjelo prikvačivanje datoteke',
       'suggest.label': 'Dalje:',
       'suggest.title': 'Prijedlog sljedeće poruke — klikni da je staviš u okvir',
       'suggest.dismiss': 'Odbaci',
