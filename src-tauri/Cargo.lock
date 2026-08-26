@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "krystal"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "chrono",
  "discord-rich-presence",
