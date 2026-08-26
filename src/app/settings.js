@@ -131,23 +131,27 @@ function buildClaudeUpdateRow() {
     `<div class="cu-status" aria-live="polite"></div>` +
     `<pre class="cu-log" hidden></pre>` +
     `<div class="cu-actions">` +
-      `<button class="cu-btn" type="button">${escapeHtml(tr('settings.claudeUpdate.btn'))}</button>` +
+      `<button class="cu-btn cu-npm" type="button" hidden>${escapeHtml(tr('settings.claudeUpdate.npmBtn'))}</button>` +
+      `<button class="cu-btn cu-check" type="button">${escapeHtml(tr('settings.claudeUpdate.btn'))}</button>` +
     `</div>`;
 
   const statusEl = item.querySelector('.cu-status');
   const logEl = item.querySelector('.cu-log');
-  const btn = item.querySelector('.cu-btn');
+  const btn = item.querySelector('.cu-check');
+  const npmBtn = item.querySelector('.cu-npm');
 
   // Best-effort: show the currently-installed version under the description.
   api.preflight().then((pf) => {
     if (pf && pf.version) statusEl.textContent = tr('settings.claudeUpdate.current', { version: pf.version });
   }).catch(() => {});
 
-  btn.onclick = async () => {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.classList.add('busy');
-    statusEl.textContent = tr('settings.claudeUpdate.working');
+  // Both buttons stream the same `{type:"log"}` lines into the same pane — only
+  // the command behind them differs — so they share one runner.
+  async function run(which, call, workingKey) {
+    if (which.disabled) return;
+    btn.disabled = npmBtn.disabled = true;
+    which.classList.add('busy');
+    statusEl.textContent = tr(workingKey);
     logEl.hidden = false;
     logEl.textContent = '';
     replayClass(logEl, 'cu-log-in');
@@ -160,21 +164,33 @@ function buildClaudeUpdateRow() {
     };
 
     try {
-      const res = await api.updateClaude(channel);
-      if (res && res.updated && res.version) {
+      const res = await call(channel);
+      if (res && res.npmFallback) {
+        // `claude update` never reached the registry; npm can still do the job.
+        statusEl.textContent = tr('settings.claudeUpdate.npmOffer');
+        if (npmBtn.hidden) {
+          npmBtn.hidden = false;
+          replayClass(npmBtn, 'cu-npm-in');
+        }
+      } else if (res && res.updated && res.version) {
         statusEl.textContent = tr('settings.claudeUpdate.updated', { version: res.version });
+        npmBtn.hidden = true;
       } else if (res && res.version) {
         statusEl.textContent = tr('settings.claudeUpdate.upToDate', { version: res.version });
+        npmBtn.hidden = true;
       } else {
         statusEl.textContent = tr('settings.claudeUpdate.done');
       }
     } catch (err) {
       statusEl.textContent = tr('settings.claudeUpdate.failed', { err: String((err && err.message) || err) });
     } finally {
-      btn.disabled = false;
-      btn.classList.remove('busy');
+      btn.disabled = npmBtn.disabled = false;
+      which.classList.remove('busy');
     }
-  };
+  }
+
+  btn.onclick = () => run(btn, (ch) => api.updateClaude(ch), 'settings.claudeUpdate.working');
+  npmBtn.onclick = () => run(npmBtn, (ch) => api.updateClaudeNpm(ch), 'settings.claudeUpdate.npmWorking');
 
   return item;
 }
@@ -251,6 +267,20 @@ async function runClaudeCodeUpdate() {
   };
   try {
     const res = await api.updateClaude(channel);
+    if (res && res.npmFallback) {
+      // Soft failure: the CLI couldn't look the latest version up. Offer npm
+      // rather than dead-ending on the registry error.
+      hideProgressOverlay();
+      showTip({
+        key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.npmLabel'),
+        body: escapeHtml(tr('claudeUpd.npmBody')),
+        actions: [
+          { text: tr('claudeUpd.npmAction'), run: (close) => { close(); runClaudeCodeNpmInstall(); } },
+          { text: tr('claudeUpd.later'), ghost: true, run: (close) => close() },
+        ],
+      });
+      return;
+    }
     finishProgressOverlay(tr('claudeUpd.overlayDone'));
     if (res && res.updated && res.version) {
       showTip({ key: 'status', icon: '✅', label: tr('claudeUpd.doneLabel'),
@@ -258,6 +288,29 @@ async function runClaudeCodeUpdate() {
     } else if (res && res.version) {
       showTip({ key: 'status', icon: '👍', label: tr('claudeUpd.doneLabel'),
         body: escapeHtml(tr('claudeUpd.upToDate', { version: res.version })) });
+    }
+    try { localStorage.removeItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
+  } catch (err) {
+    hideProgressOverlay();
+    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.failLabel'),
+      body: escapeHtml(String((err && err.message) || err)) });
+  }
+}
+
+/* The fallback behind that offer: install Claude Code straight from npm, with the
+ * same overlay and the same live sub-caption as the in-place update. */
+async function runClaudeCodeNpmInstall() {
+  showProgressOverlay({ glyph: '📦', title: tr('claudeUpd.npmOverlayTitle'), sub: tr('claudeUpd.npmOverlaySub') });
+  const channel = new Channel();
+  channel.onmessage = (msg) => {
+    if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
+  };
+  try {
+    const res = await api.updateClaudeNpm(channel);
+    finishProgressOverlay(tr('claudeUpd.overlayDone'));
+    if (res && res.version) {
+      showTip({ key: 'status', icon: '✅', label: tr('claudeUpd.doneLabel'),
+        body: escapeHtml(tr('claudeUpd.doneBody', { version: res.version })) });
     }
     try { localStorage.removeItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
   } catch (err) {

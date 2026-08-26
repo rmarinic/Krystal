@@ -158,8 +158,46 @@ pub async fn install_claude(state: State<'_, AppState>, on_event: Channel<Value>
 pub async fn update_claude(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
     let bin = state.claude_bin();
     let before = claude::claude_version(&bin);
-    claude::update_claude_code(&bin, &on_event).await?;
+    if let Err(fail) = claude::update_claude_code(&bin, &on_event).await {
+        // The CLI gave up looking the latest version up in the registry. On an
+        // npm-managed install that is recoverable, so report it as a soft
+        // failure and let the UI offer to reinstall through npm instead.
+        if fail.npm_fallback && claude::is_npm_global_install(&bin) {
+            return Ok(json!({
+                "ok": false,
+                "npmFallback": true,
+                "error": fail.message,
+                "before": before,
+                "version": before,
+                "updated": false,
+                "claudeBin": bin,
+            }));
+        }
+        return Err(fail.message);
+    }
     // Re-resolve in case the update moved the binary, and adopt the new path.
+    let resolved = claude::resolve_claude();
+    let after = claude::claude_version(&resolved);
+    if after.is_some() {
+        *state.claude_bin.lock().unwrap() = resolved.clone();
+    }
+    Ok(json!({
+        "ok": after.is_some(),
+        "before": before,
+        "version": after,
+        "updated": before != after,
+        "claudeBin": resolved,
+    }))
+}
+
+/// Reinstall the Claude Code CLI straight from npm — the fallback the UI offers
+/// when `claude update`'s own registry check gives up. Same streaming shape and
+/// same before/after reporting as `update_claude`.
+#[tauri::command]
+pub async fn update_claude_npm(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
+    let bin = state.claude_bin();
+    let before = claude::claude_version(&bin);
+    claude::npm_install_claude_code(&on_event).await?;
     let resolved = claude::resolve_claude();
     let after = claude::claude_version(&resolved);
     if after.is_some() {

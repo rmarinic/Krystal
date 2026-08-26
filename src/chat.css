@@ -1910,7 +1910,7 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
 /* The log fades/slides in when an update starts (snap-free reveal). */
 .claude-update .cu-log.cu-log-in { animation: cu-log-in .22s ease both; }
 @keyframes cu-log-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-.claude-update .cu-actions { display: flex; justify-content: flex-end; }
+.claude-update .cu-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .cu-btn {
   font-family: var(--mono); font-size: 12px; font-weight: 600; cursor: pointer;
   color: #07140c; background: var(--accent-2); border: 1px solid var(--accent-2);
@@ -1920,8 +1920,15 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
 .cu-btn:hover { background: var(--accent-3); border-color: var(--accent-3); }
 .cu-btn:active { transform: translateY(1px); }
 .cu-btn.busy, .cu-btn:disabled { opacity: .6; cursor: default; transform: none; }
+/* The npm fallback is the quieter, secondary way out — only shown once the CLI's
+ * own registry check has given up. */
+.cu-btn.cu-npm { color: var(--fg-muted); background: transparent; border-color: var(--border); }
+.cu-btn.cu-npm:hover { color: var(--fg); background: var(--bg-card-2); border-color: var(--border); }
+.cu-btn.cu-npm.cu-npm-in { animation: cu-npm-in .22s ease both; }
+@keyframes cu-npm-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .claude-update .cu-log.cu-log-in { animation: none; }
+  .cu-btn.cu-npm.cu-npm-in { animation: none; }
   .cu-btn { transition: background .15s ease, border-color .15s ease; }
   .cu-btn:active { transform: none; }
 }

@@ -232,6 +232,7 @@ const api = {
   readImage(path) { return invoke('read_image', { path }); },
   saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
+  updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };
 
 /* The delegation tool — the one that launches a sub-agent. The CLI has shipped it

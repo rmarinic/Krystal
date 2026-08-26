@@ -11,7 +11,7 @@ use std::process::Stdio;
 use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 use crate::session::Session;
 use crate::models::{
@@ -312,34 +312,8 @@ pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String>
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("could not start the installer: {e}"))?;
-
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-
-    // Stream stdout and stderr (the installer logs to both) line-by-line.
-    let ch_out = channel.clone();
-    let out_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                let _ = ch_out.send(json!({ "type": "log", "line": line }));
-            }
-        }
-    });
-    let ch_err = channel.clone();
-    let err_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                let _ = ch_err.send(json!({ "type": "log", "line": line }));
-            }
-        }
-    });
-
-    let status = child.wait().await.map_err(|e| e.to_string())?;
-    let _ = out_task.await;
-    let _ = err_task.await;
+    let child = cmd.spawn().map_err(|e| format!("could not start the installer: {e}"))?;
+    let (status, _log) = stream_child_logs(child, channel).await?;
     if status.success() {
         Ok(())
     } else {
@@ -350,12 +324,66 @@ pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String>
     }
 }
 
+/// Stream a spawned child's stdout and stderr to the frontend as
+/// `{type:"log", line}` (the shape the install/update panels render) and wait for
+/// it to exit. Also hands back everything it printed, so a caller can tell *why*
+/// a run failed instead of only that it did.
+async fn stream_child_logs(
+    mut child: Child,
+    channel: &Channel<Value>,
+) -> Result<(std::process::ExitStatus, String), String> {
+    async fn pump<R>(reader: R, channel: Channel<Value>) -> String
+    where
+        R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    {
+        let mut collected = String::new();
+        let mut lines = BufReader::new(reader).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = channel.send(json!({ "type": "log", "line": line }));
+                collected.push_str(&line);
+                collected.push('\n');
+            }
+        }
+        collected
+    }
+
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+    let out_task = tokio::spawn(pump(stdout, channel.clone()));
+    let err_task = tokio::spawn(pump(stderr, channel.clone()));
+
+    let status = child.wait().await.map_err(|e| e.to_string())?;
+    let mut log = out_task.await.unwrap_or_default();
+    log.push_str(&err_task.await.unwrap_or_default());
+    Ok((status, log))
+}
+
+/// Why an in-place `claude update` failed, and whether reinstalling straight from
+/// npm is worth offering as a way around it.
+pub struct UpdateFailure {
+    pub message: String,
+    /// The updater never got as far as downloading anything: it couldn't look up
+    /// the latest version in the npm registry. That lookup is time-boxed inside
+    /// the CLI, so a slow cold start trips it even while npm itself works fine —
+    /// a plain `npm install -g` tends to sail through where it gave up.
+    pub npm_fallback: bool,
+}
+
+/// Does this failure log read like the CLI's registry pre-check giving up?
+fn looks_like_registry_check_failure(log: &str) -> bool {
+    let lower = log.to_lowercase();
+    lower.contains("unable to fetch latest version") || lower.contains("failed to check for updates")
+}
+
 /// Update Claude Code in place by running `<bin> update`, streaming every output
 /// line to the frontend as `{type:"log", line}` (same shape as the installer) so
 /// the Settings panel can show live progress. This is exactly what running
 /// `claude update` in a terminal does — it checks for a newer release and, if
 /// there is one, downloads and applies it. Resolves Ok on a clean exit.
-pub async fn update_claude_code(bin: &str, channel: &Channel<Value>) -> Result<(), String> {
+pub async fn update_claude_code(bin: &str, channel: &Channel<Value>) -> Result<(), UpdateFailure> {
+    let fatal = |message: String| UpdateFailure { message, npm_fallback: false };
+
     let _ = channel.send(json!({ "type": "log", "line": "Checking for Claude Code updates…" }));
     let mut cmd = Command::new(bin);
     cmd.arg("update")
@@ -366,42 +394,90 @@ pub async fn update_claude_code(bin: &str, channel: &Channel<Value>) -> Result<(
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("could not start the updater: {e}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| fatal(format!("could not start the updater: {e}")))?;
 
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-
-    // Stream stdout and stderr (the updater logs to both) line-by-line.
-    let ch_out = channel.clone();
-    let out_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                let _ = ch_out.send(json!({ "type": "log", "line": line }));
-            }
-        }
-    });
-    let ch_err = channel.clone();
-    let err_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                let _ = ch_err.send(json!({ "type": "log", "line": line }));
-            }
-        }
-    });
-
-    let status = child.wait().await.map_err(|e| e.to_string())?;
-    let _ = out_task.await;
-    let _ = err_task.await;
+    let (status, log) = stream_child_logs(child, channel).await.map_err(fatal)?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "updater exited with code {}",
-            status.code().unwrap_or(-1)
-        ))
+        Err(UpdateFailure {
+            message: format!("updater exited with code {}", status.code().unwrap_or(-1)),
+            npm_fallback: looks_like_registry_check_failure(&log),
+        })
     }
+}
+
+/// True when Claude Code looks like a global npm package. Only then is
+/// `npm install -g` the right repair — a native install would end up shadowed by
+/// a second, conflicting copy.
+pub fn is_npm_global_install(bin: &str) -> bool {
+    if bin.replace('\\', "/").to_lowercase().contains("/npm/") {
+        return true;
+    }
+    let home = match std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return false,
+    };
+    let txt = match std::fs::read_to_string(home.join(".claude.json")) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    serde_json::from_str::<Value>(&txt)
+        .ok()
+        .and_then(|v| v.get("installMethod").and_then(|m| m.as_str()).map(str::to_string))
+        .map(|m| m == "global" || m.contains("npm"))
+        .unwrap_or(false)
+}
+
+/// Reinstall Claude Code from npm — the fallback for when `claude update` can't
+/// reach the registry to see what the latest version is. npm is a script shim
+/// rather than a real executable on Windows (`npm.cmd`), so it has to be launched
+/// through a shell. Streams npm's output like the other two.
+pub async fn npm_install_claude_code(channel: &Channel<Value>) -> Result<(), String> {
+    const NPM_LINE: &str = "npm install -g @anthropic-ai/claude-code@latest";
+    let _ = channel.send(json!({ "type": "log", "line": format!("$ {NPM_LINE}") }));
+
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", NPM_LINE]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new("sh");
+        c.args(["-c", NPM_LINE]);
+        c
+    };
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = cmd.spawn().map_err(|e| format!("could not start npm: {e}"))?;
+
+    let (status, log) = stream_child_logs(child, channel).await?;
+    if status.success() {
+        return Ok(());
+    }
+    // npm's own last word is far more useful than the exit code (a missing npm
+    // says so in plain English), so lead with it when there is one.
+    let tail = log
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Err(if tail.is_empty() {
+        format!("npm exited with code {}", status.code().unwrap_or(-1))
+    } else {
+        format!("npm install failed: {tail}")
+    })
 }
 
 /* ------------------------------ arguments -------------------------------- */
@@ -1878,6 +1954,26 @@ pub async fn run_shell_capture(command: &str, cwd: &str) -> Result<(String, i32)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The real thing the fallback keys off: the CLI's registry pre-check giving
+    // up, as opposed to a download or install that actually went wrong.
+    #[test]
+    fn registry_check_failure_is_recognised() {
+        let log = "Current version: 2.1.238
+Checking for updates to latest version...
+Failed to check for updates
+Unable to fetch latest version from npm registry";
+        assert!(looks_like_registry_check_failure(log));
+    }
+
+    #[test]
+    fn other_update_failures_are_not_offered_npm() {
+        assert!(!looks_like_registry_check_failure(
+            "Installing update...
+Error: EPERM: operation not permitted"
+        ));
+        assert!(!looks_like_registry_check_failure(""));
+    }
 
     #[test]
     fn strip_removes_a_single_block() {

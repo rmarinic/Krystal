@@ -74,6 +74,7 @@ fn main() {
             commands::preflight,
             commands::install_claude,
             commands::update_claude,
+            commands::update_claude_npm,
             commands::open_login,
             commands::open_external,
             commands::open_webview,
