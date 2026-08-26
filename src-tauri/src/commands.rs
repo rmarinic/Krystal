@@ -12,6 +12,7 @@ use crate::db;
 use crate::discord;
 use crate::models;
 use crate::session;
+use crate::skills;
 
 /// Shared app state managed by Tauri.
 pub struct AppState {
@@ -957,9 +958,19 @@ pub async fn chat(
         models::fallback_chain(&catalog, &meta.model)
     };
 
+    // Folders outside the project that the user has granted this project. Part
+    // of the session key like every other flag, so granting or revoking one
+    // retires the warm process and the next message starts a session that can
+    // (or can no longer) see it.
+    let extra_dirs = {
+        let conn = state.db.lock().unwrap();
+        db::project_dir_paths(&conn, &meta.cwd)
+    };
+
     let mut args = claude::base_args(&meta.model, &sys);
     claude::apply_mode(&mut args, &meta.mode);   // Auto = full power; Plan = research only
     claude::apply_chat_flags(&mut args, &meta.effort, fallback.as_deref(), state.suggestions());
+    claude::apply_extra_dirs(&mut args, &extra_dirs);
     claude::apply_session_flags(&mut args);      // one warm process serves the whole chat
     if let Some(o) = &orch {
         args.push("--agents".into());
@@ -1989,6 +2000,57 @@ pub fn remove_pin(state: State<'_, AppState>, project: String, id: i64) -> Value
     let conn = state.db.lock().unwrap();
     db::remove_pin(&conn, id);
     json!({ "pins": db::list_pins(&conn, &project) })
+}
+
+/* ------------------------------ skills & dirs ----------------------------- */
+
+/// The `/skill-name` commands we can find on disk for this project (see
+/// `skills.rs`). The CLI's own built-ins aren't here — those arrive with the
+/// session's `start` event and the frontend merges the two.
+#[tauri::command]
+pub fn list_skills(project: Option<String>) -> Value {
+    json!({ "skills": skills::scan(project.as_deref()) })
+}
+
+#[tauri::command]
+pub fn list_project_dirs(state: State<'_, AppState>, project: String) -> Value {
+    let conn = state.db.lock().unwrap();
+    json!({ "dirs": db::list_project_dirs(&conn, &project) })
+}
+
+/// Grant this project's chats access to another folder. Rejected if the folder
+/// is gone, or if it's the project folder (or inside it) — those are already
+/// reachable, and passing them again would only pad every turn's flags.
+#[tauri::command]
+pub fn add_project_dir(state: State<'_, AppState>, project: String, path: String) -> CmdResult {
+    let path = path.trim().to_string();
+    if project.trim().is_empty() || path.is_empty() {
+        return Err("nothing to add".into());
+    }
+    if !std::path::Path::new(&path).is_dir() {
+        return Err("not-a-folder".into());
+    }
+    if is_within(&path, &project) {
+        return Err("already-included".into());
+    }
+    let conn = state.db.lock().unwrap();
+    Ok(json!({ "dirs": db::add_project_dir(&conn, &project, &path) }))
+}
+
+#[tauri::command]
+pub fn remove_project_dir(state: State<'_, AppState>, project: String, id: i64) -> Value {
+    let conn = state.db.lock().unwrap();
+    db::remove_project_dir(&conn, id);
+    json!({ "dirs": db::list_project_dirs(&conn, &project) })
+}
+
+/// Is `path` the same folder as `root`, or inside it? Compared on the canonical
+/// paths so `C:\p\..\p\sub` and a symlinked route to the same place both count;
+/// falls back to the raw strings when a path can't be canonicalized.
+fn is_within(path: &str, root: &str) -> bool {
+    let canon = |p: &str| std::fs::canonicalize(p).unwrap_or_else(|_| std::path::PathBuf::from(p));
+    let (path, root) = (canon(path), canon(root));
+    path == root || path.starts_with(&root)
 }
 
 /// Read a pinned file for the viewer. Reports a missing or unreadable file as

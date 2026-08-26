@@ -38,10 +38,13 @@ els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
   saveDraft(state.activeId, els.input.value);   // keep this chat's draft current
   if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete
+  if (typeof onComposerSlash === 'function') onComposerSlash();   // / skill picker
 });
 els.input.addEventListener('keydown', (e) => {
-  // The # mention popup gets first crack at navigation/selection keys.
+  // The # mention and / skill popups get first crack at navigation/selection
+  // keys. Only one can be open at a time (they trigger on different text).
   if (typeof mentionKeydown === 'function' && mentionKeydown(e)) return;
+  if (typeof skillKeydown === 'function' && skillKeydown(e)) return;
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
@@ -424,7 +427,11 @@ function syncSuggestion() {
 function handleLiveEvent(live, msg) {
   const event = msg.type;
   const active = live.threadId === state.activeId;
-  if (event === 'token') {
+  if (event === 'start') {
+    // The session announced what `/skill-name` commands it can run — the only
+    // place the CLI's own built-ins are ever named. Hand them to the picker.
+    if (typeof learnSkills === 'function') learnSkills(msg.skills);
+  } else if (event === 'token') {
     live.events.push({ type: 'token', text: msg.text });
     if (live.typer) live.typer.push(msg.text);
   } else if (event === 'tool') {

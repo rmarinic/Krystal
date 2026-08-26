@@ -122,7 +122,12 @@
       <div class="chat-head-main">
         <div class="chat-head-text">
           <div class="chat-title" id="chat-title">No conversation</div>
-          <div class="chat-cwd" id="chat-cwd"></div>
+          <!-- The project folder. Also the way in to the folders *outside* the
+               project that its chats may reach (`--add-dir`); see app/projects.js. -->
+          <button type="button" class="chat-cwd" id="chat-cwd" data-i18n-title="dirs.openTitle" title="Folders Claude can use in this project">
+            <span class="cwd-path" id="chat-cwd-path"></span>
+            <span class="cwd-extra" id="chat-cwd-extra" hidden></span>
+          </button>
         </div>
         <div class="chat-tools" id="chat-tools" hidden>
           <div class="picker" id="model-picker" data-i18n-title="model.pickerTitle" title="Which Claude brain to use"></div>
@@ -191,6 +196,8 @@
         <span class="shell-badge" data-i18n="shell.badge" aria-hidden="true">shell mode · runs in the project folder</span>
         <!-- # autocomplete: pick an earlier chat to reference -->
         <div class="mention-pop" id="mention-pop" hidden></div>
+        <!-- / autocomplete: pick a Claude Code skill to start the message with -->
+        <div class="mention-pop skill-pop" id="skill-pop" hidden></div>
         <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)"></textarea>
         <button class="send-btn" id="send-btn" title="Send"></button>
       </div>
@@ -292,6 +299,21 @@
       </header>
       <div class="init-body" id="tasks-body"></div>
       <footer class="init-foot" id="tasks-foot"></footer>
+    </div>
+  </div>
+
+  <!-- ====== Project folders: the project folder + any extra ones granted ==== -->
+  <div class="modal-overlay" id="dirs-overlay" hidden>
+    <div class="init-modal dirs-modal" role="dialog" aria-modal="true" aria-labelledby="dirs-title">
+      <header class="init-head">
+        <div class="init-title" id="dirs-title" data-i18n="dirs.title">📁 Folders Claude can use</div>
+        <button class="init-x" id="dirs-close" data-i18n-title="dirs.close" title="Close">×</button>
+      </header>
+      <div class="init-body" id="dirs-body"></div>
+      <footer class="init-foot">
+        <div class="dirs-note" data-i18n="dirs.note">Adding a folder starts the next message in a fresh session.</div>
+        <button class="init-act primary" id="dirs-add" data-i18n="dirs.add">+ Add a folder</button>
+      </footer>
     </div>
   </div>
 
@@ -428,6 +450,7 @@
   <script defer src="app/messages.js"></script>
   <script defer src="app/stream.js"></script>
   <script defer src="app/mentions.js"></script>
+  <script defer src="app/skills.js"></script>
   <script defer src="app/attachments.js"></script>
   <script defer src="app/wizard.js"></script>
   <script defer src="app/localization.js"></script>

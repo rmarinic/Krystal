@@ -3038,3 +3038,74 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
   .pin-rail.just-pinned { animation: none; }
   .modal-overlay.closing .pin-view { animation: none !important; }
 }
+
+/* ============================================================
+ * The / skill picker (composer) + the project's folders panel
+ * ============================================================ */
+
+/* Same floating box as the # autocomplete, but each row carries a second line
+ * of explanation — a skill name alone rarely says what it does. */
+.skill-item { align-items: flex-start; }
+.skill-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.skill-item .mention-title { font-family: var(--mono); color: var(--fg); }
+.skill-blurb {
+  font-size: 11.5px; line-height: 1.35; color: var(--fg-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.skill-item .mention-hash { margin-top: 1px; }
+
+/* The project path under the chat title is also the way into the folders panel.
+ * It stays looking like the label it always was until you point at it. */
+.chat-cwd {
+  display: flex; align-items: baseline; gap: 7px; max-width: 100%;
+  background: none; border: none; padding: 0; cursor: pointer;
+  text-align: left; transition: color .15s ease;
+}
+.chat-cwd:hover { color: var(--accent-2); }
+/* The `›` marker predates the button; as a flex item it would otherwise sit a
+   whole gap away from the path it belongs to. */
+.chat-cwd::before { flex: none; margin-right: -4px; }
+.cwd-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cwd-extra {
+  flex: none; font-size: 10px; letter-spacing: .02em;
+  color: var(--accent-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 6px;
+}
+
+.dirs-modal { max-width: 620px; }
+.dirs-sub { margin: 0 0 14px; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
+.dirs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dir-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--bg-card);
+}
+/* The project folder itself isn't a setting — it reads as context, not a row
+   you could act on. */
+.dir-row.home { background: transparent; }
+.dir-ico { flex: none; font-size: 13px; }
+.dir-text { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.dir-path {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dir-tag { flex: none; font-size: 10px; color: var(--fg-muted); }
+.dir-x {
+  flex: none; background: none; border: none; cursor: pointer;
+  color: var(--fg-muted); font-size: 16px; line-height: 1;
+  padding: 0 2px; transition: color .15s ease;
+}
+.dir-x:hover { color: var(--fg); }
+/* A folder that just landed settles a quiet ring, then lets go. */
+.dir-row.added { animation: dir-added .7s ease; }
+@keyframes dir-added {
+  from { border-color: var(--accent-2); }
+  to   { border-color: var(--border); }
+}
+.dirs-modal .init-foot { justify-content: space-between; align-items: center; }
+.dirs-note { font-size: 11px; color: var(--fg-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-cwd, .dir-x { transition: none; }
+  .dir-row.added { animation: none; }
+}

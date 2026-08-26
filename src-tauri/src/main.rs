@@ -9,6 +9,7 @@ mod db;
 mod discord;
 mod models;
 mod session;
+mod skills;
 
 use commands::AppState;
 use tauri::Manager;
@@ -133,6 +134,10 @@ fn main() {
             commands::init_analyze,
             commands::init_draft,
             commands::init_save,
+            commands::list_skills,
+            commands::list_project_dirs,
+            commands::add_project_dir,
+            commands::remove_project_dir,
             commands::list_pins,
             commands::add_pin,
             commands::remove_pin,

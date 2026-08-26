@@ -9,8 +9,8 @@
  *
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
- *   messages → stream → mentions → attachments → wizard → localization →
- *   settings → tasks → git → links → logo → boot
+ *   messages → stream → mentions → skills → attachments → wizard →
+ *   localization → settings → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -37,7 +37,11 @@ const els = {
   threadList: $('#thread-list'),
   newChat: $('#new-chat'),
   title: $('#chat-title'),
-  cwd: $('#chat-cwd'),
+  // The path text only — `#chat-cwd` itself is the button that opens the
+  // project-folders panel, so writing the path must not wipe its children.
+  cwd: $('#chat-cwd-path'),
+  cwdBtn: $('#chat-cwd'),
+  cwdExtra: $('#chat-cwd-extra'),
   feed: $('#feed'),
   empty: $('#empty-state'),
   composer: $('#composer'),
@@ -47,6 +51,7 @@ const els = {
   attachTray: $('#composer-attachments'),
   dropHint: $('#drop-hint'),
   mentionPop: $('#mention-pop'),
+  skillPop: $('#skill-pop'),
   chatTools: $('#chat-tools'),
   modelPicker: $('#model-picker'),
   modePicker: $('#mode-picker'),
@@ -104,6 +109,10 @@ const els = {
   runBody: $('#run-body'),
   runFoot: $('#run-foot'),
   runClose: $('#run-close'),
+  dirsOverlay: $('#dirs-overlay'),
+  dirsBody: $('#dirs-body'),
+  dirsAdd: $('#dirs-add'),
+  dirsClose: $('#dirs-close'),
   gitStatus: $('#git-status'),
   settingsOverlay: $('#settings-overlay'),
   settingsBody: $('#settings-body'),
@@ -184,6 +193,10 @@ const api = {
   addPin(project, path) { return invoke('add_pin', { project, path }); },
   removePin(project, id) { return invoke('remove_pin', { project, id }); },
   readPinnedFile(path) { return invoke('read_pinned_file', { path }); },
+  listSkills(project) { return invoke('list_skills', { project }); },
+  listProjectDirs(project) { return invoke('list_project_dirs', { project }); },
+  addProjectDir(project, path) { return invoke('add_project_dir', { project, path }); },
+  removeProjectDir(project, id) { return invoke('remove_project_dir', { project, id }); },
   setSuggestions(enabled) { return invoke('set_suggestions', { enabled }); },
   setOrchestration(id, enabled, subModel) { return invoke('set_orchestration', { id, enabled, subModel }); },
   clear(id) { return invoke('clear_thread', { id }); },

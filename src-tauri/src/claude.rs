@@ -537,6 +537,21 @@ pub fn apply_mode(args: &mut Vec<String>, mode: &str) {
 ///   emit it as a `prompt_suggestion` event. It only fires once a conversation has
 ///   some history, and only when the model has a confident guess, so treat it as
 ///   a bonus rather than something the UI can count on.
+/// Let a chat reach folders outside the project (`--add-dir`). A project is one
+/// folder by default, which is the right default and the wrong limit: assets,
+/// notes and a second repo routinely live somewhere else, and without this the
+/// only way to include them is to make them the project.
+///
+/// Order is stable (oldest first, straight from the DB) because these args are
+/// part of the session key — a reshuffled list would retire the warm process for
+/// no reason. Blank entries are dropped rather than passed on as an empty flag.
+pub fn apply_extra_dirs(args: &mut Vec<String>, dirs: &[String]) {
+    for dir in dirs.iter().map(|d| d.trim()).filter(|d| !d.is_empty()) {
+        args.push("--add-dir".into());
+        args.push(dir.to_string());
+    }
+}
+
 /// Turn a chat invocation into a *session*: messages arrive as JSON lines on
 /// stdin instead of one prompt followed by EOF, so the process serves every turn
 /// of the chat rather than exiting after the first (see `session.rs`).
@@ -764,13 +779,39 @@ You have one worker for this turn: `{name}` (runs on {mname}). Every delegated t
     Orchestration { note, agents: Value::Object(defs).to_string() }
 }
 
+/// True when `text` opens with a `/skill-name` invocation — the CLI reads one
+/// only at the very start of a prompt, and only as a bare word ending the token
+/// (`/code-review the login screen`). A path like `/usr/bin` or a lone `/` is
+/// not one.
+fn starts_with_slash_command(text: &str) -> bool {
+    let Some(rest) = text.strip_prefix('/') else { return false };
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+        .collect();
+    if name.is_empty() || !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return false;
+    }
+    match rest[name.len()..].chars().next() {
+        None => true,
+        Some(c) => c.is_whitespace(),
+    }
+}
+
 /// Assemble the message sent for one turn.
 ///
-/// `notes` is per-turn context that used to be appended to the system prompt —
-/// today only the task-list note. It can't live there any more: the system prompt
-/// is fixed when the session process starts, and the task list changes whenever
-/// Claude ticks something off. It leads the message so it reads as standing
-/// context for what follows, and is fenced off from the user's own words.
+/// Everything but `text` is background: the task-list note, a compact seed, the
+/// transcripts of #-referenced chats, the paths of attached files. `notes` used
+/// to be appended to the system prompt and can't live there any more — the
+/// system prompt is fixed when the session process starts, and the task list
+/// changes whenever Claude ticks something off.
+///
+/// Background leads the message and is fenced off from the user's own words, so
+/// it reads as standing context for what follows. The one exception is a message
+/// that opens with `/skill-name`: the CLI only invokes a skill when the slash is
+/// the first thing in the prompt, so putting anything ahead of it would quietly
+/// demote the invocation to a line of prose. Those messages lead, and their
+/// background follows.
 pub fn build_prompt(
     text: &str,
     files: &[String],
@@ -778,39 +819,35 @@ pub fn build_prompt(
     references: Option<&str>,
     notes: Option<&str>,
 ) -> String {
-    let mut p = String::new();
+    let mut blocks: Vec<String> = Vec::new();
     if let Some(notes) = notes.filter(|n| !n.is_empty()) {
-        p.push_str(notes);
-        p.push_str("
-
----
-
-");
+        blocks.push(notes.to_string());
     }
-    if let Some(seed) = seed {
-        if !seed.is_empty() {
-            p.push_str("Summary of our conversation so far (use it to continue seamlessly):\n");
-            p.push_str(seed);
-            p.push_str("\n\n---\n\n");
-        }
+    if let Some(seed) = seed.filter(|s| !s.is_empty()) {
+        blocks.push(format!(
+            "Summary of our conversation so far (use it to continue seamlessly):\n{seed}"
+        ));
     }
-    if let Some(refs) = references {
-        if !refs.is_empty() {
-            p.push_str(refs);
-            p.push_str("\n\n---\n\n");
-        }
+    if let Some(refs) = references.filter(|r| !r.is_empty()) {
+        blocks.push(refs.to_string());
     }
     if !files.is_empty() {
-        p.push_str("Referenced files (read these as needed):\n");
+        let mut b = String::from("Referenced files (read these as needed):");
         for f in files {
-            p.push_str("- ");
-            p.push_str(f);
-            p.push('\n');
+            b.push_str("\n- ");
+            b.push_str(f);
         }
-        p.push('\n');
+        blocks.push(b);
     }
-    p.push_str(text);
-    p
+    if blocks.is_empty() {
+        return text.to_string();
+    }
+    let context = blocks.join("\n\n---\n\n");
+    if starts_with_slash_command(text) {
+        format!("{text}\n\n---\n\n{context}")
+    } else {
+        format!("{context}\n\n---\n\n{text}")
+    }
 }
 
 fn take_chars(s: &str, n: usize) -> String {
@@ -1544,7 +1581,25 @@ fn route_event(
             if let Some(m) = ev.get("model").and_then(|v| v.as_str()) {
                 result.main_model = Some(m.to_string());
             }
-            let _ = channel.send(json!({ "type": "start", "sessionId": result.session_id }));
+            // The authoritative list of `/skill-name` commands this session can
+            // run — including the ones built into the CLI binary, which exist
+            // nowhere on disk for `skills::scan` to find. Forwarded so the
+            // composer's `/` picker can learn them (see src/app/skills.js).
+            let skills = ev
+                .get("skills")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let _ = channel.send(json!({
+                "type": "start",
+                "sessionId": result.session_id,
+                "skills": skills,
+            }));
         }
         // A predicted next message for the user (`--prompt-suggestions`). The CLI
         // only offers one once a conversation has some history, and only when it
@@ -2209,6 +2264,64 @@ fn main() {}
             .position(|a| a == "--input-format")
             .expect("--input-format present");
         assert_eq!(args[i + 1], "stream-json");
+    }
+
+    #[test]
+    fn a_slash_command_stays_at_the_head_of_the_prompt() {
+        // Background context normally leads. It must not, here: the CLI reads
+        // `/skill-name` only as the very first thing in the prompt, so a task
+        // note in front of it would silently turn the skill into prose.
+        let p = build_prompt(
+            "/code-review the login screen",
+            &["C:/shot.png".into()],
+            None,
+            None,
+            Some("OPEN TASKS: one, two"),
+        );
+        assert!(p.starts_with("/code-review the login screen"), "{p}");
+        assert!(p.contains("OPEN TASKS: one, two"), "context is still there: {p}");
+        assert!(p.contains("C:/shot.png"), "attachments are still there: {p}");
+    }
+
+    #[test]
+    fn only_a_real_slash_command_reorders_the_prompt() {
+        assert!(starts_with_slash_command("/run"));
+        assert!(starts_with_slash_command("/code-review the diff"));
+        assert!(starts_with_slash_command("/git:sync\nand then"));
+        // A path, a lone slash, a fraction — none of these invoke anything.
+        assert!(!starts_with_slash_command("/usr/bin/env"));
+        assert!(!starts_with_slash_command("/"));
+        assert!(!starts_with_slash_command("/ leading space"));
+        assert!(!starts_with_slash_command("/-dash-first"));
+        assert!(!starts_with_slash_command("look at /etc/hosts"));
+        // …so an ordinary message still gets its context first.
+        let p = build_prompt("/usr/bin matters", &[], None, None, Some("NOTE"));
+        assert!(p.starts_with("NOTE"), "{p}");
+    }
+
+    #[test]
+    fn extra_dirs_become_add_dir_flags_in_order() {
+        let mut args = base_args("claude-opus-5", "sys");
+        apply_extra_dirs(
+            &mut args,
+            &["/shared/assets".into(), "  ".into(), "/notes".into()],
+        );
+        let flags: Vec<&String> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i > 0 && args[i - 1] == "--add-dir")
+            .map(|(_, a)| a)
+            .collect();
+        assert_eq!(flags, ["/shared/assets", "/notes"], "blank entries dropped");
+        assert_eq!(args.iter().filter(|a| *a == "--add-dir").count(), 2);
+    }
+
+    #[test]
+    fn no_extra_dirs_adds_nothing() {
+        let mut args = base_args("claude-opus-5", "sys");
+        let before = args.len();
+        apply_extra_dirs(&mut args, &[]);
+        assert_eq!(args.len(), before);
     }
 
     #[test]

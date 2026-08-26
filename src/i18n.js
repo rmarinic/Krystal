@@ -138,9 +138,43 @@
       'fork.failBody': 'Branching failed. Please try again.',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)',
+      'composer.placeholder': 'Message Claude…  (Enter to send · / for a skill · $ for a shell command · # to reference a chat · paste or drop to attach)',
       'mention.none': 'No other chats to reference yet',
       'mention.removeRef': 'Remove reference',
+
+      /* ---- skills: the `/` picker ---- */
+      'skill.none': 'No skill by that name',
+      /* Blurbs for the skills built into Claude Code. Those live inside the CLI
+         binary, so there is no file to read a description from — these are ours.
+         A skill we don’t recognise simply shows its name. */
+      'skillBlurb.code-review': 'Review the current changes for bugs and cleanups',
+      'skillBlurb.security-review': 'Check the pending changes for security problems',
+      'skillBlurb.ultrareview': 'A deeper, cloud-run review of the whole branch',
+      'skillBlurb.simplify': 'Tidy up the changed code — quality, not bug-hunting',
+      'skillBlurb.init': 'Write a CLAUDE.md describing this project',
+      'skillBlurb.run': 'Start the app and check a change really works',
+      'skillBlurb.dataviz': 'Design charts and dashboards that read as one system',
+      'skillBlurb.claude-api': 'Look up Claude API models, pricing and parameters',
+      'skillBlurb.loop': 'Repeat a prompt on a schedule',
+      'skillBlurb.schedule': 'Set up a recurring or one-off scheduled run',
+      'skillBlurb.update-config': 'Change Claude Code settings, permissions or hooks',
+      'skillBlurb.keybindings-help': 'Customize keyboard shortcuts',
+      'skillBlurb.fewer-permission-prompts': 'Allow the commands you keep approving',
+
+      /* ---- folders Claude can use (--add-dir) ---- */
+      'dirs.openTitle': 'Folders Claude can use in this project',
+      'dirs.title': '📁 Folders Claude can use',
+      'dirs.close': 'Close',
+      'dirs.sub': 'Claude works in the project folder. Add another one and it can read and write there too — shared assets, notes, a second project.',
+      'dirs.note': 'A change here starts the next message in a fresh session.',
+      'dirs.add': '+ Add a folder',
+      'dirs.badge': '+{n} more',
+      'dirs.projectFolder': 'project folder',
+      'dirs.remove': 'Remove this folder',
+      'dirs.dialogTitle': 'Choose a folder Claude may also use',
+      'dirs.errMissing': 'That folder no longer exists.',
+      'dirs.errInside': 'That folder is already part of the project.',
+      'dirs.errFailed': 'Couldn’t add the folder ({err}).',
       'attach.remove': 'Remove attachment',
       'attach.dropHint': 'Drop to attach',
       'attach.failed': 'Couldn’t attach',
@@ -716,9 +750,40 @@
       'fork.failBody': 'Grananje nije uspjelo. Pokušaj ponovno.',
 
       /* ---- composer / empty ---- */
-      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje · $ za shell naredbu · # za referencu razgovora · zalijepi ili ispusti za privitak)',
+      'composer.placeholder': 'Poruka Claudeu…  (Enter za slanje · / za vještinu · $ za shell naredbu · # za referencu razgovora · zalijepi ili ispusti za privitak)',
       'mention.none': 'Još nema drugih razgovora za referenciranje',
       'mention.removeRef': 'Ukloni referencu',
+
+      /* ---- vještine: izbornik na `/` ---- */
+      'skill.none': 'Nema vještine s tim nazivom',
+      'skillBlurb.code-review': 'Pregled trenutnih promjena — greške i pojednostavljenja',
+      'skillBlurb.security-review': 'Provjera sigurnosnih propusta u promjenama koje čekaju',
+      'skillBlurb.ultrareview': 'Dublji pregled cijele grane, pokrenut u oblaku',
+      'skillBlurb.simplify': 'Čišćenje izmijenjenog koda — kvaliteta, ne lov na greške',
+      'skillBlurb.init': 'Pisanje CLAUDE.md datoteke s opisom ovog projekta',
+      'skillBlurb.run': 'Pokretanje aplikacije i provjera radi li promjena',
+      'skillBlurb.dataviz': 'Osmišljavanje grafikona i nadzornih ploča kao cjeline',
+      'skillBlurb.claude-api': 'Pregled modela, cijena i parametara Claude API-ja',
+      'skillBlurb.loop': 'Ponavljanje upita u zadanim razmacima',
+      'skillBlurb.schedule': 'Zakazano pokretanje — jednokratno ili ponavljajuće',
+      'skillBlurb.update-config': 'Promjena postavki, dozvola ili hookova Claude Codea',
+      'skillBlurb.keybindings-help': 'Prilagodba prečaca na tipkovnici',
+      'skillBlurb.fewer-permission-prompts': 'Dopuštanje naredbi koje se stalno odobravaju',
+
+      /* ---- mape koje Claude smije koristiti (--add-dir) ---- */
+      'dirs.openTitle': 'Mape koje Claude smije koristiti u ovom projektu',
+      'dirs.title': '📁 Mape koje Claude smije koristiti',
+      'dirs.close': 'Zatvori',
+      'dirs.sub': 'Claude radi u mapi projekta. Dodaj još jednu i moći će i u njoj čitati i pisati — zajednički materijali, bilješke, drugi projekt.',
+      'dirs.note': 'Promjena ovdje pokreće sljedeću poruku u novoj sesiji.',
+      'dirs.add': '+ Dodaj mapu',
+      'dirs.badge': '+{n} više',
+      'dirs.projectFolder': 'mapa projekta',
+      'dirs.remove': 'Ukloni ovu mapu',
+      'dirs.dialogTitle': 'Odaberi mapu koju Claude također smije koristiti',
+      'dirs.errMissing': 'Ta mapa više ne postoji.',
+      'dirs.errInside': 'Ta je mapa već dio projekta.',
+      'dirs.errFailed': 'Nije moguće dodati mapu ({err}).',
       'attach.remove': 'Ukloni privitak',
       'attach.dropHint': 'Ispusti za privitak',
       'attach.failed': 'Nije moguće priložiti',

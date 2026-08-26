@@ -110,6 +110,17 @@ const SCHEMA: &str = r#"
           command    TEXT,
           updated_at TEXT
         );
+
+        -- Extra folders a project's chats may reach into, beyond the project
+        -- folder itself (`claude --add-dir`). One row per folder per project.
+        CREATE TABLE IF NOT EXISTS project_dirs (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          project    TEXT NOT NULL,
+          path       TEXT NOT NULL,
+          created_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_pdir_project ON project_dirs(project);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pdir_unique ON project_dirs(project, path);
         "#;
 
 /// Open (creating if needed) the database, run migrations and the schema.
@@ -892,6 +903,20 @@ pub fn move_project(conn: &Connection, id: &str, new_path: &str) -> Option<Value
             params![new_path, old],
         )?;
         conn.execute("UPDATE pins SET project = ?1 WHERE project = ?2", params![new_path, old])?;
+        // Extra folders get the same treatment: re-keyed to the new project, and
+        // any that sat *inside* the old folder follow it to the new one.
+        conn.execute(
+            "UPDATE project_dirs SET path = ?1 || substr(path, length(?2) + 1) WHERE project = ?2 AND path LIKE ?2 || '%'",
+            params![new_path, old],
+        )?;
+        conn.execute(
+            "DELETE FROM project_dirs WHERE project = ?1",
+            [new_path],
+        )?;
+        conn.execute(
+            "UPDATE project_dirs SET project = ?1 WHERE project = ?2",
+            params![new_path, old],
+        )?;
         // run_config is keyed by path, so clear any stale row at the destination
         // before the old one takes its place.
         conn.execute("DELETE FROM run_config WHERE project = ?1", [new_path])?;
@@ -1079,6 +1104,47 @@ pub fn remove_pin(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM pins WHERE id = ?1", [id]);
 }
 
+/* ------------------------------ extra folders ----------------------------- */
+/// Folders outside the project that its chats may still read and write — a
+/// shared assets folder, a second repo, the notes you keep somewhere else. Each
+/// one reaches the CLI as `--add-dir`, so this is a project-level permission
+/// list rather than a bookmark list. Oldest-first, like pins.
+
+pub fn list_project_dirs(conn: &Connection, project: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT id, path FROM project_dirs WHERE project = ?1 ORDER BY id ASC")
+    {
+        if let Ok(rows) = stmt.query_map([project], |r| {
+            Ok(json!({ "id": r.get::<_, i64>(0)?, "path": r.get::<_, String>(1)? }))
+        }) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// Adding a folder twice is a no-op rather than a duplicate row.
+pub fn add_project_dir(conn: &Connection, project: &str, path: &str) -> Vec<Value> {
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO project_dirs (project, path, created_at) VALUES (?1, ?2, ?3)",
+        params![project, path, now()],
+    );
+    list_project_dirs(conn, project)
+}
+
+pub fn remove_project_dir(conn: &Connection, id: i64) {
+    let _ = conn.execute("DELETE FROM project_dirs WHERE id = ?1", [id]);
+}
+
+/// Just the paths, for building `--add-dir` flags on a chat turn.
+pub fn project_dir_paths(conn: &Connection, project: &str) -> Vec<String> {
+    list_project_dirs(conn, project)
+        .into_iter()
+        .filter_map(|d| d["path"].as_str().map(str::to_string))
+        .collect()
+}
+
 pub fn set_run_command(conn: &Connection, project: &str, command: &str) {
     let t = now();
     let _ = conn.execute(
@@ -1099,6 +1165,7 @@ pub fn delete_project(conn: &Connection, id: &str) {
         let _ = conn.execute("DELETE FROM threads WHERE cwd = ?1", [&path]);
         let _ = conn.execute("DELETE FROM tasks WHERE project = ?1", [&path]);
         let _ = conn.execute("DELETE FROM run_config WHERE project = ?1", [&path]);
+        let _ = conn.execute("DELETE FROM project_dirs WHERE project = ?1", [&path]);
     }
     let _ = conn.execute("DELETE FROM projects WHERE id = ?1", [id]);
 }
@@ -1139,6 +1206,37 @@ mod tests {
         remove_pin(&conn, id);
         assert!(list_pins(&conn, "/proj").is_empty());
         assert_eq!(list_pins(&conn, "/other").len(), 1, "another project's pin is untouched");
+    }
+
+    #[test]
+    fn adding_the_same_extra_folder_twice_is_a_no_op() {
+        let conn = db();
+        assert_eq!(add_project_dir(&conn, "/proj", "/shared/assets").len(), 1);
+        assert_eq!(add_project_dir(&conn, "/proj", "/shared/assets").len(), 1);
+        assert_eq!(add_project_dir(&conn, "/proj", "/shared/docs").len(), 2);
+        assert_eq!(project_dir_paths(&conn, "/proj"), ["/shared/assets", "/shared/docs"]);
+
+        let id = list_project_dirs(&conn, "/proj")[0]["id"].as_i64().unwrap();
+        remove_project_dir(&conn, id);
+        assert_eq!(project_dir_paths(&conn, "/proj"), ["/shared/docs"]);
+        assert!(project_dir_paths(&conn, "/other").is_empty());
+    }
+
+    #[test]
+    fn moving_a_project_repoints_extra_folders_that_lived_inside_it() {
+        let conn = db();
+        let p = create_project(&conn, "/old/place").unwrap();
+        let id = id_of(&p);
+        add_project_dir(&conn, "/old/place", "/old/place/vendor");
+        add_project_dir(&conn, "/old/place", "/elsewhere/shared");
+
+        move_project(&conn, &id, "/new/place").unwrap();
+
+        let dirs = project_dir_paths(&conn, "/new/place");
+        assert_eq!(dirs.len(), 2, "both folders follow the project");
+        assert!(dirs.contains(&"/new/place/vendor".to_string()), "{dirs:?}");
+        assert!(dirs.contains(&"/elsewhere/shared".to_string()), "outside folders stay put: {dirs:?}");
+        assert!(project_dir_paths(&conn, "/old/place").is_empty());
     }
 
     #[test]
