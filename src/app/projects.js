@@ -13,6 +13,7 @@ async function showProjectPicker() {
   if (typeof setAttachmentThread === 'function') setAttachmentThread(null);
   if (typeof setRefsThread === 'function') setRefsThread(null);
   showTasksBtn(false);
+  showPhoneBtn(false);
   setRunBtn(false);
   els.projectScreen.classList.remove('leaving');
   els.projectScreen.hidden = false;

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- viewport-fit=cover + the safe-area insets in app.css keep the composer
+       clear of the iPhone home indicator. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0f0b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Krystal</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238fe0aa'/><stop offset='1' stop-color='%236cc78e'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='%230a0f0b' stroke='url(%23g)' stroke-width='2'/><text x='16' y='22' font-family='monospace' font-size='17' font-weight='700' fill='url(%23g)' text-anchor='middle'>K</text></svg>">
+  <link rel="stylesheet" href="app.css">
+  <script defer src="vendor/marked.js"></script>
+  <script defer src="vendor/purify.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+
+  <!-- ============================ PIN gate ============================ -->
+  <section class="screen gate" id="gate" hidden>
+    <div class="gate-card">
+      <div class="brand"><span class="brand-k">K</span>RYSTAL</div>
+      <p class="gate-sub" id="gate-sub">Enter the code shown in Krystal on your computer.</p>
+      <input class="pin-input" id="pin-input" type="text" inputmode="numeric" pattern="[0-9]*"
+             maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="Access code">
+      <button class="btn primary" id="pin-go">Connect</button>
+      <p class="gate-err" id="gate-err" hidden></p>
+    </div>
+  </section>
+
+  <!-- ========================== Project list ========================== -->
+  <section class="screen list" id="projects" hidden>
+    <header class="bar">
+      <div class="bar-title">Projects</div>
+    </header>
+    <div class="scroll" id="project-list"></div>
+  </section>
+
+  <!-- =========================== Chat list ============================ -->
+  <section class="screen list" id="threads" hidden>
+    <header class="bar">
+      <button class="bar-back" id="threads-back" aria-label="Back">‹</button>
+      <div class="bar-title" id="threads-title">Chats</div>
+      <button class="bar-action" id="new-chat">New</button>
+    </header>
+    <div class="scroll" id="thread-list"></div>
+  </section>
+
+  <!-- ============================== Chat ============================== -->
+  <section class="screen chat" id="chat" hidden>
+    <header class="bar">
+      <button class="bar-back" id="chat-back" aria-label="Back">‹</button>
+      <div class="bar-title" id="chat-title">Chat</div>
+      <button class="bar-action stop" id="stop-btn" hidden>Stop</button>
+    </header>
+    <div class="scroll feed" id="feed"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Message Claude…" enterkeyhint="send"></textarea>
+      <button class="send" id="send" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+</body>
+</html>

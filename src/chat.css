@@ -3109,3 +3109,97 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
   .chat-cwd, .dir-x { transition: none; }
   .dir-row.added { animation: none; }
 }
+
+/* ============================================================
+ * Phone access — the sidebar button and the Settings → Phone
+ * pairing card (see app/phone.js, src-tauri/src/server.rs).
+ * ============================================================ */
+
+/* Sits under Tasks, styled to match it. A small dot lights up while the local
+   server is actually serving, so the sidebar tells you without being opened. */
+.phone-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 9px 12px; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.phone-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.phone-btn.live { color: var(--fg); border-color: var(--accent-2); }
+.phone-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--border-2);
+  transition: background .2s ease;
+}
+.phone-btn.live .phone-dot { background: var(--accent-2); animation: phone-live 1.8s ease-in-out infinite; }
+@keyframes phone-live {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); }
+  60%      { box-shadow: 0 0 0 4px rgba(108,199,142,0); }
+}
+/* The foot's divider should appear for this button too, not just Insight/Tasks. */
+.sidebar-foot:has(.phone-btn:not([hidden])) {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Settings → Phone ---- */
+.phone-row .phone-state { margin-top: 12px; }
+.phone-idle { font-size: 12px; color: var(--fg-muted); line-height: 1.55; }
+.phone-err { font-size: 12px; color: var(--warn); }
+
+.phone-card {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px; border: 1px solid var(--border-2); border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+.phone-step { display: flex; align-items: flex-start; gap: 11px; }
+.phone-step-n {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  color: #0a0f0b; background: var(--accent-2);
+}
+.phone-step-body { flex: 1 1 auto; min-width: 0; }
+.phone-step-label { font-size: 11.5px; color: var(--fg-muted); margin-bottom: 5px; }
+
+.phone-url-row { display: flex; align-items: center; gap: 8px; }
+.phone-url {
+  flex: 1 1 auto; min-width: 0;
+  font-family: var(--mono); font-size: 14px; color: var(--accent-3);
+  user-select: all; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.phone-copy {
+  flex: none; font-family: var(--mono); font-size: 10.5px;
+  color: var(--fg-muted); background: var(--bg-card); cursor: pointer;
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 4px 9px; transition: color .15s, border-color .15s;
+}
+.phone-copy:hover { color: var(--fg); border-color: var(--accent-2); }
+.phone-copy.copied { color: var(--accent-2); border-color: var(--accent-2); }
+
+.phone-pin { display: flex; gap: 6px; }
+.phone-digit {
+  width: 26px; padding: 5px 0; text-align: center;
+  font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--fg);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+}
+.phone-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
+
+.phone-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+.phone-toggle {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  color: #0a0f0b; background: var(--accent-2); cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  padding: 7px 14px; transition: background .15s, color .15s, border-color .15s;
+}
+.phone-toggle:hover { background: var(--accent-3); }
+.phone-toggle.on {
+  color: var(--fg-muted); background: var(--bg-elev); border-color: var(--border-2);
+}
+.phone-toggle.on:hover { color: var(--fg); border-color: var(--warn); }
+.phone-toggle:disabled { opacity: 0.6; cursor: progress; }
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-btn, .phone-dot, .phone-copy, .phone-toggle { transition: none; }
+  .phone-btn.live .phone-dot { animation: none; }
+}

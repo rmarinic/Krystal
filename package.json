@@ -7,7 +7,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "tauri": "tauri",
-    "test": "node tests/agents-store.test.js"
+    "test": "node tests/agents-store.test.js && node tests/phone-ui.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

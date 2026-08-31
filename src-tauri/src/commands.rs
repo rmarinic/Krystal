@@ -48,6 +48,8 @@ pub struct AppState {
     pub suggestions: std::sync::Mutex<bool>,
     /// Warm `claude` processes, one per chat (see `session.rs`).
     pub sessions: session::Pool,
+    /// Phone access — the LAN HTTP server (see `server.rs`). Off until started.
+    pub web: crate::server::WebServer,
 }
 
 impl AppState {

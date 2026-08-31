@@ -113,6 +113,9 @@
         <span data-i18n="tasks.label">Tasks</span>
         <span class="tasks-count" id="tasks-count" hidden></span>
       </button>
+      <!-- Phone access: serve this app on the local network so a phone on the
+           same Wi-Fi can carry on the conversation. See app/phone.js. -->
+      <button class="phone-btn" id="phone-btn" hidden title="Use Krystal from your phone on this Wi-Fi"></button>
     </div>
   </aside>
 
@@ -463,6 +466,7 @@
   <script defer src="app/usage.js"></script>
   <script defer src="app/orchestrator.js"></script>
   <script defer src="app/pins.js"></script>
+  <script defer src="app/phone.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

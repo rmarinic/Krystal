@@ -17,6 +17,7 @@ function showEmpty() {
   state.activity = [];               // leaving any chat clears the Activity panel state
   state.activityOrch = null;
   showTasksBtn(!!state.project);     // tasks belong to the project, not a chat
+  showPhoneBtn(!!state.project);
   els.title.textContent = tr('header.noConversation');
   els.cwd.textContent = '';
   els.feed.innerHTML = '';
@@ -77,6 +78,7 @@ async function openThread(id, focusMid) {
   }
   els.activityBtn.hidden = false;
   showTasksBtn(true);
+  showPhoneBtn(true);
   syncComposer();
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
   refreshGit();

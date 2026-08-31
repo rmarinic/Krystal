@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod discord;
 mod models;
+mod server;
 mod session;
 mod skills;
 
@@ -65,6 +66,7 @@ fn main() {
                 ui_lang: std::sync::Mutex::new("en".to_string()),
                 suggestions: std::sync::Mutex::new(true),
                 sessions: Default::default(),
+                web: Default::default(),
             });
             Ok(())
         })
@@ -147,6 +149,9 @@ fn main() {
             commands::set_discord_enabled,
             commands::discord_set_project,
             commands::discord_set_share_name,
+            server::web_start,
+            server::web_stop,
+            server::web_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Krystal")
@@ -156,6 +161,9 @@ fn main() {
             // sure the drop actually happens before the process goes away.
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
                 let state = app.state::<AppState>();
+                // Phone access is bound to a LAN port — it must not outlive the
+                // window either, or the port stays held until the process dies.
+                state.web.shutdown();
                 tauri::async_runtime::block_on(state.sessions.retire_all());
             }
         });

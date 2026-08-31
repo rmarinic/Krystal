@@ -1,0 +1,434 @@
+/* app.css — the phone UI for Krystal (served by src-tauri/src/server.rs).
+ *
+ * Its own stylesheet rather than a slice of the desktop's: the desktop layout is
+ * a three-column app with hover affordances, none of which survive a 390px
+ * touchscreen. The palette and the motion language are the same, though — short
+ * durations, gentle easing, one property at a time — so the phone reads as the
+ * same product. Every non-trivial animation has a reduced-motion fallback at the
+ * bottom of this file. */
+
+:root {
+  --bg:        #0a0f0b;
+  --bg-elev:   #0e140f;
+  --bg-card:   #121a15;
+  --bg-card-2: #16201a;
+  --border:    #1f2a23;
+  --border-2:  #2b3a30;
+  --fg:        #e6efe8;
+  --fg-muted:  #93a399;
+  --fg-dim:    #647069;
+  --accent-2:  #6cc78e;
+  --accent-3:  #8fe0aa;
+  --danger:    #e2685a;
+  --code-bg:   #070b08;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ease: cubic-bezier(.2, .9, .3, 1);
+  --bar-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* One screen at a time; each fills the viewport and owns its own scroller.
+   `dvh` keeps the composer glued to the top of the keyboard on iOS. */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.screen[hidden] { display: none; }
+
+/* Screens fade+lift in as you go deeper. One property pair, ~.2s — the same
+   restraint as the desktop's panel swaps. */
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.screen:not([hidden]) { animation: screen-in .22s var(--ease) both; }
+
+/* ------------------------------- top bar -------------------------------- */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: calc(var(--bar-h) + var(--safe-top));
+  padding: var(--safe-top) 6px 0;
+  background: rgba(10, 15, 11, .92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.bar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-back, .bar-action {
+  flex: 0 0 auto;
+  min-width: 56px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent-3);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.bar-back { font-size: 28px; line-height: 1; padding-bottom: 4px; }
+.bar-action.stop { color: var(--danger); }
+.bar-back:active, .bar-action:active { background: var(--bg-card); }
+
+/* ------------------------------ scrollers ------------------------------- */
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px calc(16px + var(--safe-bottom));
+}
+
+/* ------------------------------ PIN gate -------------------------------- */
+
+.gate { align-items: center; justify-content: center; padding: 24px; }
+.gate-card { width: 100%; max-width: 340px; text-align: center; }
+.brand {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: .28em;
+  margin-bottom: 10px;
+}
+.brand-k { color: var(--accent-3); }
+.gate-sub { color: var(--fg-muted); font-size: 14px; margin: 0 0 22px; }
+.pin-input {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 30px;
+  letter-spacing: .42em;
+  text-align: center;
+  text-indent: .42em;     /* re-centre against the trailing letter-space */
+  outline: none;
+  transition: border-color .18s var(--ease);
+}
+.pin-input:focus { border-color: var(--accent-2); }
+.gate-err { color: var(--danger); font-size: 14px; margin: 14px 0 0; }
+
+.btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .12s var(--ease), background .18s var(--ease);
+}
+.btn:active { transform: scale(.985); }
+.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #06210f; }
+.btn:disabled { opacity: .5; }
+
+/* ------------------------------ list rows ------------------------------- */
+
+.row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: transform .12s var(--ease), border-color .18s var(--ease);
+}
+.row:active { transform: scale(.99); border-color: var(--border-2); }
+.row-name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-meta {
+  margin-top: 3px;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty { color: var(--fg-dim); font-size: 14px; text-align: center; padding: 40px 20px; }
+
+/* ------------------------------- messages -------------------------------- */
+
+.feed { padding-bottom: 14px; }
+
+.msg { margin-bottom: 14px; }
+.msg.user {
+  margin-left: auto;
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg.assistant { max-width: 100%; }
+
+.msg-body { overflow-wrap: anywhere; }
+.msg-body > :first-child { margin-top: 0; }
+.msg-body > :last-child { margin-bottom: 0; }
+.msg-body p { margin: 0 0 .7em; }
+.msg-body h1, .msg-body h2, .msg-body h3 { font-size: 1.05em; margin: 1.1em 0 .4em; }
+.msg-body ul, .msg-body ol { margin: 0 0 .7em; padding-left: 1.3em; }
+.msg-body code {
+  font-family: var(--mono);
+  font-size: .88em;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+.msg-body pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 12px;
+  overflow-x: auto;
+}
+.msg-body pre code { background: none; padding: 0; font-size: 13px; }
+.msg-body a { color: var(--accent-3); }
+.msg-body blockquote {
+  margin: 0 0 .7em;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-2);
+  color: var(--fg-muted);
+}
+.msg-body table { border-collapse: collapse; display: block; overflow-x: auto; }
+.msg-body th, .msg-body td { border: 1px solid var(--border); padding: 5px 9px; font-size: 14px; }
+
+/* Tool actions collapse to one quiet line each — on a phone you want the answer,
+   not the transcript of every file read. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-2);
+}
+.chip.working .chip-dot { background: var(--accent-2); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.chip-name { color: var(--fg-muted); }
+.chip-target { color: var(--fg-dim); font-family: var(--mono); font-size: 12px; }
+
+.msg-error {
+  border: 1px solid rgba(226, 104, 90, .35);
+  background: rgba(226, 104, 90, .07);
+  color: #f0b1a8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+/* The caret that trails the streaming answer. */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent-2);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* --------------------------- question cards ------------------------------ */
+/* AskUserQuestion. Same idea as the desktop card: pick, then confirm — the
+   answer is sent as the next message, which is how the CLI gets it back. */
+
+.qa {
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border-2);
+  border-radius: 13px;
+  background: var(--bg-card);
+}
+.qa-title { font-size: 13px; color: var(--fg-muted); margin-bottom: 10px; }
+.qa-head { font-weight: 600; font-size: 14px; }
+.qa-text { font-size: 14px; margin-top: 2px; }
+.qa-hint { font-size: 12px; color: var(--fg-dim); margin: 4px 0 8px; }
+.qa-opt {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease);
+}
+.qa-opt .mark {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border: 1.5px solid var(--border-2);
+  border-radius: 50%;
+  transition: border-color .16s var(--ease), background .16s var(--ease);
+}
+.qa-q.multi .qa-opt .mark { border-radius: 5px; }
+.qa-opt.sel { border-color: var(--accent-2); background: rgba(108, 199, 142, .08); }
+.qa-opt.sel .mark { border-color: var(--accent-2); background: var(--accent-2); }
+.qa-opt-label { font-size: 14.5px; font-weight: 500; }
+.qa-opt-desc { display: block; font-size: 12.5px; color: var(--fg-dim); margin-top: 2px; }
+.qa-custom {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14.5px;
+  outline: none;
+}
+.qa-custom:focus { border-color: var(--accent-2); }
+.qa-send { margin-top: 10px; }
+.qa.answered { opacity: .55; }
+.qa.answered .qa-opt, .qa.answered .qa-custom, .qa.answered .qa-send { pointer-events: none; }
+
+/* ------------------------------- composer -------------------------------- */
+
+.composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px calc(8px + var(--safe-bottom));
+  background: rgba(10, 15, 11, .94);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+.composer textarea {
+  flex: 1 1 auto;
+  min-height: 44px;
+  max-height: 40vh;
+  padding: 11px 13px;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;      /* < 16px makes iOS Safari zoom the page on focus */
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  transition: border-color .18s var(--ease);
+}
+.composer textarea:focus { border-color: var(--accent-2); }
+.send {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: #06210f;
+  cursor: pointer;
+  transition: transform .12s var(--ease), opacity .18s var(--ease);
+}
+.send:active { transform: scale(.92); }
+.send:disabled { opacity: .35; }
+
+/* -------------------------------- toast ---------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + var(--safe-bottom));
+  transform: translateX(-50%);
+  max-width: 88vw;
+  padding: 10px 16px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--bg-card-2);
+  color: var(--fg);
+  font-size: 14px;
+  z-index: 20;
+  animation: toast-in .2s var(--ease) both;
+}
+.toast[hidden] { display: none; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* --------------------------- reduced motion ------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .caret { opacity: 1; }
+  .chip.working .chip-dot { opacity: 1; }
+}

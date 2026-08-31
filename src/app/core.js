@@ -10,7 +10,7 @@
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → mentions → skills → attachments → wizard →
- *   localization → settings → tasks → git → links → logo → boot
+ *   localization → settings → phone → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -25,6 +25,9 @@
  */
 
 const { invoke, Channel } = window.__TAURI__.core;
+// Backend-pushed events (as opposed to a reply to something we invoked). Used by
+// phone.js to mirror a turn that was started on another device.
+const { listen } = window.__TAURI__.event;
 const dialog = window.__TAURI__.dialog;
 
 const $ = (sel) => document.querySelector(sel);
@@ -83,6 +86,7 @@ const els = {
   agentStop: $('#agent-stop'),
   agentDone: $('#agent-done'),
   agentClose: $('#agent-close'),
+  phoneBtn: $('#phone-btn'),
   tasksBtn: $('#tasks-btn'),
   tasksCount: $('#tasks-count'),
   tasksOverlay: $('#tasks-overlay'),
@@ -244,6 +248,9 @@ const api = {
   appVersion() { return invoke('app_version'); },
   readImage(path) { return invoke('read_image', { path }); },
   saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
+  webStart(port) { return invoke('web_start', { port }); },
+  webStop() { return invoke('web_stop'); },
+  webStatus() { return invoke('web_status'); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

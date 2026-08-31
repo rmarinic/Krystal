@@ -4,6 +4,16 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.20.0
+- **New: use Krystal from your phone.** A **📱 Phone** button now sits at the bottom of the chat list (and in Settings → Phone). Start it and you get an address plus a six-digit code; type the address into your phone's browser, enter the code, and your projects and conversations are right there — pick a chat, read the replies as they arrive, answer Claude's questions by tapping, and write new messages. Everything still runs on your computer: the phone is just a second window onto the same app, on the same Wi-Fi. Nothing goes to the internet.
+- It's off until you switch it on, it shuts down when you close Krystal, and the code is new every time you start it — so nobody wanders in. The first time you start it Windows will ask whether to let Krystal through the firewall; say yes for private networks.
+- **The two stay in step.** A message you send from the phone appears on the computer as it's being written — the same live reply, the same tool chips, the same Stop button — and a chat you start on the phone shows up in the list straight away. Come back to the phone and it catches up on whatever happened while you were away. A chat will only take one message at a time, so the two devices can't talk over each other.
+- The phone page follows your phone's own language (English or Croatian) and is built for a touchscreen rather than being the desktop layout squeezed down.
+
+## v0.19.0
+- Run a skill straight from the message box: type `/` and pick one.
+- A project can now reach folders outside its own — click the project path under the chat title to grant them.
+
 ## v0.18.0
 - **New: pin files to the side of the chat.** Hover the right edge of a conversation and a slim rail slides open; the **+** lets you pin any file you want to keep an eye on — a task list, a brief, your notes. Click one and it opens in a light panel right over the chat, so you can check what a file actually says mid-conversation without leaving the chat or asking Claude to read it back to you. The file is read fresh every time you open it, so you always see the current version — handy for a task list Claude has just ticked something off.
 - The rail is deliberately unobtrusive: it rests almost invisible and takes up no room, so it never competes with the conversation, and only comes forward when you point at it. Pinned files belong to the project, so they're waiting for you in every chat in that folder — and if you later point the project at a different folder, the pins come along.

@@ -28,12 +28,27 @@ serde_json = "1"
 # updater plugin, so this adds little. Only used for the models catalogue.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync"] }
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync", "net"] }
+# Phone access (see src/server.rs): a small LAN HTTP/SSE server that serves the
+# mobile UI and proxies it onto the same commands the desktop window uses. hyper,
+# hyper-util, http-body-util and bytes are ALREADY in the tree (reqwest pulls the
+# client half in) — naming them here only turns on the server-side features, so
+# this costs no new crates.
+hyper = { version = "1", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["clock"] }
 # Discord Rich Presence — pure-Rust IPC client (no native deps). Talks to the
 # local Discord desktop client to show the active project on the user's profile.
 discord-rich-presence = "0.2"
+
+[dev-dependencies]
+# `tauri/test` gives us a mock app to hang AppState off, so the LAN server in
+# src/server.rs can be started for real in a test and driven over a real socket.
+# A dev-dependency, so the shipped binary never carries it.
+tauri = { version = "2", features = ["test"] }
 
 # Smaller, faster release binary for the one-click app.
 [profile.release]
