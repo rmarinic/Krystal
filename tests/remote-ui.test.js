@@ -147,6 +147,27 @@ check('the remote-access strings landed in both', () => {
   }
 });
 
+/* ----------------------------- modal stacking ---------------------------- */
+/* The Remote and Settings modals are opened from the project picker, which is a
+ * full-screen entry layer rather than an overlay. If a modal's z-index does not
+ * clear the picker's it opens behind it: nothing appears, the click seems to do
+ * nothing, and the modal only shows up once you enter a project. Cheap to get
+ * wrong again, so it is pinned here. */
+
+console.log('\nmodal stacking');
+
+check('a modal opened from the project picker sits above it', () => {
+  const css = read('src', 'chat.css');
+  const zOf = (re) => {
+    const m = css.match(re);
+    if (!m) throw new Error(`could not find ${re}`);
+    return Number(m[1]);
+  };
+  const picker = zOf(/\.project-screen\s*\{[^}]*z-index:\s*(\d+)/);
+  const lifted = zOf(/body:has\(\.project-screen:not\(\[hidden\]\)\)\s*\.modal-overlay\s*\{\s*z-index:\s*(\d+)/);
+  eq(lifted > picker, true, `modal z-index ${lifted} must beat the picker's ${picker}`);
+});
+
 /* ------------------------- local / remote wiring ------------------------- */
 /* The frontend can send any command it doesn't mark local-only; the host will
  * only run the ones its dispatcher knows. A command added to `api` without an

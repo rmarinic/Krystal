@@ -4,6 +4,9 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.21.1
+- Fixed: pressing **Remote** on the project screen appeared to do nothing. The panel was opening, but *underneath* the project screen — so it only became visible after you'd picked a project and the screen got out of the way. Settings opened from that screen had the same problem. Both now open on top, where you can see them.
+
 ## v0.21.0
 - **New: work on another computer's Krystal.** Remote access is no longer just for phones. Switch it on over there (Settings → Remote), then press **Remote** on this computer's project screen and type in the address and six-digit code it shows — and this window is working on that computer's projects: its chats, its folders, its files, with the replies arriving here as they're written. A bar across the top reminds you whose machine you're on, and Disconnect drops you back to your own. Addresses you've used are remembered, so the next time is a click.
 - A few things stay on the computer in front of you, because they need to browse your own files: creating a project, changing a project's folder, adding a folder, pinning a file and dropping a file into the message box. Krystal tells you so instead of quietly failing. Pasting an image still works — that travels as data.

@@ -1780,6 +1780,15 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
 .modal-overlay[hidden] { display: none; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* The project picker is an entry SCREEN, not an overlay, so it sits high enough
+   (z-index 100) to cover the whole app behind it. A modal opened deliberately on
+   top of it — Settings, or Remote — has to clear that, and a modal's usual
+   z-index 50 does not: it opens *underneath* the picker, where it is invisible
+   but still there, only appearing once the picker is dismissed. Lift modals only
+   while the picker is actually on screen, so stacking inside the app is
+   untouched. */
+body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
+
 .init-modal {
   width: min(760px, 100%); max-height: min(86vh, 900px);
   display: flex; flex-direction: column;
