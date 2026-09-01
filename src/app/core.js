@@ -10,7 +10,7 @@
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → mentions → skills → attachments → wizard →
- *   localization → settings → phone → tasks → git → links → logo → boot
+ *   localization → settings → remote → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -24,11 +24,124 @@
  * The UI, rendering and behaviour are otherwise identical to the web version.
  */
 
-const { invoke, Channel } = window.__TAURI__.core;
+const { invoke: localInvoke, Channel } = window.__TAURI__.core;
 // Backend-pushed events (as opposed to a reply to something we invoked). Used by
-// phone.js to mirror a turn that was started on another device.
+// remote.js to mirror a turn that was started on another device.
 const { listen } = window.__TAURI__.event;
 const dialog = window.__TAURI__.dialog;
+
+/* --------------------------- local or remote ----------------------------- *
+ * Every backend call in the app goes through `invoke`, which normally means
+ * Tauri IPC to the backend inside this window. Connect to another Krystal
+ * (Remote, on the project screen) and the same calls travel over HTTP to *that*
+ * machine's backend instead — so the entire UI works against it with no second
+ * implementation. `remote.js` owns connecting; this owns the transport.
+ *
+ * The one thing the two transports don't share is Channels: a streaming command
+ * reports through a `Channel` locally and through Server-Sent Events remotely.
+ * `remoteInvoke` spots the Channel in the arguments and bridges it. */
+
+const remote = {
+  active: false,   // are we driving another machine?
+  base: null,      // http://host:port
+  token: null,     // bearer token traded for the pairing code
+  name: null,      // what that machine calls itself, for the banner
+};
+
+/* Commands that always run HERE, even while connected to another Krystal.
+ * They act on the computer you are sitting at — this window's links, this
+ * copy's Discord presence, this install of Claude Code, this machine's own
+ * remote-access server — so proxying them would fire them on the wrong box.
+ * The host enforces its own matching allowlist (see `dispatch` in server.rs);
+ * this list is what stops the call from ever leaving in the first place. */
+const LOCAL_ONLY_COMMANDS = new Set([
+  'open_external', 'open_webview', 'exe_path', 'app_version',
+  'install_claude', 'update_claude', 'update_claude_npm', 'open_login',
+  'set_discord_enabled', 'discord_set_project', 'discord_set_share_name',
+  'remote_start', 'remote_stop', 'remote_status',
+]);
+
+function invoke(cmd, args) {
+  if (!remote.active || LOCAL_ONLY_COMMANDS.has(cmd)) return localInvoke(cmd, args);
+  return remoteInvoke(cmd, args);
+}
+
+/* Same shape as `localInvoke`: resolves with the command's value, rejects with
+ * an Error carrying the backend's message. */
+async function remoteInvoke(cmd, args) {
+  const params = args || {};
+  // A streaming command is recognised by the Channel it was handed, not by name,
+  // so a new one needs nothing here.
+  for (const key of Object.keys(params)) {
+    if (params[key] instanceof Channel) return remoteStream(cmd, params, key);
+  }
+  const body = await remoteFetch('/api/invoke', { cmd, args: params });
+  return body.value;
+}
+
+/* Run a streaming command on the far machine and feed its events back into the
+ * Channel the caller passed, so `chat`/`run_app` behave exactly as they do
+ * locally. Resolves when the stream closes. */
+async function remoteStream(cmd, params, channelKey) {
+  const channel = params[channelKey];
+  const args = { ...params };
+  delete args[channelKey];               // a Channel can't cross the wire
+
+  const res = await fetch(remote.base + '/api/stream', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + remote.token },
+    body: JSON.stringify({ cmd, args }),
+  });
+  if (!res.ok || !res.body) {
+    let msg = 'remote ' + cmd + ' failed';
+    try { msg = (await res.json()).error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    let chunk;
+    try { chunk = await reader.read(); } catch (_) { break; }   // connection dropped
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      if (!frame.startsWith('data: ')) continue;
+      // `end` is the transport's own full-stop, not one of the command's events.
+      let msg;
+      try { msg = JSON.parse(frame.slice(6)); } catch (_) { continue; }
+      if (msg && msg.type === 'end') continue;
+      if (channel && typeof channel.onmessage === 'function') channel.onmessage(msg);
+    }
+  }
+}
+
+/* One request to the connected machine. Throws on anything but a clean answer,
+ * and drops the connection if the token has stopped being accepted (the host
+ * restarted, or remote access was switched off over there). */
+async function remoteFetch(path, payload) {
+  let res;
+  try {
+    res = await fetch(remote.base + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + remote.token },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) {
+    throw new Error(tr('remote.errUnreachable'));
+  }
+  if (res.status === 401) {
+    if (typeof onRemoteLost === 'function') onRemoteLost();
+    throw new Error(tr('remote.errUnauthorized'));
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || tr('remote.errFailed', { cmd: payload.cmd || path }));
+  return body;
+}
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -86,7 +199,14 @@ const els = {
   agentStop: $('#agent-stop'),
   agentDone: $('#agent-done'),
   agentClose: $('#agent-close'),
-  phoneBtn: $('#phone-btn'),
+  remoteBtn: $('#remote-btn'),
+  remoteConnectBtn: $('#remote-connect-btn'),
+  remoteOverlay: $('#remote-overlay'),
+  remoteBody: $('#remote-body'),
+  remoteClose: $('#remote-close'),
+  remoteBar: $('#remote-bar'),
+  remoteBarText: $('#remote-bar-text'),
+  remoteDisconnect: $('#remote-disconnect'),
   tasksBtn: $('#tasks-btn'),
   tasksCount: $('#tasks-count'),
   tasksOverlay: $('#tasks-overlay'),
@@ -171,6 +291,10 @@ const CTX_WARN_FRAC = 0.60;   // amber
 const CTX_HIGH_FRAC = 0.85;   // red
 const DEFAULT_WINDOW = 1000000;
 
+/* The port remote access listens on (DEFAULT_PORT in src-tauri/src/server.rs).
+ * Only used to fill in an address typed without one. */
+const REMOTE_DEFAULT_PORT = 7420;
+
 /* ------------------------------ utilities -------------------------------- */
 /* Each method maps to a #[tauri::command] in the Rust backend. The returned
  * shapes match the old HTTP JSON exactly, so the rest of the app is unchanged. */
@@ -230,7 +354,8 @@ const api = {
   setDiscordEnabled(enabled) { return invoke('set_discord_enabled', { enabled }); },
   discordSetProject(name) { return invoke('discord_set_project', { name }); },
   discordSetShareName(enabled) { return invoke('discord_set_share_name', { enabled }); },
-  stopChat(threadId) { return invoke('stop_chat', { threadId }); },
+  // `force` kills the turn's process instead of politely asking it to stop.
+  stopChat(threadId, force) { return invoke('stop_chat', { threadId, force: !!force }); },
   activeRuns() { return invoke('active_runs'); },
   stopAllChats() { return invoke('stop_all_chats'); },
   gitStatus(cwd) { return invoke('git_status', { cwd }); },
@@ -248,9 +373,9 @@ const api = {
   appVersion() { return invoke('app_version'); },
   readImage(path) { return invoke('read_image', { path }); },
   saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
-  webStart(port) { return invoke('web_start', { port }); },
-  webStop() { return invoke('web_stop'); },
-  webStatus() { return invoke('web_status'); },
+  remoteStart(port) { return invoke('remote_start', { port }); },
+  remoteStop() { return invoke('remote_stop'); },
+  remoteStatus() { return invoke('remote_status'); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

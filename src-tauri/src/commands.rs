@@ -48,8 +48,8 @@ pub struct AppState {
     pub suggestions: std::sync::Mutex<bool>,
     /// Warm `claude` processes, one per chat (see `session.rs`).
     pub sessions: session::Pool,
-    /// Phone access — the LAN HTTP server (see `server.rs`). Off until started.
-    pub web: crate::server::WebServer,
+    /// Remote access — the LAN HTTP server (see `server.rs`). Off until started.
+    pub remote: crate::server::RemoteServer,
 }
 
 impl AppState {
@@ -1040,6 +1040,30 @@ pub async fn chat(
         }
     };
 
+    // Save what the user typed BEFORE anything can go wrong with the turn — a
+    // closed app, a crashed session or a stop must never swallow their message.
+    // The row is marked in-flight until the turn lands; the frontend is told its
+    // id so re-opening the chat mid-turn doesn't paint the message twice.
+    let user_msg_id = {
+        let conn = state.db.lock().unwrap();
+        db::begin_turn(&conn, &thread_id, &text, &files)
+    };
+    let _ = on_event.send(json!({ "type": "saved", "userId": user_msg_id }));
+
+    // The answer is written down as it arrives (see `PARTIAL_SAVE_MS`), so an
+    // interrupted reply is still there to come back to instead of vanishing.
+    let mut assistant_msg_id: Option<i64> = None;
+    let mut on_partial = |text: &str, segments: &[Value]| {
+        let conn = state.db.lock().unwrap();
+        assistant_msg_id = Some(db::save_partial(
+            &conn,
+            &thread_id,
+            assistant_msg_id,
+            text,
+            segments,
+        ));
+    };
+
     let session = match state
         .sessions
         .acquire(&thread_id, &state.claude_bin(), &args, &meta.cwd, meta.orch)
@@ -1047,33 +1071,49 @@ pub async fn chat(
     {
         Ok(s) => s,
         Err(e) => {
+            {
+                let conn = state.db.lock().unwrap();
+                db::abort_turn(&conn, user_msg_id, None);
+            }
             sync_tasks();
             return Err(e);
         }
     };
 
-    let res = match claude::run_turn(
+    let turn = claude::run_turn(
         &session,
         &prompt,
         &on_event,
         &state.running,
         &thread_id,
         meta.orch,
+        &mut on_partial,
     )
-    .await
-    {
+    .await;
+    drop(on_partial);                    // releases the borrow on `assistant_msg_id`
+
+    let res = match turn {
         Ok(r) => r,
         Err(e) => {
             // A session that failed mid-turn is not trustworthy for the next one.
             state.sessions.retire(&thread_id).await;
+            {
+                let conn = state.db.lock().unwrap();
+                db::abort_turn(&conn, user_msg_id, assistant_msg_id);
+            }
             sync_tasks();
             return Err(e);
         }
     };
 
     // Match server.js: on a hard error with no text, the error event was already
-    // emitted — don't record an empty turn. (A stopped turn lands here.)
+    // emitted — don't record an empty turn. (A stopped turn lands here.) The
+    // message the user typed still stays; only the empty answer is dropped.
     if res.final_text.is_empty() && res.is_error {
+        {
+            let conn = state.db.lock().unwrap();
+            db::abort_turn(&conn, user_msg_id, assistant_msg_id);
+        }
         sync_tasks();
         return Ok(());
     }
@@ -1081,11 +1121,12 @@ pub async fn chat(
     let session_id = res.session_id.clone().or_else(|| meta.session_id.clone());
     let (usage, fallback_title, assistant_id, updated_at) = {
         let conn = state.db.lock().unwrap();
-        db::record_turn(
+        db::finish_turn(
             &conn,
             &thread_id,
+            user_msg_id,
+            assistant_msg_id,
             &text,
-            &files,
             &res.final_text,
             &res.segments,
             session_id.as_deref(),
@@ -1126,23 +1167,45 @@ pub async fn chat(
     Ok(())
 }
 
-/// Interrupt the in-flight chat turn for `thread_id`, if any, by killing its
-/// `claude` process tree. The stream then ends on its own; any text already
-/// produced is still persisted by the `chat` handler.
+/// Stop the in-flight chat turn for `thread_id`, if any. Two levels:
+///
+/// - the default is an **interrupt** — the CLI abandons the turn, answers with an
+///   errored `result` (which settles the turn the same way a finished one does)
+///   and waits for the next message, so the chat keeps its warm process, its
+///   context and its session id instead of paying to resume;
+/// - `force` **kills the process tree**. The interrupt is only a request, and a
+///   turn wedged deep in a tool run or a sub-agent tree can be slow to honour it
+///   or never honour it at all — which is what "stop does nothing no matter how
+///   often I press it" looks like. The frontend escalates to this on the second
+///   press, and on its own if the polite stop hasn't landed (see stream.js).
+///
+/// Either way the stream ends on its own; any text already produced is still
+/// persisted by the `chat` handler.
 #[tauri::command]
-pub async fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Result<Value, String> {
-    // Interrupt rather than kill. The CLI abandons the turn in flight, answers
-    // with an errored `result` (which settles the turn the same way a finished one
-    // does) and then waits for the next message — so the chat keeps its warm
-    // process, its context and its session id instead of paying to resume.
-    if let Some(sess) = state.sessions.get(&thread_id).await {
-        if sess.interrupt().await.is_ok() {
-            return Ok(json!({ "ok": true }));
+pub async fn stop_chat(
+    state: State<'_, AppState>,
+    thread_id: String,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    let sess = state.sessions.get(&thread_id).await;
+    if !force.unwrap_or(false) {
+        if let Some(sess) = &sess {
+            if sess.interrupt().await.is_ok() {
+                return Ok(json!({ "ok": true, "killed": false }));
+            }
         }
-        // Stdin is gone — the process is past saving; fall through and kill it.
-        state.sessions.retire(&thread_id).await;
+        // Stdin is gone — the process is past asking; fall through and kill it.
     }
-    let pid = state.running.lock().unwrap().get(&thread_id).copied();
+    // Retire first: the process is about to die, and the chat must not be handed a
+    // corpse on its next message (it starts a fresh session instead).
+    let pid = match sess {
+        Some(sess) => {
+            state.sessions.retire(&thread_id).await;
+            Some(sess.pid).filter(|p| *p != 0)
+        }
+        None => None,
+    }
+    .or_else(|| state.running.lock().unwrap().get(&thread_id).copied());
     if let Some(pid) = pid {
         // Kill off the main thread: `taskkill /T /F` on the claude → node tree can
         // take a moment, and a synchronous command blocks the window message loop
@@ -1150,7 +1213,7 @@ pub async fn stop_chat(state: State<'_, AppState>, thread_id: String) -> Result<
         // when interrupting a turn. spawn_blocking keeps the UI responsive.
         let _ = tokio::task::spawn_blocking(move || claude::kill_process_tree(pid)).await;
     }
-    Ok(json!({ "ok": pid.is_some() }))
+    Ok(json!({ "ok": pid.is_some(), "killed": pid.is_some() }))
 }
 
 /// List the chat turns the app currently thinks are running, each verified
@@ -1183,6 +1246,9 @@ pub async fn stop_all_chats(state: State<'_, AppState>) -> Result<Value, String>
         map.clear();
         pids
     };
+    // The warm processes are about to be killed, so no chat may keep a handle to
+    // one; each starts a fresh session on its next message.
+    state.sessions.retire_all().await;
     let n = pids.len();
     if !pids.is_empty() {
         let _ = tokio::task::spawn_blocking(move || {

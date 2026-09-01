@@ -136,21 +136,77 @@ check('English and Croatian define exactly the same keys', () => {
   eq([...hr].filter((k) => !en.has(k)).join(', '), '', 'keys missing from English');
 });
 
-check('the phone-access strings landed in both', () => {
+check('the remote-access strings landed in both', () => {
   const { en, hr } = desktopKeys();
-  const wanted = ['phone.label', 'phone.start', 'phone.stop', 'phone.step1', 'phone.step2',
-    'phone.note', 'settings.phone.name', 'settings.phone.desc', 'settings.tab.phone'];
+  const wanted = ['remote.label', 'remote.start', 'remote.stop', 'remote.step1', 'remote.step2',
+    'remote.note', 'remote.connectBtn', 'remote.banner', 'remote.disconnect',
+    'settings.remote.name', 'settings.remote.desc', 'settings.tab.remote'];
   for (const key of wanted) {
     if (!en.has(key)) throw new Error(`${key} missing from English`);
     if (!hr.has(key)) throw new Error(`${key} missing from Croatian`);
   }
 });
 
-check('every key phone.js asks for is defined', () => {
+/* ------------------------- local / remote wiring ------------------------- */
+/* The frontend can send any command it doesn't mark local-only; the host will
+ * only run the ones its dispatcher knows. A command added to `api` without an
+ * arm in `dispatch` therefore works locally and 404s the moment you connect to
+ * another machine — which is exactly the kind of bug nobody finds until they're
+ * on the other computer. These two checks make the pair keep step. */
+
+console.log('\nremote command bridge');
+
+// Comments talk *about* invoke() as much as the code calls it, so strip them
+// before looking for call sites.
+const stripComments = (src) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+function frontendCommands() {
+  const core = stripComments(read('src', 'app', 'core.js'));
+  const stream = stripComments(read('src', 'app', 'stream.js'));
+  const localOnly = new Set(
+    all(/'([a-z_]+)'/g, core.slice(core.indexOf('LOCAL_ONLY_COMMANDS = new Set(['),
+                                  core.indexOf('])', core.indexOf('LOCAL_ONLY_COMMANDS'))))
+  );
+  // Everything the app can ask a backend to do, from the `api` wrapper and from
+  // the one direct call outside it.
+  const used = new Set([...all(/invoke\('([a-z_]+)'/g, core), ...all(/invoke\('([a-z_]+)'/g, stream)]);
+  return { used, localOnly };
+}
+
+function hostCommands() {
+  const server = read('src-tauri', 'src', 'server.rs');
+  const from = server.indexOf('async fn dispatch');
+  const to = server.indexOf('fn is_streaming_command');
+  const body = server.slice(from, to);
+  const handled = new Set(all(/^\s*"([a-z_]+)"(?:\s*=>|,)/gm, body));
+  // `matches!(cmd, "chat" | "run_app")`
+  const streaming = new Set(all(/"([a-z_]+)"/g,
+    server.slice(to, server.indexOf('}', server.indexOf('matches!', to)))));
+  return { handled, streaming };
+}
+
+check('every command the app can send remotely is handled by the host', () => {
+  const { used, localOnly } = frontendCommands();
+  const { handled, streaming } = hostCommands();
+  const sendable = [...used].filter((c) => !localOnly.has(c));
+  eq(sendable.length > 40, true, `expected the full api surface, saw ${sendable.length}`);
+  const orphans = sendable.filter((c) => !handled.has(c) && !streaming.has(c));
+  eq(orphans.join(', '), '', 'commands the frontend proxies but server.rs will refuse');
+});
+
+check('the host exposes nothing the app treats as local-only', () => {
+  const { localOnly } = frontendCommands();
+  const { handled, streaming } = hostCommands();
+  const leaked = [...localOnly].filter((c) => handled.has(c) || streaming.has(c));
+  eq(leaked.join(', '), '', 'commands meant to stay on this machine but reachable over the network');
+});
+
+check('every key remote.js asks for is defined', () => {
   const { en, hr } = desktopKeys();
-  const used = new Set(all(/\btr\('([^']+)'/g, read('src', 'app', 'phone.js')));
+  const used = new Set(all(/\btr\('([^']+)'/g, read('src', 'app', 'remote.js')));
   const missing = [...used].filter((k) => !en.has(k) || !hr.has(k));
-  eq(missing.join(', '), '', 'keys used by phone.js but not defined');
+  eq(missing.join(', '), '', 'keys used by remote.js but not defined');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

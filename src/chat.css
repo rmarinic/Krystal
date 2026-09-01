@@ -272,6 +272,25 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 }
 .msg.assistant .role { color: var(--accent-3); }
 
+/* A turn the app never finished (closed mid-answer). What had been written is
+   kept and quietly labelled, so coming back you can see where it stopped. */
+.msg-cut {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 3px 9px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--warn); background: var(--warn-bg);
+  border: 1px solid var(--warn-bd); border-radius: 999px;
+  animation: cut-in .22s ease both;
+}
+.msg-cut::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; opacity: .8;
+}
+@keyframes cut-in { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .msg-cut { animation: none; }
+}
+
 /* assistant message → full htmlcast answer card (reuse .response-body rules) */
 .msg.assistant .bubble {
   background: var(--bg-card);
@@ -3111,95 +3130,186 @@ body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out inf
 }
 
 /* ============================================================
- * Phone access — the sidebar button and the Settings → Phone
- * pairing card (see app/phone.js, src-tauri/src/server.rs).
+ * Remote access — hosting (the sidebar button + the Settings →
+ * Remote pairing card) and connecting (the project-screen button,
+ * the connect modal, the "you are driving another machine" bar).
+ * See app/remote.js and src-tauri/src/server.rs.
  * ============================================================ */
 
 /* Sits under Tasks, styled to match it. A small dot lights up while the local
    server is actually serving, so the sidebar tells you without being opened. */
-.phone-btn {
+.remote-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   font-family: var(--mono); font-size: 12.5px; font-weight: 600;
   color: var(--fg-muted); background: var(--bg-elev);
   border: 1px solid var(--border-2); border-radius: var(--radius-sm);
   padding: 9px 12px; cursor: pointer; transition: color .15s, border-color .15s;
 }
-.phone-btn:hover { color: var(--fg); border-color: var(--accent-2); }
-.phone-btn.live { color: var(--fg); border-color: var(--accent-2); }
-.phone-dot {
+.remote-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.remote-btn.live { color: var(--fg); border-color: var(--accent-2); }
+.remote-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--border-2);
   transition: background .2s ease;
 }
-.phone-btn.live .phone-dot { background: var(--accent-2); animation: phone-live 1.8s ease-in-out infinite; }
-@keyframes phone-live {
+.remote-btn.live .remote-dot { background: var(--accent-2); animation: remote-live 1.8s ease-in-out infinite; }
+@keyframes remote-live {
   0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); }
   60%      { box-shadow: 0 0 0 4px rgba(108,199,142,0); }
 }
 /* The foot's divider should appear for this button too, not just Insight/Tasks. */
-.sidebar-foot:has(.phone-btn:not([hidden])) {
+.sidebar-foot:has(.remote-btn:not([hidden])) {
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
-/* ---- Settings → Phone ---- */
-.phone-row .phone-state { margin-top: 12px; }
-.phone-idle { font-size: 12px; color: var(--fg-muted); line-height: 1.55; }
-.phone-err { font-size: 12px; color: var(--warn); }
+/* ---- Settings → Remote (hosting) ---- */
+.remote-row .remote-state { margin-top: 12px; }
+.remote-idle { font-size: 12px; color: var(--fg-muted); line-height: 1.55; }
+.remote-err { font-size: 12px; color: var(--warn); }
 
-.phone-card {
+.remote-card {
   display: flex; flex-direction: column; gap: 12px;
   padding: 14px; border: 1px solid var(--border-2); border-radius: var(--radius);
   background: var(--bg-elev);
 }
-.phone-step { display: flex; align-items: flex-start; gap: 11px; }
-.phone-step-n {
+.remote-step { display: flex; align-items: flex-start; gap: 11px; }
+.remote-step-n {
   flex: none; width: 20px; height: 20px; border-radius: 50%;
   display: grid; place-items: center;
   font-family: var(--mono); font-size: 11px; font-weight: 700;
   color: #0a0f0b; background: var(--accent-2);
 }
-.phone-step-body { flex: 1 1 auto; min-width: 0; }
-.phone-step-label { font-size: 11.5px; color: var(--fg-muted); margin-bottom: 5px; }
+.remote-step-body { flex: 1 1 auto; min-width: 0; }
+.remote-step-label { font-size: 11.5px; color: var(--fg-muted); margin-bottom: 5px; }
 
-.phone-url-row { display: flex; align-items: center; gap: 8px; }
-.phone-url {
+.remote-url-row { display: flex; align-items: center; gap: 8px; }
+.remote-url {
   flex: 1 1 auto; min-width: 0;
   font-family: var(--mono); font-size: 14px; color: var(--accent-3);
   user-select: all; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.phone-copy {
+.remote-copy {
   flex: none; font-family: var(--mono); font-size: 10.5px;
   color: var(--fg-muted); background: var(--bg-card); cursor: pointer;
   border: 1px solid var(--border-2); border-radius: var(--radius-sm);
   padding: 4px 9px; transition: color .15s, border-color .15s;
 }
-.phone-copy:hover { color: var(--fg); border-color: var(--accent-2); }
-.phone-copy.copied { color: var(--accent-2); border-color: var(--accent-2); }
+.remote-copy:hover { color: var(--fg); border-color: var(--accent-2); }
+.remote-copy.copied { color: var(--accent-2); border-color: var(--accent-2); }
 
-.phone-pin { display: flex; gap: 6px; }
-.phone-digit {
+.remote-pin { display: flex; gap: 6px; }
+.remote-digit {
   width: 26px; padding: 5px 0; text-align: center;
   font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--fg);
   background: var(--bg-card); border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
 }
-.phone-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
+.remote-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
 
-.phone-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
-.phone-toggle {
+.remote-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+.remote-toggle {
   font-family: var(--mono); font-size: 11.5px; font-weight: 600;
   color: #0a0f0b; background: var(--accent-2); cursor: pointer;
   border: 1px solid transparent; border-radius: var(--radius-sm);
   padding: 7px 14px; transition: background .15s, color .15s, border-color .15s;
 }
-.phone-toggle:hover { background: var(--accent-3); }
-.phone-toggle.on {
+.remote-toggle:hover { background: var(--accent-3); }
+.remote-toggle.on {
   color: var(--fg-muted); background: var(--bg-elev); border-color: var(--border-2);
 }
-.phone-toggle.on:hover { color: var(--fg); border-color: var(--warn); }
-.phone-toggle:disabled { opacity: 0.6; cursor: progress; }
+.remote-toggle.on:hover { color: var(--fg); border-color: var(--warn); }
+.remote-toggle:disabled { opacity: 0.6; cursor: progress; }
 
 @media (prefers-reduced-motion: reduce) {
-  .phone-btn, .phone-dot, .phone-copy, .phone-toggle { transition: none; }
-  .phone-btn.live .phone-dot { animation: none; }
+  .remote-btn, .remote-dot, .remote-copy, .remote-toggle { transition: none; }
+  .remote-btn.live .remote-dot { animation: none; }
+}
+
+/* ---- Connecting to another Krystal ---- */
+
+/* The Remote button on the project picker, beside "Initialize new project". */
+.project-actions {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; flex-wrap: wrap;
+}
+.project-remote-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 10px 16px; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.project-remote-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+
+/* The bar across the top while this window is driving another machine. It takes
+   a grid row of its own (see body.is-remote) rather than floating over the app,
+   so nothing it covers has to be guessed at. */
+.remote-bar { display: none; }
+body.is-remote { grid-template-rows: auto 1fr; }
+body.is-remote .remote-bar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  background: linear-gradient(90deg, rgba(108,199,142,0.14), rgba(108,199,142,0.05));
+  border-bottom: 1px solid var(--border-2);
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg);
+}
+/* The picker is fixed, so it needs telling about the bar to sit under it. */
+body.is-remote .project-screen { top: 35px; }
+.remote-bar-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2);
+  animation: remote-live 1.8s ease-in-out infinite;
+}
+.remote-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-bar-x {
+  flex: none; font: inherit; cursor: pointer;
+  color: var(--fg-muted); background: transparent;
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 3px 10px; transition: color .15s, border-color .15s;
+}
+.remote-bar-x:hover { color: var(--fg); border-color: var(--warn); }
+
+/* ---- The connect modal ---- */
+.remote-modal { max-width: 460px; }
+.remote-intro { margin: 0 0 16px; font-size: 12.5px; color: var(--fg-muted); line-height: 1.55; }
+.remote-field { display: block; margin-bottom: 12px; }
+.remote-label { display: block; font-size: 11px; color: var(--fg-muted); margin-bottom: 5px; }
+.remote-input {
+  width: 100%; padding: 10px 12px;
+  font-family: var(--mono); font-size: 13px; color: var(--fg);
+  background: var(--bg-elev); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); outline: none;
+  transition: border-color .15s ease;
+}
+.remote-input:focus { border-color: var(--accent-2); }
+.remote-input.code { font-size: 20px; letter-spacing: .34em; text-align: center; text-indent: .34em; }
+
+.remote-recent { margin: 14px 0 4px; }
+.remote-recent-head { font-size: 11px; color: var(--fg-muted); margin-bottom: 6px; }
+.remote-recent-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.remote-recent-pick {
+  flex: 1 1 auto; min-width: 0; text-align: left; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.remote-recent-pick:hover { color: var(--fg); border-color: var(--accent-2); }
+.remote-recent-x {
+  flex: none; background: none; border: none; cursor: pointer;
+  color: var(--fg-muted); font-size: 16px; line-height: 1; padding: 0 4px;
+  transition: color .15s ease;
+}
+.remote-recent-x:hover { color: var(--fg); }
+
+.remote-connect-err { margin: 12px 0 0; font-size: 12px; color: var(--warn); }
+.remote-connect-err[hidden] { display: none; }
+.remote-connect-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .project-remote-btn, .remote-input, .remote-recent-pick, .remote-recent-x, .remote-bar-x {
+    transition: none;
+  }
+  .remote-bar-dot { animation: none; }
 }

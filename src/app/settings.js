@@ -103,9 +103,9 @@ const SETTINGS_TABS = [
     { key: 'discord', get: discordEnabled, set: setDiscord },
     { key: 'discordShareName', sub: true },
   ] },
-  // Custom-rendered tab: start/stop phone access and show the pairing card
-  // (renderPhonePanel in phone.js).
-  { id: 'phone', custom: 'phone' },
+  // Custom-rendered tab: start/stop remote access and show the pairing card
+  // (renderRemotePanel in remote.js).
+  { id: 'remote', custom: 'remote' },
   // Custom-rendered tab (Claude usage + calibration); see renderUsagePanel in usage.js.
   { id: 'usage', custom: 'usage' },
   // Custom-rendered tab: live background chat processes + a stop-all (renderRunsPanel).
@@ -441,7 +441,7 @@ function fillSettingsTab(panel, tabId) {
   panel.innerHTML = '';
   const active = SETTINGS_TABS.find((t) => t.id === tabId) || SETTINGS_TABS[0];
   if (active.custom === 'usage') { renderUsagePanel(panel); return; }   // usage.js
-  if (active.custom === 'phone') { renderPhonePanel(panel); return; }   // phone.js
+  if (active.custom === 'remote') { renderRemotePanel(panel); return; }   // remote.js
   if (active.custom === 'runs') { renderRunsPanel(panel); return; }
   for (const row of active.rows) panel.appendChild(buildSettingRow(row));
 }
@@ -520,7 +520,7 @@ function switchSettingsTab(id) {
 
 // Show first, then render: the panel height must be measured while visible
 // (an element inside display:none reports zero height). `tab` opens straight on
-// one tab — how the sidebar's Phone button gets you to its panel in one click.
+// one tab — how the sidebar's Remote button gets you to its panel in one click.
 function openSettings(tab) {
   if (tab && SETTINGS_TABS.some((t) => t.id === tab)) settingsTab = tab;
   openOverlay(els.settingsOverlay);

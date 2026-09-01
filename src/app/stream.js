@@ -72,18 +72,47 @@ els.sendBtn.onclick = () => {
   else send();
 };
 
-/* Interrupt the active thread's in-flight turn. The backend asks the CLI to
- * abandon it (the chat keeps its warm process — see session.rs), which comes back
- * as an errored `result` and ends the turn. We mark `stopped` so that error event
- * is treated as a clean stop, not a failure. */
+/* Stop the active thread's in-flight turn, in two escalating steps.
+ *
+ * The first press is polite: the backend asks the CLI to abandon the turn (the
+ * chat keeps its warm process — see session.rs), which comes back as an errored
+ * `result` and ends it. We mark `stopped` so that error event is treated as a
+ * clean stop, not a failure.
+ *
+ * But an interrupt is a *request*, and a turn buried in a long tool run or a
+ * sub-agent tree can be slow to honour it — or never honour it. That used to be
+ * the end of the road: this function returned early once `stopped` was set, so
+ * pressing stop again did literally nothing and the turn ran on. Now a second
+ * press (or STOP_ESCALATE_MS of nothing happening) kills the process instead. */
+const STOP_ESCALATE_MS = 8000;
+
 async function stopActiveTurn() {
-  const id = state.activeId;
+  return stopTurn(state.activeId);
+}
+
+async function stopTurn(id) {
   const live = state.live.get(id);
-  if (!live || live.stopped) return;
+  if (!live) return;
+  const force = !!live.stopped;   // asked once already → this press means business
+  if (force && live.forced) return;
   live.stopped = true;
-  els.sendBtn.disabled = true;
-  try { await api.stopChat(id); } catch (_) {}
-  showTip({ key: 'status', icon: '⏹', label: tr('stop.toastLabel'), body: tr('stop.toastBody') });
+  if (force) live.forced = true;
+  clearStopTimer(live);
+  // Nothing may disable the button here: being able to press again *is* the
+  // escape hatch when the polite stop doesn't land.
+  if (!force) {
+    live.stopTimer = setTimeout(() => {
+      if (state.live.get(id) === live) stopTurn(id);
+    }, STOP_ESCALATE_MS);
+  }
+  try { await api.stopChat(id, force); } catch (_) {}
+  showTip(force
+    ? { key: 'status', icon: '⏹', label: tr('stop.forcedLabel'), body: tr('stop.forcedBody') }
+    : { key: 'status', icon: '⏹', label: tr('stop.toastLabel'), body: tr('stop.toastBody') });
+}
+
+function clearStopTimer(live) {
+  if (live && live.stopTimer) { clearTimeout(live.stopTimer); live.stopTimer = null; }
 }
 
 /* Auto-follow the stream ONLY while the user is parked at the bottom.
@@ -368,6 +397,7 @@ function finishLive(live) {
   if (live.finalized) return;
   live.finalized = true;
   live.typer = null;
+  clearStopTimer(live);                               // the turn ended on its own
   for (const a of live.activity) a.running = false;   // clear spinners even if backgrounded
   agentTurnEnded(live.threadId);                      // no worker is still going either
   state.live.delete(live.threadId);
@@ -431,6 +461,12 @@ function handleLiveEvent(live, msg) {
     // The session announced what `/skill-name` commands it can run — the only
     // place the CLI's own built-ins are ever named. Hand them to the picker.
     if (typeof learnSkills === 'function') learnSkills(msg.skills);
+  } else if (event === 'saved') {
+    // The backend has already written this turn's user message (and, from here
+    // on, the answer as it arrives) to the database, so nothing is lost if the
+    // app goes away mid-answer. Remember where the turn starts: `openThread`
+    // skips those rows while the turn is live, since the live view paints them.
+    live.savedFrom = msg.userId;
   } else if (event === 'token') {
     live.events.push({ type: 'token', text: msg.text });
     if (live.typer) live.typer.push(msg.text);

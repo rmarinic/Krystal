@@ -1,25 +1,31 @@
-//! Phone access — a small HTTP server on the local network.
+//! Remote access — reach this Krystal from another device on the network.
 //!
-//! The desktop window talks to the backend over Tauri IPC; there is no way for a
-//! phone to reach that. So this module puts a plain HTTP/1.1 server (hyper) in
-//! front of the *same* command functions the window calls, and serves a compact
-//! touch UI (`webui/`, embedded in the binary) that drives them. Same database,
-//! same warm `claude` sessions, same project — the phone is a second window onto
-//! one app, not a second app.
+//! The window talks to the backend over Tauri IPC, which nothing off this machine
+//! can reach. So this module puts a plain HTTP/1.1 server (hyper) in front of the
+//! *same* command functions the window calls. Same database, same warm `claude`
+//! sessions, same projects — whatever connects is another view of one app, not a
+//! second app.
+//!
+//! Two kinds of client, one backend:
+//!   * **A browser** (typically a phone) gets the compact touch UI embedded from
+//!     `webui/`, which drives a few hand-written REST routes.
+//!   * **Another Krystal** points its own `api` object at `/api/invoke` and
+//!     `/api/stream` (see `dispatch`) and drives this machine with its full
+//!     desktop UI — which is how you sit at one computer and work on another's
+//!     projects.
 //!
 //! Shape of it:
-//!   * Bound to `0.0.0.0:<port>` so anything on the same Wi-Fi can reach it. It
+//!   * Bound to `0.0.0.0:<port>` so anything on the same network can reach it. It
 //!     is **off until the user starts it** and dies with the app.
-//!   * A 6-digit PIN, freshly generated per start, is shown on the desktop and
-//!     traded for a bearer token by the phone (`POST /api/auth`). Everything under
-//!     `/api/` except that one route needs the token. Ten wrong PINs and the
-//!     server stops accepting any (restart it for a new one) — a LAN is
-//!     trusted-ish, not trusted.
+//!   * A 6-digit PIN, freshly generated per start, is shown on the host and traded
+//!     for a bearer token (`POST /api/auth`). Everything under `/api/` except that
+//!     one route needs the token. Ten wrong PINs and the server stops accepting
+//!     any (restart it for a new one) — a LAN is trusted-ish, not trusted.
 //!   * A chat turn streams back as Server-Sent Events. `commands::chat` reports
 //!     progress through a `tauri::ipc::Channel`, and `Channel::new` lets us build
 //!     one whose handler writes into the SSE body instead of into the webview —
-//!     so the phone sees byte-for-byte the events the desktop sees, with no
-//!     second copy of the streaming logic.
+//!     so a client sees byte-for-byte the events this window sees, with no second
+//!     copy of the streaming logic.
 
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -49,15 +55,15 @@ pub const DEFAULT_PORT: u16 = 7420;
 const MAX_PIN_ATTEMPTS: u32 = 10;
 
 /* ---------------------- events pushed to the window ---------------------- */
-/* The phone and the desktop are two views of one app, so anything done on the
- * phone has to reach the window that is showing the same chat. These carry it;
- * `src/app/phone.js` listens and replays a remote turn through exactly the same
+/* A connected client and this window are two views of one app, so anything done
+ * over there has to reach the window showing the same chat. These carry it;
+ * `src/app/remote.js` listens and replays the turn through exactly the same
  * live-turn machinery a locally-typed one goes through. */
 
-/// A turn began somewhere else: `{ threadId, text }`.
+/// A turn began on a connected client: `{ threadId, text }`.
 const EV_TURN_START: &str = "remote-turn-start";
 /// One event of that turn, verbatim: `{ threadId, raw }` (`raw` is the JSON the
-/// phone receives, unparsed — the window parses it itself).
+/// client receives, unparsed — the window parses it itself).
 const EV_TURN: &str = "remote-turn";
 /// A chat was created elsewhere: `{ project }`.
 const EV_THREADS: &str = "remote-threads-changed";
@@ -153,11 +159,11 @@ struct Running {
 
 /// The server handle held in `AppState`. Not running until `start` is called.
 #[derive(Default)]
-pub struct WebServer {
+pub struct RemoteServer {
     inner: Mutex<Option<Running>>,
 }
 
-impl WebServer {
+impl RemoteServer {
     pub fn status(&self) -> Value {
         match &*self.inner.lock().unwrap() {
             Some(r) => json!({
@@ -187,6 +193,20 @@ impl WebServer {
 /* No `rand` in the tree; `uuid` v4 is already here and is CSPRNG-backed
  * (getrandom), so both secrets are cut from fresh v4 bytes. */
 
+/// What to call this machine in a connected client's UI. Best effort: the
+/// computer name if the OS offers one, otherwise the LAN address.
+fn machine_name() -> String {
+    for key in ["COMPUTERNAME", "HOSTNAME"] {
+        if let Ok(name) = std::env::var(key) {
+            let name = name.trim().to_string();
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+    lan_ip().unwrap_or_else(|| "Krystal".to_string())
+}
+
 fn new_pin() -> String {
     let b = *uuid::Uuid::new_v4().as_bytes();
     let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) % 1_000_000;
@@ -213,7 +233,7 @@ fn secret_eq(a: &str, b: &str) -> bool {
 
 /* -------------------------------- LAN IP --------------------------------- */
 
-/// This machine's address on the local network — what the phone has to type.
+/// This machine's address on the local network — what a client has to type.
 ///
 /// Found by opening a UDP socket "to" a routable address and asking the OS which
 /// local interface it picked. No packet is ever sent (a UDP connect only fixes
@@ -243,8 +263,8 @@ pub fn lan_ip() -> Option<String> {
 pub async fn start<R: Runtime>(app: AppHandle<R>, port: u16) -> Result<Value, String> {
     {
         let state = app.state::<AppState>();
-        if state.web.is_running() {
-            return Ok(state.web.status());
+        if state.remote.is_running() {
+            return Ok(state.remote.status());
         }
     }
 
@@ -280,8 +300,8 @@ pub async fn start<R: Runtime>(app: AppHandle<R>, port: u16) -> Result<Value, St
     });
 
     let state = app.state::<AppState>();
-    *state.web.inner.lock().unwrap() = Some(Running { port, pin, stop: stop_tx });
-    Ok(state.web.status())
+    *state.remote.inner.lock().unwrap() = Some(Running { port, pin, stop: stop_tx });
+    Ok(state.remote.status())
 }
 
 /* ------------------------------- responses ------------------------------- */
@@ -424,6 +444,15 @@ fn str_field(body: &Value, key: &str) -> String {
     body.get(key).and_then(|v| v.as_str()).unwrap_or("").trim().to_string()
 }
 
+/// A JSON array of strings, with anything non-string dropped rather than the
+/// whole list being refused.
+fn args_of_strings(body: &Value, key: &str) -> Vec<String> {
+    body.get(key)
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default()
+}
+
 async fn handle<R: Runtime>(
     ctx: Ctx<R>,
     req: Request<Incoming>,
@@ -480,7 +509,12 @@ async fn api<R: Runtime>(
 ) -> Response<Body> {
     match (&method, path) {
         (&Method::GET, "/api/hello") => {
-            ok_json(json!({ "ok": true, "version": commands::app_version() }))
+            ok_json(json!({
+                "ok": true,
+                "version": commands::app_version(),
+                // What to call this machine in the connected client's UI.
+                "name": machine_name(),
+            }))
         }
 
         (&Method::GET, "/api/projects") => {
@@ -526,8 +560,11 @@ async fn api<R: Runtime>(
         (&Method::POST, "/api/stop") => {
             let body = read_json(req).await;
             let thread_id = str_field(&body, "threadId");
+            // Same escalation as the window: press stop twice and the second one
+            // kills the process instead of politely asking it again.
+            let force = body.get("force").and_then(|v| v.as_bool());
             let state = ctx.app.state::<AppState>();
-            match commands::stop_chat(state, thread_id).await {
+            match commands::stop_chat(state, thread_id, force).await {
                 Ok(v) => ok_json(v),
                 Err(e) => err_json(StatusCode::BAD_REQUEST, &e),
             }
@@ -538,8 +575,250 @@ async fn api<R: Runtime>(
             chat_stream(ctx, body).await
         }
 
+        /* ---- the command bridge another Krystal drives this one through ---- */
+        (&Method::POST, "/api/invoke") => {
+            let body = read_json(req).await;
+            let cmd = str_field(&body, "cmd");
+            let args = body.get("args").cloned().unwrap_or_else(|| json!({}));
+            if is_streaming_command(&cmd) {
+                // Calling one of these here would return only once it finished,
+                // with every event thrown away. Point the caller at the door it
+                // actually wants rather than silently doing the wrong thing.
+                return err_json(StatusCode::BAD_REQUEST, "use /api/stream for this command");
+            }
+            match dispatch(&ctx.app, &cmd, &args).await {
+                Some(Ok(value)) => ok_json(json!({ "value": value })),
+                Some(Err(e)) => err_json(StatusCode::BAD_REQUEST, &e),
+                None => err_json(StatusCode::NOT_FOUND, "command not available remotely"),
+            }
+        }
+
+        (&Method::POST, "/api/stream") => {
+            let body = read_json(req).await;
+            let cmd = str_field(&body, "cmd");
+            let args = body.get("args").cloned().unwrap_or_else(|| json!({}));
+            match cmd.as_str() {
+                "chat" => chat_stream(ctx, args).await,
+                "run_app" => run_app_stream(ctx, args).await,
+                _ => err_json(StatusCode::NOT_FOUND, "command not available remotely"),
+            }
+        }
+
         _ => err_json(StatusCode::NOT_FOUND, "not found"),
     }
+}
+
+/* ----------------------------- command bridge ---------------------------- *
+ * What turns this from "a phone page" into "another Krystal you can drive": a
+ * connected client can call the backend commands by name, so the desktop app can
+ * point its own `api` object at this machine and behave exactly as it does
+ * locally (see `remote.active` in src/app/core.js).
+ *
+ * An explicit allowlist, not a blanket proxy over everything the window can
+ * invoke. Two reasons. The pairing code is the only thing between the LAN and
+ * this dispatcher, so the surface should be a decision rather than a side
+ * effect. And a handful of commands are about *the machine you are sitting at* —
+ * opening a link, this copy's Discord presence, installing Claude Code, starting
+ * remote access itself — which would fire on the wrong computer if proxied. The
+ * frontend keeps a matching local-only list; this side is what enforces it. */
+
+/// A required string argument (missing reads as empty, which the commands then
+/// reject themselves — the same as a bad call from the window).
+fn arg_str(a: &Value, key: &str) -> String {
+    a.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+
+/// An optional string argument. Absent and `null` both mean `None`.
+fn arg_opt_str(a: &Value, key: &str) -> Option<String> {
+    a.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+fn arg_i64(a: &Value, key: &str) -> i64 {
+    a.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+}
+
+fn arg_bool(a: &Value, key: &str) -> bool {
+    a.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+fn arg_opt_bool(a: &Value, key: &str) -> Option<bool> {
+    a.get(key).and_then(|v| v.as_bool())
+}
+
+fn arg_list(a: &Value, key: &str) -> Vec<Value> {
+    a.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default()
+}
+
+/// Wrap a command's return value as JSON. Commands hand back `Value`, `Vec<Value>`
+/// or `&str`; the client only ever sees JSON either way.
+fn as_json<T: serde::Serialize>(v: T) -> Result<Value, String> {
+    serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+/// Run one allowlisted command. `Err` for a command that failed; `Ok(None)` for
+/// one this machine does not expose (which the caller turns into a 404, so a
+/// client can tell "refused" apart from "went wrong").
+async fn dispatch<R: Runtime>(
+    app: &AppHandle<R>,
+    cmd: &str,
+    a: &Value,
+) -> Option<Result<Value, String>> {
+    let st = || -> tauri::State<'_, AppState> { app.state() };
+    let out = match cmd {
+        /* ---- config & catalogue ---- */
+        "get_config" => as_json(commands::get_config(st())),
+        "set_ui_language" => as_json(commands::set_ui_language(st(), arg_str(a, "lang"))),
+        "refresh_models" => commands::refresh_models(st()).await,
+        "preflight" => as_json(commands::preflight(st())),
+
+        /* ---- projects ---- */
+        "list_projects" => as_json(commands::list_projects(st())),
+        "create_project" => commands::create_project(st(), arg_str(a, "path")),
+        "select_project" => commands::select_project(st(), arg_str(a, "id")),
+        "move_project" => commands::move_project(st(), arg_str(a, "id"), arg_str(a, "path")).await,
+        "delete_project" => as_json(commands::delete_project(st(), arg_str(a, "id"))),
+
+        /* ---- chats ---- */
+        "list_threads" => as_json(commands::list_threads(st(), arg_opt_str(a, "project"))),
+        "get_thread" => commands::get_thread(st(), arg_str(a, "id")),
+        "create_thread" => commands::create_thread(st(), arg_str(a, "cwd")),
+        "branch_thread" => commands::branch_thread(st(), arg_str(a, "id")),
+        "delete_thread" => commands::delete_thread(st(), arg_str(a, "id")).await,
+        "rename_thread" => commands::rename_thread(st(), arg_str(a, "id"), arg_str(a, "title")),
+        "clear_thread" => commands::clear_thread(st(), arg_str(a, "id")).await,
+        "compact_thread" => commands::compact_thread(st(), arg_str(a, "id")).await,
+        "hint_thread" => commands::hint_thread(st(), arg_str(a, "id")).await,
+
+        /* ---- per-chat settings ---- */
+        "set_model" => commands::set_model(st(), arg_str(a, "id"), arg_str(a, "model")),
+        "set_mode" => commands::set_mode(st(), arg_str(a, "id"), arg_str(a, "mode")),
+        "set_effort" => commands::set_effort(st(), arg_str(a, "id"), arg_str(a, "effort")),
+        "set_suggestions" => as_json(commands::set_suggestions(st(), arg_bool(a, "enabled"))),
+        "set_orchestration" => commands::set_orchestration(
+            st(),
+            arg_str(a, "id"),
+            arg_bool(a, "enabled"),
+            arg_str(a, "subModel"),
+        ),
+
+        /* ---- turns in flight ---- */
+        "stop_chat" => commands::stop_chat(st(), arg_str(a, "threadId"), arg_opt_bool(a, "force")).await,
+        "active_runs" => commands::active_runs(st()).await.and_then(as_json),
+        "stop_all_chats" => commands::stop_all_chats(st()).await,
+
+        /* ---- search & favourites ---- */
+        "search_messages" => as_json(commands::search_messages(
+            st(),
+            arg_str(a, "q"),
+            arg_opt_str(a, "project"),
+        )),
+        "list_favorites" => as_json(commands::list_favorites(st(), arg_opt_str(a, "project"))),
+        "toggle_favorite" => commands::toggle_favorite(st(), arg_i64(a, "messageId")),
+        "delete_message" => commands::delete_message(st(), arg_i64(a, "messageId")),
+
+        /* ---- tasks ---- */
+        "list_tasks" => as_json(commands::list_tasks(st(), arg_str(a, "project"))),
+        "add_task" => commands::add_task(
+            st(),
+            arg_str(a, "project"),
+            arg_str(a, "title"),
+            arg_opt_str(a, "note"),
+        ),
+        "update_task" => commands::update_task(
+            st(),
+            arg_i64(a, "id"),
+            arg_opt_str(a, "title"),
+            arg_opt_bool(a, "done"),
+        ),
+        "delete_task" => as_json(commands::delete_task(st(), arg_i64(a, "id"))),
+        "clear_done_tasks" => as_json(commands::clear_done_tasks(st(), arg_str(a, "project"))),
+        "task_count" => as_json(commands::task_count(st(), arg_str(a, "project"))),
+        "generate_tasks" => commands::generate_tasks(
+            st(),
+            arg_str(a, "cwd"),
+            arg_str(a, "brief"),
+            Some(arg_list(a, "answers")),
+        )
+        .await,
+
+        /* ---- the project's own files & folders ---- */
+        "list_pins" => as_json(commands::list_pins(st(), arg_str(a, "project"))),
+        "add_pin" => commands::add_pin(st(), arg_str(a, "project"), arg_str(a, "path")),
+        "remove_pin" => as_json(commands::remove_pin(st(), arg_str(a, "project"), arg_i64(a, "id"))),
+        "read_pinned_file" => as_json(commands::read_pinned_file(arg_str(a, "path"))),
+        "list_project_dirs" => as_json(commands::list_project_dirs(st(), arg_str(a, "project"))),
+        "add_project_dir" => {
+            commands::add_project_dir(st(), arg_str(a, "project"), arg_str(a, "path"))
+        }
+        "remove_project_dir" => as_json(commands::remove_project_dir(
+            st(),
+            arg_str(a, "project"),
+            arg_i64(a, "id"),
+        )),
+        "list_skills" => as_json(commands::list_skills(arg_opt_str(a, "project"))),
+        "read_image" => as_json(commands::read_image(arg_str(a, "path"))),
+        "save_attachment" => commands::save_attachment(
+            st(),
+            arg_str(a, "name"),
+            arg_str(a, "dataBase64"),
+        ),
+
+        /* ---- CLAUDE.md / the Initialize wizard ---- */
+        "read_claude_md" => commands::read_claude_md(st(), arg_str(a, "id")),
+        "claude_md_exists" => as_json(commands::claude_md_exists(arg_str(a, "cwd"))),
+        "init_analyze" => {
+            commands::init_analyze(st(), arg_str(a, "id"), arg_opt_str(a, "brief")).await
+        }
+        "init_draft" => commands::init_draft(
+            st(),
+            arg_str(a, "id"),
+            arg_opt_str(a, "summary"),
+            arg_list(a, "answers"),
+            arg_opt_str(a, "brief"),
+        )
+        .await,
+        "init_save" => commands::init_save(st(), arg_str(a, "id"), arg_str(a, "markdown")),
+
+        /* ---- running the project ---- */
+        "run_shell" => {
+            commands::run_shell(st(), arg_str(a, "threadId"), arg_str(a, "command")).await
+        }
+        "get_run_config" => as_json(commands::get_run_config(st(), arg_str(a, "project"))),
+        "set_run_config" => as_json(commands::set_run_config(
+            st(),
+            arg_str(a, "project"),
+            arg_str(a, "command"),
+        )),
+        "detect_run_command" => commands::detect_run_command(st(), arg_str(a, "project")).await,
+        "stop_run" => commands::stop_run(st(), arg_str(a, "project")).await,
+
+        /* ---- git ---- */
+        "git_status" => as_json(commands::git_status(arg_str(a, "cwd"))),
+        "git_branches" => as_json(commands::git_branches(arg_str(a, "cwd"))),
+        "git_checkout" => as_json(commands::git_checkout(arg_str(a, "cwd"), arg_str(a, "branch"))),
+        "git_create_branch" => {
+            as_json(commands::git_create_branch(arg_str(a, "cwd"), arg_str(a, "name")))
+        }
+        "git_fetch" => as_json(commands::git_fetch(arg_str(a, "cwd"))),
+        "git_pull" => as_json(commands::git_pull(arg_str(a, "cwd"))),
+        "git_push" => as_json(commands::git_push(arg_str(a, "cwd"))),
+
+        /* ---- usage ---- */
+        "claude_usage" => as_json(commands::claude_usage(
+            a.get("weeklyReset").and_then(|v| v.as_f64()),
+        )),
+
+        // Not exposed. `chat` and `run_app` stream, so they go through
+        // `/api/stream`; everything else here is deliberately local-only.
+        _ => return None,
+    };
+    Some(out)
+}
+
+/// Commands reachable over `/api/stream` (they report progress through a
+/// `Channel` rather than returning once).
+fn is_streaming_command(cmd: &str) -> bool {
+    matches!(cmd, "chat" | "run_app")
 }
 
 /* --------------------------------- chat ---------------------------------- */
@@ -551,12 +830,66 @@ async fn api<R: Runtime>(
 /// pushes each event straight into this response's body — and, at the same time,
 /// forwards it to the desktop window (see `EV_TURN`), so a chat left open on the
 /// computer paints the phone's turn live instead of going quiet until reopened.
+/// The response half of a streamed command: SSE headers over a body fed by `rx`.
+fn sse_response(rx: mpsc::UnboundedReceiver<Bytes>) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-store")
+        .header("connection", "keep-alive")
+        // Streaming is only end-to-end if nothing in between buffers it.
+        .header("x-accel-buffering", "no")
+        .body(EventBody(rx).boxed())
+        .unwrap()
+}
+
+/// The last frame of a stream: the client's cue that the command is over, however
+/// it ended. Without it a client that only ever sees `token`s would wait forever.
+fn closing_frame(outcome: Result<Value, String>) -> Value {
+    match outcome {
+        Ok(_) => json!({ "type": "end" }),
+        Err(e) => json!({ "type": "error", "message": e }),
+    }
+}
+
+/// The RUN button, driven from a connected client: starts the project's app on
+/// *this* machine and streams its output back.
+async fn run_app_stream<R: Runtime>(ctx: Ctx<R>, args: Value) -> Response<Body> {
+    let project = str_field(&args, "project");
+    if project.is_empty() {
+        return err_json(StatusCode::BAD_REQUEST, "project required");
+    }
+    let command = args.get("command").and_then(|v| v.as_str()).map(str::to_string);
+
+    let (tx, rx) = mpsc::unbounded_channel::<Bytes>();
+    let sink = tx.clone();
+    let channel: Channel<Value> = Channel::new(move |payload| {
+        if let InvokeResponseBody::Json(raw) = payload {
+            let _ = sink.send(sse_frame(&raw));
+        }
+        Ok(())
+    });
+
+    let app = ctx.app.clone();
+    tokio::spawn(async move {
+        let state = app.state::<AppState>();
+        let outcome = commands::run_app(state, project, command, channel).await;
+        let _ = tx.send(sse_frame(&closing_frame(outcome).to_string()));
+    });
+
+    sse_response(rx)
+}
+
 async fn chat_stream<R: Runtime>(ctx: Ctx<R>, body: Value) -> Response<Body> {
     let thread_id = str_field(&body, "threadId");
     let text = str_field(&body, "text");
     if thread_id.is_empty() || text.is_empty() {
         return err_json(StatusCode::BAD_REQUEST, "threadId and text required");
     }
+    // The phone sends neither; another Krystal sends both (attachment paths on
+    // this machine, and the chats its composer #-referenced).
+    let files = args_of_strings(&body, "files");
+    let refs = args_of_strings(&body, "refs");
 
     // One turn at a time per chat. Without this the phone could open a second
     // turn on a chat the desktop is already streaming, and both would be writing
@@ -594,48 +927,37 @@ async fn chat_stream<R: Runtime>(ctx: Ctx<R>, body: Value) -> Response<Body> {
     let app = ctx.app.clone();
     tokio::spawn(async move {
         let state = app.state::<AppState>();
-        let outcome = commands::chat(state, thread_id.clone(), text, None, None, channel).await;
+        let outcome =
+            commands::chat(state, thread_id.clone(), text, Some(files), Some(refs), channel).await;
         // `done` has already gone out through the channel on the happy path;
         // this is the cue that the turn itself is over, either way. Both sides get
         // it, so neither is left with a spinner that never settles.
-        let closing = match outcome {
-            Ok(()) => json!({ "type": "end" }),
-            Err(e) => json!({ "type": "error", "message": e }),
-        };
-        let raw = closing.to_string();
+        let raw = closing_frame(outcome.map(|_| Value::Null)).to_string();
         let _ = tx.send(sse_frame(&raw));
         let _ = app.emit(EV_TURN, json!({ "threadId": thread_id, "raw": raw }));
-        // Dropping `tx` ends the body; the phone sees a clean close.
+        // Dropping `tx` ends the body; the client sees a clean close.
     });
 
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "text/event-stream")
-        .header("cache-control", "no-store")
-        .header("connection", "keep-alive")
-        // Streaming is only end-to-end if nothing in between buffers it.
-        .header("x-accel-buffering", "no")
-        .body(EventBody(rx).boxed())
-        .unwrap()
+    sse_response(rx)
 }
 
 /* ------------------------------- commands -------------------------------- */
 
-/// Start phone access. `port` is optional; `DEFAULT_PORT` when omitted.
+/// Start remote access. `port` is optional; `DEFAULT_PORT` when omitted.
 #[tauri::command]
-pub async fn web_start(app: AppHandle, port: Option<u16>) -> Result<Value, String> {
+pub async fn remote_start(app: AppHandle, port: Option<u16>) -> Result<Value, String> {
     start(app, port.unwrap_or(DEFAULT_PORT)).await
 }
 
 #[tauri::command]
-pub fn web_stop(state: tauri::State<'_, AppState>) -> Value {
-    state.web.shutdown();
-    state.web.status()
+pub fn remote_stop(state: tauri::State<'_, AppState>) -> Value {
+    state.remote.shutdown();
+    state.remote.status()
 }
 
 #[tauri::command]
-pub fn web_status(state: tauri::State<'_, AppState>) -> Value {
-    state.web.status()
+pub fn remote_status(state: tauri::State<'_, AppState>) -> Value {
+    state.remote.status()
 }
 
 #[cfg(test)]
@@ -669,7 +991,7 @@ mod tests {
             ui_lang: std::sync::Mutex::new("en".into()),
             suggestions: std::sync::Mutex::new(false),
             sessions: Default::default(),
-            web: Default::default(),
+            remote: Default::default(),
         });
         app
     }
@@ -741,7 +1063,7 @@ mod tests {
             assert_eq!(req.send().await.unwrap().status(), 401);
         }
 
-        app.state::<AppState>().web.shutdown();
+        app.state::<AppState>().remote.shutdown();
     }
 
     #[tokio::test]
@@ -773,7 +1095,7 @@ mod tests {
         assert!(projects.status().is_success());
         assert!(projects.json::<Value>().await.unwrap()["projects"].is_array());
 
-        app.state::<AppState>().web.shutdown();
+        app.state::<AppState>().remote.shutdown();
     }
 
     #[tokio::test]
@@ -836,7 +1158,7 @@ mod tests {
             404
         );
 
-        app.state::<AppState>().web.shutdown();
+        app.state::<AppState>().remote.shutdown();
     }
 
     /// Minimal percent-encoder, so the test encodes the query the way the phone
@@ -850,6 +1172,115 @@ mod tests {
                 _ => format!("%{b:02X}"),
             })
             .collect()
+    }
+
+    /* --------------------------- command bridge -------------------------- */
+
+    #[tokio::test]
+    async fn another_krystal_can_drive_this_one_through_the_command_bridge() {
+        let dir = TempDir::new();
+        let app = mock_app(&dir.0);
+        let project = dir.0.join("a project").to_string_lossy().to_string();
+        {
+            let state = app.state::<AppState>();
+            let conn = state.db.lock().unwrap();
+            crate::db::create_project(&conn, &project).expect("seed a project");
+        }
+
+        let (base, pin) = serve(&app).await;
+        let http = client();
+        let token = pair(&http, &base, &pin).await;
+
+        let call = |cmd: &'static str, args: Value| {
+            let (http, base, token) = (http.clone(), base.clone(), token.clone());
+            async move {
+                http.post(format!("{base}/api/invoke"))
+                    .bearer_auth(token)
+                    .json(&json!({ "cmd": cmd, "args": args }))
+                    .send()
+                    .await
+                    .unwrap()
+            }
+        };
+
+        // A plain read.
+        let res = call("list_projects", json!({})).await;
+        assert!(res.status().is_success());
+        let body: Value = res.json().await.unwrap();
+        assert_eq!(body["value"]["projects"][0]["path"], json!(project));
+
+        // A write, then a read that proves it landed: the whole point is that
+        // the far machine's database is the one that changed.
+        let created: Value = call("create_thread", json!({ "cwd": project }))
+            .await
+            .json()
+            .await
+            .unwrap();
+        let id = created["value"]["id"].as_str().expect("a thread id").to_string();
+        let renamed = call("rename_thread", json!({ "id": id, "title": "From the other PC" })).await;
+        assert!(renamed.status().is_success());
+        let thread: Value = call("get_thread", json!({ "id": id })).await.json().await.unwrap();
+        assert_eq!(thread["value"]["title"], json!("From the other PC"));
+
+        // A command that failed says so as a 400 with the backend's own message,
+        // not as a success carrying a null.
+        let missing = call("get_thread", json!({ "id": "nope" })).await;
+        assert_eq!(missing.status(), 400);
+        assert!(missing.json::<Value>().await.unwrap()["error"].is_string());
+
+        app.state::<AppState>().remote.shutdown();
+    }
+
+    #[tokio::test]
+    async fn the_bridge_refuses_what_is_not_on_the_allowlist() {
+        let dir = TempDir::new();
+        let app = mock_app(&dir.0);
+        let (base, pin) = serve(&app).await;
+        let http = client();
+        let token = pair(&http, &base, &pin).await;
+
+        // Commands that act on the machine you are sitting at are not proxied,
+        // however well-formed the request is.
+        for cmd in ["open_external", "discord_set_project", "remote_start", "exe_path"] {
+            let res = http
+                .post(format!("{base}/api/invoke"))
+                .bearer_auth(&token)
+                .json(&json!({ "cmd": cmd, "args": { "url": "https://example.com" } }))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(res.status(), 404, "{cmd} should not be reachable over the network");
+        }
+
+        // A streaming command through the wrong door is refused rather than run
+        // with its events dropped on the floor.
+        let res = http
+            .post(format!("{base}/api/invoke"))
+            .bearer_auth(&token)
+            .json(&json!({ "cmd": "chat", "args": { "threadId": "x", "text": "hi" } }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 400);
+
+        // And the bridge is behind the same gate as everything else.
+        let res = http
+            .post(format!("{base}/api/invoke"))
+            .json(&json!({ "cmd": "list_projects", "args": {} }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 401);
+
+        app.state::<AppState>().remote.shutdown();
+    }
+
+    #[test]
+    fn streaming_commands_are_the_two_that_report_through_a_channel() {
+        assert!(is_streaming_command("chat"));
+        assert!(is_streaming_command("run_app"));
+        assert!(!is_streaming_command("list_projects"));
+        assert!(!is_streaming_command("update_claude"));
     }
 
     #[tokio::test]
@@ -882,7 +1313,7 @@ mod tests {
         assert_eq!(payload["type"], json!("error"));
         assert_eq!(payload["message"], json!("unknown thread"));
 
-        app.state::<AppState>().web.shutdown();
+        app.state::<AppState>().remote.shutdown();
     }
 
     #[tokio::test]
@@ -902,7 +1333,7 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), 400);
 
-        app.state::<AppState>().web.shutdown();
+        app.state::<AppState>().remote.shutdown();
     }
 
     #[tokio::test]
@@ -914,8 +1345,8 @@ mod tests {
         assert!(http.get(&base).send().await.unwrap().status().is_success());
 
         let state = app.state::<AppState>();
-        state.web.shutdown();
-        assert_eq!(state.web.status()["running"], json!(false));
+        state.remote.shutdown();
+        assert_eq!(state.remote.status()["running"], json!(false));
 
         // The accept loop wakes on the stop signal; once it has, the port must be
         // re-bindable — otherwise starting phone access again would fail.

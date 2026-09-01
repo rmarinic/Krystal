@@ -19,7 +19,7 @@
 //! task-list note, travels in the user message instead of the system prompt.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
 
@@ -38,6 +38,9 @@ const MAX_WARM_SESSIONS: usize = 6;
 
 /// A session nobody has spoken to for this long is retired on the next sweep.
 const IDLE_TIMEOUT_SECS: u64 = 30 * 60;
+
+/// Serial number for interrupt control requests, so no two share a request id.
+static INTERRUPTS: AtomicU64 = AtomicU64::new(0);
 
 /// Fingerprint of everything fixed when the process starts. Two turns can share a
 /// process only if their fingerprints match. The separator is a unit-separator
@@ -200,14 +203,27 @@ impl Session {
     /// Ask the CLI to abandon the turn in flight. Unlike killing the process this
     /// leaves the session usable: the CLI answers with a `result` marked as an
     /// error and then waits for the next message as normal.
+    ///
+    /// It is a *request*, though — the CLI honours it when it next comes up for
+    /// air, which a turn wedged in a long tool run or a sub-agent tree may not do
+    /// for a while (or at all). Whoever asks must be ready to escalate to a kill;
+    /// `commands::stop_chat` does, on the second press.
     pub async fn interrupt(&self) -> Result<(), String> {
-        self.write_line(&json!({
-            "type": "control_request",
-            "request_id": "krystal-interrupt",
-            "request": { "subtype": "interrupt" }
-        }))
-        .await
+        self.write_line(&interrupt_request()).await
     }
+}
+
+/// One `interrupt` control request, with an id of its own. A fresh id per
+/// interrupt matters: repeats of a single fixed request id are exactly what a CLI
+/// would dedupe away, and a repeat is precisely what a user sends when the first
+/// stop doesn't seem to land.
+fn interrupt_request() -> Value {
+    let n = INTERRUPTS.fetch_add(1, Ordering::Relaxed);
+    json!({
+        "type": "control_request",
+        "request_id": format!("krystal-interrupt-{n}"),
+        "request": { "subtype": "interrupt" }
+    })
 }
 
 /// The warm sessions, one per chat. Held behind an async lock so the map can be
@@ -303,5 +319,15 @@ mod tests {
             key_of(&["ab".to_string(), "c".to_string()], "/p"),
             key_of(&["a".to_string(), "bc".to_string()], "/p")
         );
+    }
+
+    #[test]
+    fn every_interrupt_carries_a_fresh_request_id() {
+        let a = interrupt_request();
+        let b = interrupt_request();
+        assert_eq!(a["type"], "control_request");
+        assert_eq!(a["request"]["subtype"], "interrupt");
+        // Pressing stop twice must read as two requests, not one repeated.
+        assert_ne!(a["request_id"], b["request_id"]);
     }
 }

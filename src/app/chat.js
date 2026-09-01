@@ -17,7 +17,7 @@ function showEmpty() {
   state.activity = [];               // leaving any chat clears the Activity panel state
   state.activityOrch = null;
   showTasksBtn(!!state.project);     // tasks belong to the project, not a chat
-  showPhoneBtn(!!state.project);
+  showRemoteBtn(!!state.project);
   els.title.textContent = tr('header.noConversation');
   els.cwd.textContent = '';
   els.feed.innerHTML = '';
@@ -57,28 +57,42 @@ async function openThread(id, focusMid) {
   state.summary = state.seed;                // readable copy: survives the turn that folds the seed in
   els.feed.innerHTML = '';
   closeAgentPanelIfForeign(id);
-  hydrateAgentRuns(id, t.messages);         // so sub-agent chips can open their run
-  for (const m of t.messages) appendMessage(m.role, m.text, m.files, m);
+
+  // A turn in flight is already in the database (saved the moment it started, and
+  // re-saved as the answer arrives) — but the live view below paints those same
+  // rows, so drop them from the reload rather than showing each one twice.
+  const live = state.live.get(id);
+  const saved = live && live.savedFrom
+    ? t.messages.filter((m) => m.id < live.savedFrom)
+    : t.messages;
+
+  hydrateAgentRuns(id, saved);              // so sub-agent chips can open their run
+  for (let i = 0; i < saved.length; i++) {
+    const m = saved[i];
+    // A turn cut short marks both of its rows; only the last one wears the badge.
+    const next = saved[i + 1];
+    const meta = (m.partial && next && next.partial) ? Object.assign({}, m, { partial: false }) : m;
+    appendMessage(m.role, m.text, m.files, meta);
+  }
   updateUsage(t.usage, { silent: true });   // set meter without popping a tip on open
 
-  // If this thread has a turn in flight, re-render its not-yet-saved user message
-  // and re-attach a typewriter that replays everything buffered so far, then keeps
-  // animating live. Its activity list already includes this turn's tools.
-  const live = state.live.get(id);
+  // If this thread has a turn in flight, re-render its user message and re-attach
+  // a typewriter that replays everything buffered so far, then keeps animating
+  // live. Its activity list already includes this turn's tools.
   if (live) {
     appendMessage('user', live.userText, live.userFiles, null);
     attachLiveTyper(live);
     state.activity = live.activity;
-    state.activityOrch = live.orch || orchFromSegments(t.messages);
+    state.activityOrch = live.orch || orchFromSegments(saved);
   } else {
     // Rebuild the Activity log (shells & sub-agents) from the saved transcript so
     // it's populated on reload, not just during a live turn.
-    state.activity = activityFromSegments(t.messages);
-    state.activityOrch = orchFromSegments(t.messages);
+    state.activity = activityFromSegments(saved);
+    state.activityOrch = orchFromSegments(saved);
   }
   els.activityBtn.hidden = false;
   showTasksBtn(true);
-  showPhoneBtn(true);
+  showRemoteBtn(true);
   syncComposer();
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
   refreshGit();
@@ -301,7 +315,12 @@ function appendMessage(role, text, files, meta) {
   const del = (meta && meta.id)
     ? `<button class="msg-del" title="${tr('msg.deleteTitle')}" aria-label="${tr('msg.delete')}">${TRASH_ICON}</button>`
     : '';
-  div.innerHTML = `<div class="role">${roleLabel}${star}${del}</div>${chips}<div class="bubble"></div>`;
+  // A turn the app never got to finish (closed mid-answer). What was written is
+  // kept rather than dropped, and says so.
+  const cut = (meta && meta.partial)
+    ? `<div class="msg-cut" title="${escapeHtml(tr('msg.interruptedTip'))}">${escapeHtml(tr('msg.interrupted'))}</div>`
+    : '';
+  div.innerHTML = `<div class="role">${roleLabel}${star}${del}</div>${chips}<div class="bubble"></div>${cut}`;
   const bubble = div.querySelector('.bubble');
   if (role === 'assistant') {
     if (segs && segs.length) {

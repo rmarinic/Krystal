@@ -621,6 +621,7 @@
 
   function setStreaming(on) {
     state.streaming = on;
+    if (on) state.stopAsked = '';   // a new turn starts from the polite stop again
     els.stop.hidden = !on;
     // Send is off mid-turn, but the box stays live: you can be typing the next
     // message while Claude is still on this one.
@@ -748,10 +749,18 @@
 
   els.composer.addEventListener('submit', (e) => { e.preventDefault(); sendMessage(); });
 
+  // Two-step, like the window: the first press asks Claude to stop, a second one
+  // kills the process — an interrupt deep inside a tool run can go unheard.
   els.stop.addEventListener('click', async () => {
     if (!state.threadId) return;
-    try { await apiJson('/api/stop', { method: 'POST', body: JSON.stringify({ threadId: state.threadId }) }); }
-    catch (_) {}
+    const force = state.stopAsked === state.threadId;
+    state.stopAsked = state.threadId;
+    try {
+      await apiJson('/api/stop', {
+        method: 'POST',
+        body: JSON.stringify({ threadId: state.threadId, force }),
+      });
+    } catch (_) {}
   });
 
   /* ------------------------- catching up on return ------------------------ */

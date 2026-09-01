@@ -22,6 +22,15 @@
 </head>
 <body class="app">
 
+  <!-- Shown only while this window is driving another Krystal (see app/remote.js).
+       It is the first child of <body> so the app grid gives it a row of its own
+       above the sidebar and the chat, instead of covering either. -->
+  <div class="remote-bar" id="remote-bar">
+    <span class="remote-bar-dot" aria-hidden="true"></span>
+    <span class="remote-bar-text" id="remote-bar-text"></span>
+    <button class="remote-bar-x" id="remote-disconnect" type="button"></button>
+  </div>
+
   <!-- ===================== Project picker (entry screen) ===================== -->
   <div class="project-screen" id="project-screen" hidden>
     <!-- Language toggle (shown only on the picker; the chat header has its own) -->
@@ -44,7 +53,12 @@
         </div>
         <h1 class="project-title" data-i18n="project.choose">Choose a project</h1>
         <p class="project-sub" data-i18n="project.sub">Pick the folder Claude should work in. Each project keeps its own chats, model and history.</p>
-        <button id="new-project-btn" class="project-init-btn" data-i18n="project.initBtn">✨ Initialize new project</button>
+        <div class="project-actions">
+          <button id="new-project-btn" class="project-init-btn" data-i18n="project.initBtn">✨ Initialize new project</button>
+          <!-- Work on another computer's projects: connect to a Krystal that has
+               remote access switched on. See app/remote.js. -->
+          <button id="remote-connect-btn" class="project-remote-btn" data-i18n-title="remote.connectTitle" title="Connect to Krystal on another computer"></button>
+        </div>
       </div>
       <ul class="project-list" id="project-list"></ul>
     </div>
@@ -113,9 +127,9 @@
         <span data-i18n="tasks.label">Tasks</span>
         <span class="tasks-count" id="tasks-count" hidden></span>
       </button>
-      <!-- Phone access: serve this app on the local network so a phone on the
-           same Wi-Fi can carry on the conversation. See app/phone.js. -->
-      <button class="phone-btn" id="phone-btn" hidden title="Use Krystal from your phone on this Wi-Fi"></button>
+      <!-- Remote access: serve this app on the local network so a phone, tablet
+           or another Krystal can carry on the conversation. See app/remote.js. -->
+      <button class="remote-btn" id="remote-btn" hidden title="Use Krystal from another device on this network"></button>
     </div>
   </aside>
 
@@ -320,6 +334,18 @@
     </div>
   </div>
 
+  <!-- ============ Connect to Krystal on another computer =================== -->
+  <!-- Address + the pairing code that machine is showing. See app/remote.js. -->
+  <div class="modal-overlay" id="remote-overlay" hidden>
+    <div class="init-modal remote-modal" role="dialog" aria-modal="true" aria-labelledby="remote-title">
+      <header class="init-head">
+        <div class="init-title" id="remote-title" data-i18n="remote.title">🖥 Connect to another computer</div>
+        <button class="init-x" id="remote-close" data-i18n-title="remote.close" title="Close">×</button>
+      </header>
+      <div class="init-body" id="remote-body"></div>
+    </div>
+  </div>
+
   <!-- ============= Run panel: start the project locally & watch output ====== -->
   <div class="modal-overlay" id="run-overlay" hidden>
     <div class="init-modal run-modal" role="dialog" aria-modal="true" aria-labelledby="run-modal-title">
@@ -466,7 +492,7 @@
   <script defer src="app/usage.js"></script>
   <script defer src="app/orchestrator.js"></script>
   <script defer src="app/pins.js"></script>
-  <script defer src="app/phone.js"></script>
+  <script defer src="app/remote.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

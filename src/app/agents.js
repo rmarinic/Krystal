@@ -442,15 +442,10 @@ function syncAgentFoot(r) {
 async function stopAgentRun() {
   const r = agentRun(agentOpenId);
   if (!r || !r.running) return;
-  els.agentStop.disabled = true;
   els.agentStop.textContent = tr('agent.stopping');
-  if (r.threadId === state.activeId) {
-    await stopActiveTurn();
-  } else {
-    const live = state.live.get(r.threadId);
-    if (live) live.stopped = true;
-    try { await api.stopChat(r.threadId); } catch (_) {}
-  }
+  // Shares the composer's escalation: the button stays live on purpose, so a
+  // second press turns the polite interrupt into a kill (see stream.js).
+  await stopTurn(r.threadId);
 }
 
 /* A run changed. Chips always refresh; the open panel appends the one new step

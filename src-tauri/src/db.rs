@@ -69,6 +69,9 @@ const SCHEMA: &str = r#"
           segments   TEXT,
           compacted  INTEGER DEFAULT 0,
           favorite   INTEGER DEFAULT 0,
+          -- 1 while a turn is still being written (or if it never finished:
+          -- the app closed mid-answer). Cleared when the turn lands.
+          partial    INTEGER DEFAULT 0,
           ts         TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id);
@@ -139,6 +142,7 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch_sub TEXT DEFAULT 'auto'", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN effort TEXT DEFAULT 'high'", []);
+    let _ = conn.execute("ALTER TABLE messages ADD COLUMN partial INTEGER DEFAULT 0", []);
 
     let json_file = db_path
         .parent()
@@ -393,7 +397,7 @@ pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
 
 fn messages_of(conn: &Connection, id: &str) -> Vec<Value> {
     let mut stmt = conn
-        .prepare("SELECT id,role,text,files,segments,compacted,favorite,ts FROM messages WHERE thread_id = ?1 ORDER BY id ASC")
+        .prepare("SELECT id,role,text,files,segments,compacted,favorite,ts,partial FROM messages WHERE thread_id = ?1 ORDER BY id ASC")
         .unwrap();
     let rows = stmt
         .query_map([id], |r| {
@@ -414,6 +418,7 @@ fn messages_of(conn: &Connection, id: &str) -> Vec<Value> {
                 "compacted": r.get::<_, i64>(5)? != 0,
                 "favorite": r.get::<_, i64>(6)? != 0,
                 "ts": r.get::<_, Option<String>>(7)?,
+                "partial": r.get::<_, i64>(8)? != 0,
             }))
         })
         .unwrap();
@@ -564,13 +569,113 @@ pub fn clear(conn: &Connection, id: &str) {
     );
 }
 
-/// Record one completed turn; returns (cumulative usage, title, assistantId, ts).
+/// Fall back to the opening words of a message when a thread has no real title
+/// yet — the same name `finish_turn` would settle on.
+fn title_from(user_text: &str) -> String {
+    let chars: Vec<char> = user_text.chars().collect();
+    let mut tt: String = chars.iter().take(48).collect();
+    if chars.len() > 48 {
+        tt.push('…');
+    }
+    tt
+}
+
+/// Open a turn: persist the user's message *before* Claude is asked anything, so
+/// closing the app mid-answer can never swallow what was typed. The row is marked
+/// `partial` — a turn is in flight over it — and cleared by `finish_turn` or
+/// `abort_turn`. The thread also takes its fallback title now rather than at the
+/// end, so a chat interrupted on its first turn is still findable in the sidebar.
+/// Returns the message's row id.
+pub fn begin_turn(conn: &Connection, id: &str, user_text: &str, files: &[String]) -> i64 {
+    let t = now();
+    let files_json = if files.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(files).unwrap_or_else(|_| "[]".into()))
+    };
+    let _ = conn.execute(
+        "INSERT INTO messages (thread_id,role,text,files,compacted,favorite,partial,ts) VALUES (?1,'user',?2,?3,0,0,1,?4)",
+        params![id, user_text, files_json, t],
+    );
+    let msg_id = conn.last_insert_rowid();
+
+    let cur_title: Option<String> = conn
+        .query_row("SELECT title FROM threads WHERE id = ?1", [id], |r| r.get(0))
+        .ok()
+        .flatten();
+    let named = matches!(&cur_title, Some(s) if !s.is_empty() && s != "New chat");
+    if named {
+        let _ = conn.execute("UPDATE threads SET updated_at=?1 WHERE id=?2", params![t, id]);
+    } else {
+        let _ = conn.execute(
+            "UPDATE threads SET title=?1, updated_at=?2 WHERE id=?3",
+            params![title_from(user_text), t, id],
+        );
+    }
+    msg_id
+}
+
+/// Write the answer down as it is being written. Called on a throttle from the
+/// turn loop so a half-finished reply survives the app going away; the row stays
+/// `partial` until the turn lands. Creates it on the first call and updates it
+/// after that — returns its id either way.
+pub fn save_partial(
+    conn: &Connection,
+    thread_id: &str,
+    msg_id: Option<i64>,
+    text: &str,
+    segments: &[Value],
+) -> i64 {
+    let segments_json = if segments.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(segments).unwrap_or_else(|_| "[]".into()))
+    };
+    match msg_id {
+        Some(mid) => {
+            let _ = conn.execute(
+                "UPDATE messages SET text=?1, segments=?2 WHERE id=?3",
+                params![text, segments_json, mid],
+            );
+            mid
+        }
+        None => {
+            let _ = conn.execute(
+                "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,partial,ts) VALUES (?1,'assistant',?2,NULL,?3,0,0,1,?4)",
+                params![thread_id, text, segments_json, now()],
+            );
+            conn.last_insert_rowid()
+        }
+    }
+}
+
+/// Close a turn that produced nothing usable (stopped before the first word, or a
+/// session that refused to start). The user's message stays — it is theirs — but
+/// stops being "in flight"; an empty answer placeholder is dropped.
+pub fn abort_turn(conn: &Connection, user_msg_id: i64, assistant_msg_id: Option<i64>) {
+    let _ = conn.execute(
+        "UPDATE messages SET partial=0 WHERE id=?1",
+        params![user_msg_id],
+    );
+    if let Some(mid) = assistant_msg_id {
+        let _ = conn.execute(
+            "DELETE FROM messages WHERE id=?1 AND TRIM(text)=''",
+            params![mid],
+        );
+    }
+}
+
+/// Land one completed turn: fill in the rows `begin_turn`/`save_partial` opened
+/// (creating the answer row for a turn that streamed nothing), clear the
+/// in-flight flag and roll up the thread's totals.
+/// Returns (cumulative usage, title, assistantId, ts).
 #[allow(clippy::too_many_arguments)]
-pub fn record_turn(
+pub fn finish_turn(
     conn: &Connection,
     id: &str,
+    user_msg_id: i64,
+    assistant_msg_id: Option<i64>,
     user_text: &str,
-    files: &[String],
     assistant_text: &str,
     segments: &[Value],
     session_id: Option<&str>,
@@ -594,37 +699,37 @@ pub fn record_turn(
         )
         .unwrap_or((None, 0, 0, 0, 0.0));
 
-    let files_json = if files.is_empty() {
-        None
-    } else {
-        Some(serde_json::to_string(files).unwrap_or_else(|_| "[]".into()))
-    };
     let _ = conn.execute(
-        "INSERT INTO messages (thread_id,role,text,files,compacted,favorite,ts) VALUES (?1,'user',?2,?3,0,0,?4)",
-        params![id, user_text, files_json, t],
+        "UPDATE messages SET partial=0 WHERE id=?1",
+        params![user_msg_id],
     );
+
     let segments_json = if segments.is_empty() {
         None
     } else {
         Some(serde_json::to_string(segments).unwrap_or_else(|_| "[]".into()))
     };
-    let _ = conn.execute(
-        "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,ts) VALUES (?1,'assistant',?2,NULL,?3,0,0,?4)",
-        params![id, assistant_text, segments_json, t],
-    );
-    let assistant_id = conn.last_insert_rowid();
+    let assistant_id = match assistant_msg_id {
+        Some(mid) => {
+            let _ = conn.execute(
+                "UPDATE messages SET text=?1, segments=?2, partial=0 WHERE id=?3",
+                params![assistant_text, segments_json, mid],
+            );
+            mid
+        }
+        None => {
+            let _ = conn.execute(
+                "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,partial,ts) VALUES (?1,'assistant',?2,NULL,?3,0,0,0,?4)",
+                params![id, assistant_text, segments_json, t],
+            );
+            conn.last_insert_rowid()
+        }
+    };
 
     let turn_in = context_of(usage);
     let title = match &cur_title {
         Some(s) if !s.is_empty() && s != "New chat" => s.clone(),
-        _ => {
-            let chars: Vec<char> = user_text.chars().collect();
-            let mut tt: String = chars.iter().take(48).collect();
-            if chars.len() > 48 {
-                tt.push('…');
-            }
-            tt
-        }
+        _ => title_from(user_text),
     };
     let out = usage
         .as_ref()
@@ -1188,6 +1293,133 @@ mod tests {
     fn cwd_of(conn: &Connection, thread: &str) -> String {
         conn.query_row("SELECT cwd FROM threads WHERE id = ?1", [thread], |r| r.get(0))
             .unwrap()
+    }
+
+    /// A thread to run turns against.
+    fn thread(conn: &Connection) -> String {
+        id_of(&create(conn, "/proj", "sonnet").unwrap())
+    }
+
+    /// The rows of a thread, as the UI would reload them.
+    fn rows(conn: &Connection, id: &str) -> Vec<Value> {
+        messages_of(conn, id)
+    }
+
+    #[test]
+    fn the_users_message_is_saved_before_the_answer_is_asked_for() {
+        let conn = db();
+        let id = thread(&conn);
+        begin_turn(&conn, &id, "how do I ship this?", &[]);
+
+        // Nothing has come back from Claude yet, and it is already on disk —
+        // closing the app here must not lose what was typed.
+        let msgs = rows(&conn, &id);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[0]["text"], "how do I ship this?");
+        assert_eq!(msgs[0]["partial"], true);
+        // ...and the chat is findable in the sidebar rather than still "New chat".
+        let title: Option<String> = conn
+            .query_row("SELECT title FROM threads WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title.as_deref(), Some("how do I ship this?"));
+    }
+
+    #[test]
+    fn a_half_written_answer_survives_the_app_closing() {
+        let conn = db();
+        let id = thread(&conn);
+        let uid = begin_turn(&conn, &id, "explain the pool", &[]);
+        let aid = save_partial(&conn, &id, None, "The pool keeps", &[]);
+        // Same row on every flush, not a new one per tick.
+        let again = save_partial(
+            &conn,
+            &id,
+            Some(aid),
+            "The pool keeps warm sessions",
+            &[json!({ "type": "text", "text": "The pool keeps warm sessions" })],
+        );
+        assert_eq!(aid, again);
+
+        // The app dies here: both rows are on disk, both flagged as unfinished.
+        let msgs = rows(&conn, &id);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["id"].as_i64(), Some(uid));
+        assert_eq!(msgs[1]["text"], "The pool keeps warm sessions");
+        assert_eq!(msgs[1]["partial"], true);
+        assert_eq!(msgs[1]["segments"][0]["type"], "text");
+    }
+
+    #[test]
+    fn finishing_a_turn_fills_in_the_rows_it_opened() {
+        let conn = db();
+        let id = thread(&conn);
+        let uid = begin_turn(&conn, &id, "hello", &[]);
+        let aid = save_partial(&conn, &id, None, "Hel", &[]);
+        let (usage, _title, assistant_id, _ts) = finish_turn(
+            &conn,
+            &id,
+            uid,
+            Some(aid),
+            "hello",
+            "Hello there",
+            &[json!({ "type": "text", "text": "Hello there" })],
+            Some("sess-1"),
+            &Some(json!({ "input_tokens": 10, "output_tokens": 4 })),
+            0.02,
+        );
+
+        // No duplicate rows: the partial ones were completed in place.
+        assert_eq!(assistant_id, aid);
+        let msgs = rows(&conn, &id);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["partial"], false);
+        assert_eq!(msgs[1]["text"], "Hello there");
+        assert_eq!(msgs[1]["partial"], false);
+        assert_eq!(usage["turns"], 1);
+    }
+
+    #[test]
+    fn a_turn_that_answered_nothing_still_keeps_the_message() {
+        let conn = db();
+        let id = thread(&conn);
+        let uid = begin_turn(&conn, &id, "wait, stop", &[]);
+        let aid = save_partial(&conn, &id, None, "", &[]);
+        abort_turn(&conn, uid, Some(aid));
+
+        // The empty answer placeholder goes; the typed message stays, and is no
+        // longer flagged as in flight.
+        let msgs = rows(&conn, &id);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[0]["text"], "wait, stop");
+        assert_eq!(msgs[0]["partial"], false);
+    }
+
+    #[test]
+    fn aborting_keeps_an_answer_that_had_already_started() {
+        let conn = db();
+        let id = thread(&conn);
+        let uid = begin_turn(&conn, &id, "long one", &[]);
+        let aid = save_partial(&conn, &id, None, "Sure — first", &[]);
+        abort_turn(&conn, uid, Some(aid));
+
+        let msgs = rows(&conn, &id);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[1]["text"], "Sure — first");
+        assert_eq!(msgs[1]["partial"], true);   // cut off, and says so
+    }
+
+    #[test]
+    fn a_second_turn_does_not_rename_a_chat_that_already_has_a_name() {
+        let conn = db();
+        let id = thread(&conn);
+        set_title(&conn, &id, "Shipping the release");
+        begin_turn(&conn, &id, "and now the changelog", &[]);
+        let title: Option<String> = conn
+            .query_row("SELECT title FROM threads WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title.as_deref(), Some("Shipping the release"));
     }
 
     #[test]

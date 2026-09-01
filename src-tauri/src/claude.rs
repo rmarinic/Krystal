@@ -1290,6 +1290,13 @@ fn strip_ask_blocks(s: &str) -> String {
 /// A turn can therefore end three ways: the `result` arrives (normal, including a
 /// turn the user interrupted, which the CLI reports as an errored result), the
 /// event stream closes (the process died under us), or the caller drops us.
+/// How often the half-written answer is flushed to the database mid-turn. Often
+/// enough that closing the app loses at most a sentence, rare enough that a long
+/// turn costs a handful of small writes rather than one per token.
+const PARTIAL_SAVE_MS: u128 = 1200;
+
+/// `on_partial` is handed the answer so far (text + transcript segments) on that
+/// throttle, so an interrupted turn leaves something behind to come back to.
 pub async fn run_turn(
     session: &Session,
     prompt: &str,
@@ -1297,6 +1304,7 @@ pub async fn run_turn(
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
     orchestrating: bool,
+    on_partial: &mut (dyn FnMut(&str, &[Value]) + Send),
 ) -> Result<ChatResult, String> {
     let mut events = session.begin_turn(prompt).await?;
 
@@ -1312,6 +1320,8 @@ pub async fn run_turn(
     // repeats `--include-partial-messages` produces).
     let mut seen_agent_msgs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut got_result = false;
+    let mut last_save = std::time::Instant::now();
+    let mut saved_len = 0usize;
 
     while let Some(ev) = events.recv().await {
         let is_result = ev.get("type").and_then(|v| v.as_str()) == Some("result");
@@ -1326,6 +1336,14 @@ pub async fn run_turn(
         if is_result {
             got_result = true;
             break;
+        }
+        // Keep the half-written answer on disk. Only when it actually grew, and
+        // never more than once per `PARTIAL_SAVE_MS`.
+        if result.final_text.len() != saved_len && last_save.elapsed().as_millis() >= PARTIAL_SAVE_MS
+        {
+            saved_len = result.final_text.len();
+            last_save = std::time::Instant::now();
+            on_partial(&result.final_text, &result.segments);
         }
     }
     running.lock().unwrap().remove(thread_id);
