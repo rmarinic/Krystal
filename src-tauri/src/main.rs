@@ -2,6 +2,7 @@
 // so server-style logs are visible while developing).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod artifacts;
 mod catalog;
 mod claude;
 mod commands;
@@ -16,6 +17,13 @@ use commands::AppState;
 use tauri::Manager;
 
 fn main() {
+    // Before anything else: this same executable doubles as the artifact MCP
+    // server. `claude` launches it that way (see `artifacts::ensure_mcp_config`),
+    // and in that role it speaks JSON-RPC on stdio and never opens a window.
+    if std::env::args().any(|a| a == artifacts::MCP_FLAG) {
+        artifacts::run_stdio_server();
+    }
+
     // Probe the environment once at startup (mirrors server.js boot).
     let caps = claude::probe_caps();
     let claude_bin = claude::resolve_claude();
@@ -141,6 +149,11 @@ fn main() {
             commands::add_project_dir,
             commands::remove_project_dir,
             commands::list_pins,
+            commands::list_artifacts,
+            commands::get_artifact,
+            commands::delete_artifact,
+            commands::export_artifact,
+            commands::open_artifact_externally,
             commands::add_pin,
             commands::remove_pin,
             commands::read_pinned_file,
@@ -152,6 +165,8 @@ fn main() {
             server::remote_start,
             server::remote_stop,
             server::remote_status,
+            server::remote_firewall_status,
+            server::remote_firewall_allow,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Krystal")

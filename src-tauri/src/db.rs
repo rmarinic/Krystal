@@ -124,6 +124,30 @@ const SCHEMA: &str = r#"
         );
         CREATE INDEX IF NOT EXISTS idx_pdir_project ON project_dirs(project);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_pdir_unique ON project_dirs(project, path);
+
+        -- Artifacts: the self-contained documents Claude builds in the artifact
+        -- panel. One row per VERSION, oldest first, so the panel can walk back
+        -- through revisions. `art_id` is the slug Claude reuses to revise one.
+        --
+        -- `turn` is the id of the user message whose turn produced the version.
+        -- A single turn can patch an artifact a dozen times as Claude works
+        -- through it; those all collapse into one version, because a version is
+        -- meaningful to the user ("what it looked like after I asked for X"),
+        -- not to the tool call.
+        CREATE TABLE IF NOT EXISTS artifacts (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          project    TEXT NOT NULL,
+          thread_id  TEXT,
+          art_id     TEXT NOT NULL,
+          title      TEXT,
+          kind       TEXT NOT NULL,
+          content    TEXT NOT NULL,
+          version    INTEGER NOT NULL,
+          turn       INTEGER,
+          created_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_artifact_project ON artifacts(project, art_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_version ON artifacts(project, art_id, version);
         "#;
 
 /// Open (creating if needed) the database, run migrations and the schema.
@@ -1018,6 +1042,11 @@ pub fn move_project(conn: &Connection, id: &str, new_path: &str) -> Option<Value
             "DELETE FROM project_dirs WHERE project = ?1",
             [new_path],
         )?;
+        // Artifacts belong to the project, like pins, so they follow it.
+        conn.execute(
+            "UPDATE artifacts SET project = ?1 WHERE project = ?2",
+            params![new_path, old],
+        )?;
         conn.execute(
             "UPDATE project_dirs SET project = ?1 WHERE project = ?2",
             params![new_path, old],
@@ -1207,6 +1236,134 @@ pub fn add_pin(conn: &Connection, project: &str, path: &str, label: &str) -> Vec
 
 pub fn remove_pin(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM pins WHERE id = ?1", [id]);
+}
+
+/* -------------------------------- artifacts ------------------------------- */
+/// The self-contained documents Claude builds in the artifact panel. Stored per
+/// project (like pins), one row per version.
+
+/// Record a new state of an artifact.
+///
+/// Within a single turn this OVERWRITES rather than piling up: Claude routinely
+/// patches an artifact five or ten times while working through one request, and
+/// a version list with ten entries per message would be useless. The first write
+/// of a turn opens a new version; the rest revise it. `turn` is the id of the
+/// user message that started the turn — `None` collapses to "always a new
+/// version", which is what the one-off paths want.
+///
+/// Returns the version number the content landed on.
+pub fn save_artifact(
+    conn: &Connection,
+    project: &str,
+    thread_id: &str,
+    art_id: &str,
+    title: &str,
+    kind: &str,
+    content: &str,
+    turn: Option<i64>,
+) -> i64 {
+    let existing: Option<i64> = turn.and_then(|t| {
+        conn.query_row(
+            "SELECT version FROM artifacts WHERE project = ?1 AND art_id = ?2 AND turn = ?3",
+            params![project, art_id, t],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    });
+
+    if let Some(version) = existing {
+        let _ = conn.execute(
+            "UPDATE artifacts SET title = ?1, kind = ?2, content = ?3, created_at = ?4              WHERE project = ?5 AND art_id = ?6 AND version = ?7",
+            params![title, kind, content, now(), project, art_id, version],
+        );
+        return version;
+    }
+
+    let version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM artifacts WHERE project = ?1 AND art_id = ?2",
+            params![project, art_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(1);
+    let _ = conn.execute(
+        "INSERT INTO artifacts (project, thread_id, art_id, title, kind, content, version, turn, created_at)          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![project, thread_id, art_id, title, kind, content, version, turn, now()],
+    );
+    version
+}
+
+/// Every artifact in a project, newest activity first, as summaries — the panel's
+/// list. Content is deliberately left out: a project can hold a lot of megabytes
+/// of artifact, and the list only needs to name them.
+pub fn list_artifacts(conn: &Connection, project: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT a.art_id, a.title, a.kind, a.version, a.created_at, a.thread_id,                 (SELECT COUNT(*) FROM artifacts b WHERE b.project = a.project AND b.art_id = a.art_id)          FROM artifacts a          WHERE a.project = ?1            AND a.version = (SELECT MAX(c.version) FROM artifacts c                             WHERE c.project = a.project AND c.art_id = a.art_id)          ORDER BY a.created_at DESC",
+    ) {
+        if let Ok(rows) = stmt.query_map([project], |r| {
+            Ok(json!({
+                "artId": r.get::<_, String>(0)?,
+                "title": r.get::<_, Option<String>>(1)?,
+                "kind": r.get::<_, String>(2)?,
+                "version": r.get::<_, i64>(3)?,
+                "updatedAt": r.get::<_, Option<String>>(4)?,
+                "threadId": r.get::<_, Option<String>>(5)?,
+                "versions": r.get::<_, i64>(6)?,
+            }))
+        }) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// One artifact with its content — the latest version, or a specific one.
+pub fn get_artifact(conn: &Connection, project: &str, art_id: &str, version: Option<i64>) -> Option<Value> {
+    let versions: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM artifacts WHERE project = ?1 AND art_id = ?2",
+            params![project, art_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let row = |r: &rusqlite::Row| -> rusqlite::Result<Value> {
+        Ok(json!({
+            "artId": art_id,
+            "title": r.get::<_, Option<String>>(0)?,
+            "kind": r.get::<_, String>(1)?,
+            "content": r.get::<_, String>(2)?,
+            "version": r.get::<_, i64>(3)?,
+            "updatedAt": r.get::<_, Option<String>>(4)?,
+            "versions": versions,
+        }))
+    };
+    const COLS: &str = "SELECT title, kind, content, version, created_at FROM artifacts";
+    match version {
+        Some(v) => conn.query_row(
+            &format!("{COLS} WHERE project = ?1 AND art_id = ?2 AND version = ?3"),
+            params![project, art_id, v],
+            row,
+        ),
+        None => conn.query_row(
+            &format!("{COLS} WHERE project = ?1 AND art_id = ?2 ORDER BY version DESC LIMIT 1"),
+            params![project, art_id],
+            row,
+        ),
+    }
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// Forget an artifact and all of its versions.
+pub fn delete_artifact(conn: &Connection, project: &str, art_id: &str) {
+    let _ = conn.execute(
+        "DELETE FROM artifacts WHERE project = ?1 AND art_id = ?2",
+        params![project, art_id],
+    );
 }
 
 /* ------------------------------ extra folders ----------------------------- */
@@ -1469,6 +1626,59 @@ mod tests {
         assert!(dirs.contains(&"/new/place/vendor".to_string()), "{dirs:?}");
         assert!(dirs.contains(&"/elsewhere/shared".to_string()), "outside folders stay put: {dirs:?}");
         assert!(project_dir_paths(&conn, "/old/place").is_empty());
+    }
+
+    #[test]
+    fn an_artifact_gets_one_version_per_turn_however_often_it_is_patched() {
+        let conn = db();
+        // Turn one builds it, then patches it twice more while working.
+        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>a</h1>", Some(1));
+        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>b</h1>", Some(1));
+        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>c</h1>", Some(1));
+        let v = get_artifact(&conn, "/p", "chart", None).unwrap();
+        assert_eq!(v["version"], 1, "one turn is one version");
+        assert_eq!(v["versions"], 1);
+        assert_eq!(v["content"], "<h1>c</h1>", "and it holds where the turn ended up");
+
+        // The next turn opens a new version, and the old one is still reachable.
+        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>d</h1>", Some(2));
+        let v = get_artifact(&conn, "/p", "chart", None).unwrap();
+        assert_eq!(v["version"], 2);
+        assert_eq!(v["versions"], 2);
+        assert_eq!(get_artifact(&conn, "/p", "chart", Some(1)).unwrap()["content"], "<h1>c</h1>");
+    }
+
+    #[test]
+    fn the_artifact_list_names_each_artifact_once_at_its_latest_version() {
+        let conn = db();
+        save_artifact(&conn, "/p", "t1", "a", "A", "text/html", "1", Some(1));
+        save_artifact(&conn, "/p", "t1", "a", "A", "text/html", "2", Some(2));
+        save_artifact(&conn, "/p", "t1", "b", "B", "text/markdown", "x", Some(3));
+        save_artifact(&conn, "/other", "t9", "c", "C", "text/html", "y", Some(1));
+
+        let list = list_artifacts(&conn, "/p");
+        assert_eq!(list.len(), 2, "two artifacts, not four rows");
+        let a = list.iter().find(|x| x["artId"] == "a").unwrap();
+        assert_eq!(a["version"], 2);
+        assert_eq!(a["versions"], 2);
+        assert!(list.iter().all(|x| x["artId"] != "c"), "another project's artifact stays there");
+
+        delete_artifact(&conn, "/p", "a");
+        assert_eq!(list_artifacts(&conn, "/p").len(), 1);
+        assert!(get_artifact(&conn, "/p", "a", None).is_none(), "every version goes");
+    }
+
+    #[test]
+    fn moving_a_project_takes_its_artifacts_along() {
+        let conn = db();
+        save_artifact(&conn, "/old/place", "t1", "poster", "Poster", "image/svg+xml", "<svg/>", Some(1));
+        let id = id_of(&create_project(&conn, "/old/place").unwrap());
+        move_project(&conn, &id, "/new/place").expect("should move");
+
+        assert!(list_artifacts(&conn, "/old/place").is_empty());
+        let moved = list_artifacts(&conn, "/new/place");
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0]["artId"], "poster");
     }
 
     #[test]

@@ -129,7 +129,10 @@ function fillRemoteHostState(el) {
         `</div>` +
       `</div>` +
       `<div class="remote-note">${escapeHtml(tr('remote.note'))}</div>` +
+      `<div class="remote-fw" hidden></div>` +
     `</div>`;
+
+  paintFirewall(el.querySelector('.remote-fw'));
 
   const copy = el.querySelector('.remote-copy');
   if (copy) {
@@ -140,6 +143,67 @@ function fillRemoteHostState(el) {
       setTimeout(() => { copy.classList.remove('copied'); copy.textContent = tr('remote.copy'); }, 1400);
     };
   }
+}
+
+/* ---------------------------- the firewall row --------------------------- */
+/* The address and the code can both be right and the phone still time out,
+ * because Windows Firewall drops the connection before the server ever hears it.
+ * Nothing on this side can notice that — loopback is never filtered, so from
+ * here the server looks perfectly healthy. So the panel asks the firewall
+ * directly (`remote_firewall_status`) and, when Krystal isn't on the list,
+ * offers to put it there: one button, one UAC prompt, done.
+ *
+ * Cached like `remoteStatus` — the check shells out to `netsh` and takes about a
+ * second, and Settings rebuilds this panel every time it opens. */
+let remoteFirewall = null;
+let remoteFirewallCheck = null;      // in flight, so a re-render doesn't re-ask
+
+async function paintFirewall(row) {
+  if (!row) return;
+
+  const draw = () => {
+    if (!row.isConnected) return;
+    // `allowed: null` is "couldn't tell" (not Windows, or netsh wouldn't run) —
+    // stay quiet rather than accuse a firewall that may be innocent.
+    if (!remoteFirewall || !remoteFirewall.supported || remoteFirewall.allowed === null
+        || remoteFirewall.allowed === undefined) {
+      row.hidden = true;
+      return;
+    }
+    const blocked = !remoteFirewall.allowed;
+    const first = row.hidden;
+    row.hidden = false;
+    row.classList.toggle('blocked', blocked);
+    row.innerHTML =
+      `<span class="remote-fw-text">${escapeHtml(tr(blocked ? 'remote.fw.blocked' : 'remote.fw.ok'))}</span>` +
+      `<button class="remote-fw-btn" type="button">${escapeHtml(tr(blocked ? 'remote.fw.allow' : 'remote.fw.reapply'))}</button>`;
+    if (first) replayClass(row, 'fw-in');
+
+    row.querySelector('.remote-fw-btn').onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = tr('remote.fw.allowing');
+      try {
+        remoteFirewall = await api.remoteFirewallAllow();
+      } catch (err) {
+        row.classList.add('blocked');
+        row.innerHTML = `<span class="remote-fw-text">${escapeHtml(String((err && err.message) || err))}</span>`;
+        replayClass(row, 'fw-in');
+        return;
+      }
+      draw();
+    };
+  };
+
+  draw();                                   // whatever we already knew, instantly
+  if (!remoteFirewallCheck) {
+    remoteFirewallCheck = api.remoteFirewallStatus()
+      .then((s) => { remoteFirewall = s; })
+      .catch(() => {})
+      .finally(() => { remoteFirewallCheck = null; });
+  }
+  await remoteFirewallCheck;
+  draw();
 }
 
 /* --------------------------- mirroring a turn ---------------------------- */

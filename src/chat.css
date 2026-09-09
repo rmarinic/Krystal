@@ -2564,7 +2564,8 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
   to   { opacity: 1; transform: none; }
 }
 .modal-overlay.closing { animation: fade-out .18s ease forwards; }
-.modal-overlay.closing .init-modal { animation: modal-pop-out .18s ease forwards; }
+.modal-overlay.closing .init-modal,
+.modal-overlay.closing .artifact-modal { animation: modal-pop-out .18s ease forwards; }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes modal-pop-out {
   from { opacity: 1; transform: none; }
@@ -2615,7 +2616,8 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 @media (prefers-reduced-motion: reduce) {
   .init-modal, .project-screen, .project-card, .msg,
   .head-btn.sprouting, .feed.branch-switch .msg,
-  .modal-overlay.closing, .modal-overlay.closing .init-modal { animation: none !important; }
+  .modal-overlay.closing, .modal-overlay.closing .init-modal,
+  .modal-overlay.closing .artifact-modal { animation: none !important; }
 }
 
 /* ---- Rename chat: inline title editing (sidebar row + header) ---- */
@@ -3215,6 +3217,30 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 }
 .remote-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
 
+/* The firewall line. Hidden until the check comes back, so the card doesn't
+   flash a verdict it hasn't reached yet. */
+.remote-fw {
+  display: flex; align-items: center; gap: 10px;
+  padding-top: 11px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--fg-muted); line-height: 1.5;
+}
+.remote-fw[hidden] { display: none; }
+.remote-fw-text { flex: 1 1 auto; min-width: 0; }
+.remote-fw.blocked .remote-fw-text { color: var(--warn); }
+.remote-fw-btn {
+  flex: none; font-family: var(--mono); font-size: 10.5px;
+  color: var(--fg-muted); background: var(--bg-card); cursor: pointer;
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 4px 9px; transition: color .15s, border-color .15s;
+}
+.remote-fw-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.remote-fw.blocked .remote-fw-btn { color: var(--warn); border-color: var(--warn); }
+.remote-fw.blocked .remote-fw-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.remote-fw-btn:disabled { opacity: .6; cursor: progress; }
+/* Reuses the list crossfade's shape, scoped to this row (list-swap itself only
+   applies to .sidebar-list). */
+.remote-fw.fw-in { animation: list-swap .22s ease; }
+
 .remote-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
 .remote-toggle {
   font-family: var(--mono); font-size: 11.5px; font-weight: 600;
@@ -3230,7 +3256,8 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 .remote-toggle:disabled { opacity: 0.6; cursor: progress; }
 
 @media (prefers-reduced-motion: reduce) {
-  .remote-btn, .remote-dot, .remote-copy, .remote-toggle { transition: none; }
+  .remote-btn, .remote-dot, .remote-copy, .remote-toggle, .remote-fw-btn { transition: none; }
+  .remote-fw.fw-in { animation: none; }
   .remote-btn.live .remote-dot { animation: none; }
 }
 
@@ -3321,4 +3348,139 @@ body.is-remote .project-screen { top: 35px; }
     transition: none;
   }
   .remote-bar-dot { animation: none; }
+}
+
+/* ============================ artifacts ================================== *
+   The panel Claude's self-contained documents open in: the project's artifacts
+   down the left, the chosen one rendered on the right. See app/artifacts.js. */
+
+/* A quiet pulse on the sidebar button when a new artifact lands, so it's noticed
+   without pulling the eye off the reply. Same idea as the tasks badge. */
+.artifacts-btn.just-made { animation: tasks-bump .6s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .artifacts-btn.just-made { animation: none; }
+}
+
+.artifact-modal {
+  width: min(1180px, 100%); height: min(88vh, 920px);
+  display: grid; grid-template-columns: 232px minmax(0, 1fr);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  overflow: hidden;
+}
+
+/* ---- the list ---- */
+.artifact-list {
+  border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 12px 10px;
+  background: rgba(0,0,0,0.14);
+}
+.artifact-list-head {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--fg-dim); padding: 4px 8px 10px;
+}
+.artifact-list-empty { color: var(--fg-dim); font-size: 13px; padding: 8px; }
+.artifact-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--fg-muted); padding: 9px 10px; margin-bottom: 2px; cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.artifact-item:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+.artifact-item.on {
+  color: var(--fg); background: rgba(108,199,142,0.10); border-color: var(--border-2);
+}
+.artifact-item-ico { font-size: 14px; opacity: .8; }
+.artifact-item-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.artifact-item-title {
+  font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.artifact-item-meta, .artifact-item-versions {
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+}
+.artifact-item-versions { margin-left: auto; flex: none; }
+
+/* ---- the main column ---- */
+.artifact-main { display: flex; flex-direction: column; min-width: 0; }
+.artifact-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(108,199,142,0.08), transparent);
+}
+.artifact-headings { min-width: 0; }
+.artifact-title {
+  font-weight: 600; font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.artifact-sub { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
+.artifact-acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.artifact-versions { display: flex; gap: 2px; margin-right: 4px; }
+.artifact-act {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 6px 10px; cursor: pointer; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.artifact-act:hover:not(:disabled) { color: var(--fg); border-color: var(--accent-2); }
+.artifact-act:disabled { opacity: .35; cursor: default; }
+.artifact-act.done { color: var(--accent-2); border-color: var(--accent-2); }
+.artifact-act.danger:hover { color: #ff8f7a; border-color: #ff8f7a; }
+
+/* ---- the stage ---- */
+.artifact-stage { flex: 1; min-height: 0; display: flex; }
+.artifact-frame { flex: 1; min-width: 0; display: flex; }
+/* A browser shows a page on white; so does this, or every artifact that didn't
+   set its own background would sit on Krystal's dark surface and look broken. */
+.artifact-iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.artifact-doc {
+  flex: 1; overflow-y: auto; padding: 26px 30px;
+  max-width: 78ch; margin: 0 auto; line-height: 1.65;
+}
+.artifact-loading, .artifact-msg {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  color: var(--fg-dim); font-size: 13px; padding: 30px; text-align: center;
+}
+.artifact-empty h3 { margin: 0; font-size: 15px; color: var(--fg-muted); }
+.artifact-empty p { margin: 0; max-width: 46ch; line-height: 1.6; }
+.artifact-empty-ico { font-size: 30px; opacity: .35; }
+/* Mermaid names the offending line when a diagram won't parse — worth showing. */
+.artifact-diagram-err {
+  margin: 4px 0 0; padding: 10px 12px; max-width: 60ch; text-align: left;
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--fg-muted);
+  background: rgba(0,0,0,0.28); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); white-space: pre-wrap; overflow-x: auto;
+}
+
+/* ---- the card an artifact leaves in the transcript ---- */
+.artifact-card {
+  display: flex; align-items: center; gap: 11px;
+  margin: 10px 0; padding: 11px 13px; cursor: pointer;
+  background: var(--bg-elev); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  transition: border-color .15s, background .15s;
+}
+.artifact-card:hover { border-color: var(--accent-2); background: rgba(108,199,142,0.06); }
+.artifact-card-ico { font-size: 15px; opacity: .85; flex: none; }
+.artifact-card-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.artifact-card-title {
+  font-size: 13.5px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.artifact-card-hint { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+.artifact-card-go {
+  margin-left: auto; color: var(--fg-dim); font-size: 16px; flex: none;
+  transition: transform .18s ease, color .15s;
+}
+.artifact-card:hover .artifact-card-go { transform: translateX(3px); color: var(--accent-2); }
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card-go, .artifact-card:hover .artifact-card-go { transition: none; transform: none; }
+}
+
+/* Narrow windows: the list stops being a column and the artifact gets the room. */
+@media (max-width: 900px) {
+  .artifact-modal { grid-template-columns: minmax(0, 1fr); }
+  .artifact-list { display: none; }
 }

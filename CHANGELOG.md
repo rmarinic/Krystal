@@ -4,6 +4,11 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.22.0
+- **New: artifacts — what Claude builds, beside the conversation.** Ask for a page, a chart, a diagram or a one-page report and it arrives as a real thing you can look at, in a panel next to the chat, instead of a wall of code buried in the reply. Pages and drawings actually run, diagrams are drawn properly, and documents are set in the app's own reading style. Every artifact is self-contained, so **Save a copy** hands you a single file that works anywhere — offline, on someone else's computer, sent as an attachment — and **Open in browser** shows it full size.
+- Artifacts belong to the project, so the **Artifacts** button at the foot of the chat list holds everything Claude has built in that folder, whichever conversation it came up in. Ask for a change and you get a new version rather than a replacement, and the arrows step back through them — one version per thing you asked for, not one per edit Claude made getting there.
+- **Fixed: Remote said it was running, but nothing could connect.** Windows Firewall was dropping every connection from your phone before Krystal ever heard it — and since your own computer is never filtered, the address and the code both looked perfectly fine from here. Krystal now checks, says so plainly when it's blocked, and can fix it for you: press **Allow**, say yes to the Windows prompt, and your phone gets in. (Earlier versions counted on Windows asking you once, on its own. It doesn't always, and never for a Krystal you've since updated.)
+
 ## v0.21.1
 - Fixed: pressing **Remote** on the project screen appeared to do nothing. The panel was opening, but *underneath* the project screen — so it only became visible after you'd picked a project and the screen got out of the way. Settings opened from that screen had the same problem. Both now open on top, where you can see them.
 

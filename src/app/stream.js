@@ -496,6 +496,9 @@ function handleLiveEvent(live, msg) {
       if (msg.title) els.title.textContent = msg.title;
       if (msg.usage) updateUsage(msg.usage);
     }
+    // The turn's artifacts are in the database now, with the version they
+    // settled on — refresh so the panel stops showing a version-less live view.
+    if (live.madeArtifact && typeof artifactsTurnEnded === 'function') artifactsTurnEnded();
     finishLive(live);
   } else if (event === 'title') {
     // Late-arriving first-turn auto-title (fires after `done`). Refresh the
@@ -528,6 +531,11 @@ function handleLiveEvent(live, msg) {
     // doesn't lose it, and show it under the composer if this chat is on screen.
     live.suggestion = msg.text;
     if (active) showSuggestion(msg.text);
+  } else if (event === 'artifact') {
+    // Claude created or revised an artifact. The whole document is in the event
+    // (the backend read it back off disk), so the panel can repaint live.
+    live.madeArtifact = true;
+    if (typeof artifactEvent === 'function') artifactEvent(msg);
   } else if (event === 'tasks') {
     // Claude added/edited tasks via the snapshot file this turn — refresh the UI.
     if (typeof onTasksSynced === 'function') onTasksSynced(msg);

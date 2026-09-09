@@ -10,6 +10,7 @@ const TOOL_ICON = {
   Read: '📖', Write: '✍️', Edit: '✏️', MultiEdit: '✏️', NotebookEdit: '✏️',
   Bash: '⚡', Glob: '🔎', Grep: '🔎', WebSearch: '🌐', WebFetch: '🌐',
   Agent: '🧩', Task: '🧩', TodoWrite: '🗒️', AskUserQuestion: '🗳️', ExitPlanMode: '📋',
+  mcp__krystal__artifact: '◱',
 };
 
 /* ExitPlanMode (Plan mode): Claude proposes a plan; render its markdown as a
@@ -67,6 +68,11 @@ function isShellSegments(segs) {
 /* If a tool segment has a rich rendering (a question card, a plan card), build
  * and return it; otherwise return null so the caller falls back to a chip. */
 function specialToolCard(seg) {
+  // An artifact isn't an action to inspect — it's a thing to open. Handled here
+  // so the live stream and a reloaded transcript render it identically.
+  if (seg.artifact && typeof renderArtifactCard === 'function') {
+    return renderArtifactCard(seg);
+  }
   if (seg.name === 'AskUserQuestion' && Array.isArray(seg.questions) && seg.questions.length) {
     return renderQuestionCard(seg);
   }

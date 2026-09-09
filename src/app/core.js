@@ -59,6 +59,11 @@ const LOCAL_ONLY_COMMANDS = new Set([
   'install_claude', 'update_claude', 'update_claude_npm', 'open_login',
   'set_discord_enabled', 'discord_set_project', 'discord_set_share_name',
   'remote_start', 'remote_stop', 'remote_status',
+  'remote_firewall_status', 'remote_firewall_allow',
+  // Both reach for *this* machine — a save dialog and its browser — so they are
+  // never proxied. `artifacts.js` already stops the user at the button; this is
+  // the wire agreeing with it.
+  'export_artifact', 'open_artifact_externally',
 ]);
 
 function invoke(cmd, args) {
@@ -249,6 +254,15 @@ const els = {
   emptyNewChat: $('#empty-new-chat'),
   emptyInit: $('#empty-init'),
   usageChip: $('#usage-chip'),
+  artifactsBtn: $('#artifacts-btn'),
+  artifactsCount: $('#artifacts-count'),
+  artifactOverlay: $('#artifact-overlay'),
+  artifactList: $('#artifact-list'),
+  artifactTitle: $('#artifact-title'),
+  artifactSub: $('#artifact-sub'),
+  artifactActs: $('#artifact-acts'),
+  artifactStage: $('#artifact-stage'),
+  artifactClose: $('#artifact-close'),
   pinRail: $('#pin-rail'),
   pinList: $('#pin-list'),
   pinAdd: $('#pin-add'),
@@ -372,10 +386,23 @@ const api = {
   preflight() { return invoke('preflight'); },
   appVersion() { return invoke('app_version'); },
   readImage(path) { return invoke('read_image', { path }); },
+  listArtifacts(project) { return invoke('list_artifacts', { project }); },
+  getArtifact(project, artId, version) { return invoke('get_artifact', { project, artId, version }); },
+  deleteArtifact(project, artId) { return invoke('delete_artifact', { project, artId }); },
+  // `rendered` is what the panel is showing when that differs from what's
+  // stored — a diagram saves as its SVG, not as the mermaid source behind it.
+  exportArtifact(project, artId, version, path, rendered) {
+    return invoke('export_artifact', { project, artId, version, path, rendered });
+  },
+  openArtifactExternally(project, artId, version, rendered, ext) {
+    return invoke('open_artifact_externally', { project, artId, version, rendered, ext });
+  },
   saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
   remoteStart(port) { return invoke('remote_start', { port }); },
   remoteStop() { return invoke('remote_stop'); },
   remoteStatus() { return invoke('remote_status'); },
+  remoteFirewallStatus() { return invoke('remote_firewall_status'); },
+  remoteFirewallAllow() { return invoke('remote_firewall_allow'); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

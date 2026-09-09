@@ -127,6 +127,12 @@
         <span data-i18n="tasks.label">Tasks</span>
         <span class="tasks-count" id="tasks-count" hidden></span>
       </button>
+      <!-- Artifacts Claude has built for this project. See app/artifacts.js. -->
+      <button class="tasks-btn artifacts-btn" id="artifacts-btn" hidden data-i18n-title="artifacts.btnTitle" title="Artifacts: the pages, diagrams and documents Claude has built for this project">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M8 20h8"/></svg>
+        <span data-i18n="artifacts.label">Artifacts</span>
+        <span class="tasks-count" id="artifacts-count" hidden></span>
+      </button>
       <!-- Remote access: serve this app on the local network so a phone, tablet
            or another Krystal can carry on the conversation. See app/remote.js. -->
       <button class="remote-btn" id="remote-btn" hidden title="Use Krystal from another device on this network"></button>
@@ -319,6 +325,26 @@
     </div>
   </div>
 
+  <!-- ====== Artifacts: what Claude built, beside the conversation ========== -->
+  <!-- A list of this project's artifacts down the left, the chosen one rendered
+       on the right. HTML runs inside a sandboxed iframe (see app/artifacts.js). -->
+  <div class="modal-overlay artifact-overlay" id="artifact-overlay" hidden>
+    <div class="artifact-modal" role="dialog" aria-modal="true" aria-labelledby="artifact-title">
+      <aside class="artifact-list" id="artifact-list"></aside>
+      <section class="artifact-main">
+        <header class="artifact-head">
+          <div class="artifact-headings">
+            <div class="artifact-title" id="artifact-title"></div>
+            <div class="artifact-sub" id="artifact-sub"></div>
+          </div>
+          <div class="artifact-acts" id="artifact-acts"></div>
+          <button class="init-x" id="artifact-close" data-i18n-title="artifacts.close" title="Close">×</button>
+        </header>
+        <div class="artifact-stage" id="artifact-stage"></div>
+      </section>
+    </div>
+  </div>
+
   <!-- ====== Project folders: the project folder + any extra ones granted ==== -->
   <div class="modal-overlay" id="dirs-overlay" hidden>
     <div class="init-modal dirs-modal" role="dialog" aria-modal="true" aria-labelledby="dirs-title">
@@ -477,6 +503,7 @@
   <script defer src="app/agents.js"></script>
   <script defer src="app/search.js"></script>
   <script defer src="app/messages.js"></script>
+  <script defer src="app/artifacts.js"></script>
   <script defer src="app/stream.js"></script>
   <script defer src="app/mentions.js"></script>
   <script defer src="app/skills.js"></script>

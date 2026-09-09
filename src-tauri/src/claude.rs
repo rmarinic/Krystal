@@ -13,6 +13,7 @@ use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
+use crate::artifacts;
 use crate::session::Session;
 use crate::models::{
     self, is_safe_model_arg, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,
@@ -560,6 +561,23 @@ pub fn apply_session_flags(args: &mut Vec<String>) {
     args.push("stream-json".into());
 }
 
+/// Hand the session Krystal's own artifact tool (see `artifacts.rs`). The CLI has
+/// no Artifact tool of its own — that is something the *host* application
+/// provides — so this is what makes `mcp__krystal__artifact` exist at all.
+///
+/// Deliberately not `--strict-mcp-config`: that would switch off any MCP servers
+/// the user has configured for themselves, and adding a feature is no reason to
+/// take theirs away.
+pub fn apply_artifact_tool(args: &mut Vec<String>, config: &std::path::Path) {
+    args.push("--mcp-config".into());
+    args.push(config.to_string_lossy().to_string());
+}
+
+/// Appended to the system prompt when the artifact tool is available. The tool's
+/// own description says what an artifact *is*; this says when Krystal wants one,
+/// which is the part a tool schema can't express on its own.
+pub const ARTIFACT_NOTE: &str = "ARTIFACTS. You have an artifact tool (mcp__krystal__artifact). Krystal shows an artifact in a panel beside the conversation, and the user can open it, keep it, or send the file to someone else — so it is the right home for anything that is a finished *thing* rather than an explanation: a page, a chart, a diagram, a poster, a report, a small app. Prefer it over a fenced code block whenever the user would plausibly want to look at the result rather than read the source, and over writing a file whenever the thing is for the user rather than for the project's codebase. Revise an existing artifact (same id) instead of making a near-duplicate. Everyday coding work — editing the project's own source files — still belongs in the repo, not in an artifact.";
+
 pub fn apply_chat_flags(
     args: &mut Vec<String>,
     effort: &str,
@@ -1051,6 +1069,10 @@ pub struct ChatResult {
     /// orchestrator re-reading the resumed conversation). Summed per model into
     /// the orchestrator savings readout at end of turn.
     pub msg_usage: HashMap<String, (String, u64)>,
+    /// Artifacts this turn created or revised, latest state per artifact. The
+    /// content is read back off disk (the MCP server resolved it), never out of
+    /// the conversation — see `artifacts.rs`.
+    pub artifacts: Vec<Value>,
 }
 
 impl ChatResult {
@@ -1304,6 +1326,7 @@ pub async fn run_turn(
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
     orchestrating: bool,
+    artifact_dir: Option<&std::path::Path>,
     on_partial: &mut (dyn FnMut(&str, &[Value]) + Send),
 ) -> Result<ChatResult, String> {
     let mut events = session.begin_turn(prompt).await?;
@@ -1319,6 +1342,10 @@ pub async fn run_turn(
     // Sub-agent message ids already forwarded as live activity (dedupes the
     // repeats `--include-partial-messages` produces).
     let mut seen_agent_msgs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Artifact tool calls waiting on their result: tool_use id -> artifact id.
+    // The content isn't in the call we watch go by — it's what the MCP server
+    // resolved and wrote to disk — so we pick it up when the result lands.
+    let mut pending_artifacts: HashMap<String, String> = HashMap::new();
     let mut got_result = false;
     let mut last_save = std::time::Instant::now();
     let mut saved_len = 0usize;
@@ -1331,6 +1358,8 @@ pub async fn run_turn(
             &mut tool_blocks,
             &mut ask,
             &mut seen_agent_msgs,
+            artifact_dir,
+            &mut pending_artifacts,
             channel,
         );
         if is_result {
@@ -1581,12 +1610,48 @@ fn attach_output(
     }
 }
 
+/// Read a just-resolved artifact off disk, remember it on the turn (so the
+/// caller can persist it) and stream it to the panel. Called once per artifact
+/// tool result — a turn that patches one ten times publishes ten times, each
+/// carrying the whole document, which is what makes the panel update live.
+fn publish_artifact(
+    result: &mut ChatResult,
+    dir: &std::path::Path,
+    art_id: &str,
+    channel: &Channel<Value>,
+) {
+    let Some((content, title, kind)) = artifacts::read_current(dir, art_id) else {
+        return;
+    };
+    let payload = json!({
+        "type": "artifact",
+        "artId": art_id,
+        "title": title,
+        "kind": kind,
+        "content": content,
+    });
+    // One entry per artifact, holding its latest state: a turn's tenth patch
+    // replaces the ninth rather than queueing behind it.
+    match result
+        .artifacts
+        .iter_mut()
+        .find(|a| a.get("artId").and_then(|v| v.as_str()) == Some(art_id))
+    {
+        Some(slot) => *slot = payload.clone(),
+        None => result.artifacts.push(payload.clone()),
+    }
+    let _ = channel.send(payload);
+}
+
+#[allow(clippy::too_many_arguments)]
 fn route_event(
     ev: &Value,
     result: &mut ChatResult,
     tool_blocks: &mut HashMap<i64, (String, String, String)>,
     ask: &mut AskParser,
     seen_agent_msgs: &mut std::collections::HashSet<String>,
+    artifact_dir: Option<&std::path::Path>,
+    pending_artifacts: &mut HashMap<String, String>,
     channel: &Channel<Value>,
 ) {
     let ty = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -1759,6 +1824,22 @@ fn route_event(
                                 }
                             }
                         }
+                        // An artifact call: remember which artifact it touches so
+                        // the result can be picked up off disk, and label the chip
+                        // with the artifact rather than the raw MCP tool name.
+                        if name == artifacts::TOOL_NAME {
+                            if let Some(aid) = input.get("id").and_then(|v| v.as_str()) {
+                                if !id.is_empty() {
+                                    pending_artifacts.insert(id.clone(), aid.to_string());
+                                }
+                                msg["artifact"] = json!(aid);
+                            }
+                            if let Some(t) = input.get("title").and_then(|v| v.as_str()) {
+                                msg["target"] = json!(t);
+                            }
+                            // `detail` would otherwise be the whole document.
+                            msg.as_object_mut().map(|o| o.remove("detail"));
+                        }
                         // ExitPlanMode (Plan mode): carry the proposed plan so the
                         // frontend can render it as a readable plan card.
                         if name == "ExitPlanMode" || name == "exit_plan_mode" {
@@ -1808,6 +1889,15 @@ fn route_event(
                     let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
                     let output = tool_result_text(block.get("content"));
                     attach_output(result, id, &output, is_error, channel);
+                    // An artifact finished resolving: the MCP server has written
+                    // it out, so read the whole thing back and hand it to the UI.
+                    if let Some(art_id) = pending_artifacts.remove(id) {
+                        if !is_error {
+                            if let Some(dir) = artifact_dir {
+                                publish_artifact(result, dir, &art_id, channel);
+                            }
+                        }
+                    }
                 }
             }
         }

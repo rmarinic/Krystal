@@ -17,6 +17,7 @@ function showEmpty() {
   state.activity = [];               // leaving any chat clears the Activity panel state
   state.activityOrch = null;
   showTasksBtn(!!state.project);     // tasks belong to the project, not a chat
+  showArtifactsBtn(!!state.project); // and so do artifacts
   showRemoteBtn(!!state.project);
   els.title.textContent = tr('header.noConversation');
   els.cwd.textContent = '';
@@ -92,6 +93,7 @@ async function openThread(id, focusMid) {
   }
   els.activityBtn.hidden = false;
   showTasksBtn(true);
+  showArtifactsBtn(true);
   showRemoteBtn(true);
   syncComposer();
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
