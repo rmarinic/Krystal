@@ -20,6 +20,15 @@ use crate::models::{self, ModelInfo};
 const MODELS_URL: &str = "https://api.anthropic.com/v1/models?limit=100";
 const CACHE_FILE: &str = "models-cache.json";
 
+/// How long a cached catalogue still outranks the static list the app shipped
+/// with. Past this the cache is no longer "the models, fetched recently" but a
+/// stale memory: a model released since then stays invisible for as long as the
+/// live fetch keeps failing — and one expired Claude Code token at boot is
+/// enough to fail it, since the CLI only refreshes that token when it runs. The
+/// static list at least tracks the build, so after a week we prefer it and let
+/// the next successful fetch take over.
+const CACHE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+
 #[derive(Serialize, Deserialize)]
 struct Cache {
     fetched_at: i64,
@@ -176,13 +185,63 @@ pub fn save_cache(dir: &Path, models: &[ModelInfo]) {
     }
 }
 
-/// Load the last cached catalogue, if any. `None` on first run or a bad file.
+/// Load the last cached catalogue, if any. `None` on first run, a bad file, or
+/// a cache older than `CACHE_MAX_AGE_SECS` — see that constant for why an old
+/// cache is worse than the static list.
 pub fn load_cache(dir: &Path) -> Option<Vec<ModelInfo>> {
     let txt = std::fs::read_to_string(dir.join(CACHE_FILE)).ok()?;
     let cache: Cache = serde_json::from_str(&txt).ok()?;
     if cache.models.is_empty() {
-        None
-    } else {
-        Some(cache.models)
+        return None;
+    }
+    // A clock that has moved backwards gives a negative age — that's a fresh
+    // cache as far as we're concerned, not an expired one.
+    let age = chrono::Utc::now().timestamp() - cache.fetched_at;
+    if age > CACHE_MAX_AGE_SECS {
+        return None;
+    }
+    Some(cache.models)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("krystal-cat-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn one() -> Vec<ModelInfo> {
+        vec![ModelInfo {
+            id: "claude-opus-5-5".into(),
+            name: "Claude Opus 5.5".into(),
+            blurb: "Smartest".into(),
+            ctx: 1_000_000,
+            tier: "opus".into(),
+        }]
+    }
+
+    #[test]
+    fn a_fresh_cache_round_trips() {
+        let d = tmp("fresh");
+        save_cache(&d, &one());
+        let got = load_cache(&d).expect("fresh cache loads");
+        assert_eq!(got[0].id, "claude-opus-5-5");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_stale_cache_is_ignored_so_the_static_list_wins() {
+        let d = tmp("stale");
+        let cache = Cache {
+            fetched_at: chrono::Utc::now().timestamp() - CACHE_MAX_AGE_SECS - 60,
+            models: one(),
+        };
+        std::fs::write(d.join(CACHE_FILE), serde_json::to_string(&cache).unwrap()).unwrap();
+        assert!(load_cache(&d).is_none());
+        std::fs::remove_dir_all(&d).ok();
     }
 }
+

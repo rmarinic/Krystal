@@ -25,17 +25,21 @@ pub struct ModelInfo {
     pub tier: String,
 }
 
-pub const DEFAULT_MODEL: &str = "claude-opus-5";
+pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
 
 /// The cheapest/fastest model — used for tiny background chores like naming a
 /// chat from its first message, where smarts don't matter but cost does.
 pub const TITLE_MODEL: &str = "claude-haiku-4-5-20251001";
 
+/// The newest model per tier as of this build. The live catalogue (`catalog.rs`)
+/// normally replaces it, but it is what the picker shows when the Models API is
+/// unreachable or unauthenticated — and what a cache too old to trust falls back
+/// to — so **bump it when a new model ships**.
 pub const MODELS: &[Model] = &[
-    Model { id: "claude-opus-5",             name: "Opus 5",   blurb: "Smartest",        ctx: 1_000_000 },
-    Model { id: "claude-sonnet-5",           name: "Sonnet 5", blurb: "Balanced & fast", ctx: 1_000_000 },
+    Model { id: "claude-opus-5-5",           name: "Opus 5.5",  blurb: "Smartest",       ctx: 1_000_000 },
+    Model { id: "claude-sonnet-5",           name: "Sonnet 5",  blurb: "Balanced & fast", ctx: 1_000_000 },
     Model { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5", blurb: "Quick & cheap",  ctx:   200_000 },
-    Model { id: "claude-fable-5",            name: "Fable 5",  blurb: "Creative",        ctx: 1_000_000 },
+    Model { id: "claude-fable-5-1",          name: "Fable 5.1", blurb: "Creative",       ctx: 1_000_000 },
 ];
 
 /// Whether the given id is one of the offered models.
@@ -162,7 +166,7 @@ pub const SUB_MODEL_AUTO: &str = "auto";
 /// a tier is missing from the live catalogue (see `claude::prepare_orchestration`).
 pub const ORCH_FAST_MODEL: &str = "claude-haiku-4-5-20251001";
 pub const ORCH_BALANCED_MODEL: &str = "claude-sonnet-5";
-pub const ORCH_DEEP_MODEL: &str = "claude-opus-5";
+pub const ORCH_DEEP_MODEL: &str = "claude-opus-5-5";
 
 /* -------------------------------- effort --------------------------------- */
 /// How hard the model thinks before it answers (`claude --effort`). Newer Claude
@@ -266,7 +270,7 @@ mod tests {
     #[test]
     fn fallback_chain_skips_the_primary_and_orders_by_capability() {
         let cat = seed_models();
-        let opus = fallback_chain(&cat, "claude-opus-5").expect("opus can fall back");
+        let opus = fallback_chain(&cat, "claude-opus-5-5").expect("opus can fall back");
         assert_eq!(opus, "claude-sonnet-5,claude-haiku-4-5-20251001");
         // A model can't fall back to itself.
         let sonnet = fallback_chain(&cat, "claude-sonnet-5").expect("sonnet can fall back");
@@ -281,7 +285,7 @@ mod tests {
     #[test]
     fn fallback_chain_falls_back_to_the_static_list_when_the_catalogue_is_empty() {
         // A failed catalogue fetch must not silently drop the safety net.
-        assert!(fallback_chain(&[], "claude-opus-5").is_some());
+        assert!(fallback_chain(&[], "claude-opus-5-5").is_some());
     }
 
     #[test]
@@ -293,7 +297,7 @@ mod tests {
 
     #[test]
     fn model_name_falls_back_to_id() {
-        assert_eq!(model_name("claude-fable-5"), "Fable 5");
+        assert_eq!(model_name("claude-fable-5-1"), "Fable 5.1");
         assert_eq!(model_name("unknown-id"), "unknown-id");
     }
 
@@ -301,7 +305,7 @@ mod tests {
     fn tier_derives_from_name_or_id() {
         assert_eq!(tier_of("claude-opus-4-8", "Claude Opus 4.8"), "opus");
         assert_eq!(tier_of("claude-sonnet-5", "Claude Sonnet 5"), "sonnet");
-        assert_eq!(tier_of("claude-fable-5", "Claude Fable 5"), "fable");
+        assert_eq!(tier_of("claude-fable-5-1", "Claude Fable 5.1"), "fable");
         // Dated snapshot id, empty display name → fall back to the id segment.
         assert_eq!(tier_of("claude-haiku-4-5-20251001", ""), "haiku");
     }
@@ -329,7 +333,7 @@ mod tests {
     #[test]
     fn default_id_prefers_opus_then_first_then_const() {
         let catalog = seed_models();
-        assert_eq!(default_id(&catalog), "claude-opus-5"); // opus tier present
+        assert_eq!(default_id(&catalog), "claude-opus-5-5"); // opus tier present
         // No opus tier → first entry wins.
         let no_opus: Vec<ModelInfo> = catalog.iter().filter(|m| m.tier != "opus").cloned().collect();
         assert_eq!(default_id(&no_opus), no_opus[0].id);
@@ -343,7 +347,7 @@ mod tests {
         // A still-offered id is returned untouched.
         assert_eq!(effective_id(&catalog, "claude-sonnet-5"), "claude-sonnet-5");
         // A superseded opus id remaps to the live opus entry (newest in tier).
-        assert_eq!(effective_id(&catalog, "claude-opus-4-8"), "claude-opus-5");
+        assert_eq!(effective_id(&catalog, "claude-opus-4-8"), "claude-opus-5-5");
         // An unknown-tier id falls back to the default.
         assert_eq!(effective_id(&catalog, "totally-unknown"), default_id(&catalog));
     }

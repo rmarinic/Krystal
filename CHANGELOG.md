@@ -4,6 +4,10 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.22.1
+- **Fixed: the model picker was stuck on an old list.** Claude Opus 5.5 came out and Krystal carried on offering Opus 5. The list isn't built into the app — Krystal asks Anthropic for it, so a new model turns up on its own — but it also remembers the last list it managed to fetch, and it was serving that one forever: the fetch had been quietly failing at every launch. Opus 5.5 is there now, and the chats you had on Opus 5 move across by themselves.
+- Two things behind that: a remembered list is now only trusted for a week, after which the app falls back to the one it shipped with rather than a stale memory; and a fetch that doesn't get through is retried within seconds instead of an hour later. (It needs a sign-in that Claude Code only renews when it actually runs, so opening Krystal after a break was usually a moment too early — the first message of the session fixes that, and now Krystal notices.)
+
 ## v0.22.0
 - **New: artifacts — what Claude builds, beside the conversation.** Ask for a page, a chart, a diagram or a one-page report and it arrives as a real thing you can look at, in a panel next to the chat, instead of a wall of code buried in the reply. Pages and drawings actually run, diagrams are drawn properly, and documents are set in the app's own reading style. Every artifact is self-contained, so **Save a copy** hands you a single file that works anywhere — offline, on someone else's computer, sent as an attachment — and **Open in browser** shows it full size.
 - Artifacts belong to the project, so the **Artifacts** button at the foot of the chat list holds everything Claude has built in that folder, whichever conversation it came up in. Ask for a change and you get a new version rather than a replacement, and the arrows step back through them — one version per thing you asked for, not one per edit Claude made getting there.

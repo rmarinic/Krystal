@@ -151,12 +151,15 @@ async function populatePickers() {
     state.efforts = efforts || [];
     buildPickers();
   } catch {}
-  refreshModelsLive();   // then pull the latest catalogue from the Models API
+  // Then pull the latest catalogue from the Models API — and keep trying if that
+  // first attempt didn't reach it (see scheduleModelRetry).
+  refreshModelsLive().then((live) => { if (!live) scheduleModelRetry(); });
 }
 
 // Fetch the live Anthropic model list (backend hits GET /v1/models), adopt it,
 // and rebuild the pickers. Silent on failure — the cached/static list already
 // populated them, so offline or unauthenticated launches degrade gracefully.
+// Resolves true only when the list actually came from the API.
 async function refreshModelsLive() {
   try {
     const r = await api.refreshModels();
@@ -165,11 +168,31 @@ async function refreshModelsLive() {
       buildPickers();                                     // preserves the current selection
       if (state.activeId) updateUsage(state.lastUsage, { silent: true });  // re-scale meter
     }
+    if (r && r.source === 'live') {
+      clearTimeout(modelRetryTimer);
+      return true;
+    }
   } catch {}
+  return false;
 }
 
 let modelPollTimer = null;
+let modelRetryTimer = null;
 const MODEL_POLL_MS = 60 * 60 * 1000;   // models change far less often than usage — hourly is plenty
+
+// A boot-time fetch usually fails for one reason: the Claude Code token on disk
+// had expired, and only the CLI can refresh it — which it does the moment a chat
+// turn runs. So retry on a short ramp instead of waiting out the hourly poll,
+// which would otherwise leave a whole session on last week's model list.
+const MODEL_RETRY_MS = [20 * 1000, 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
+
+function scheduleModelRetry(step = 0) {
+  clearTimeout(modelRetryTimer);
+  if (step >= MODEL_RETRY_MS.length) return;   // give up quietly; the hourly poll carries on
+  modelRetryTimer = setTimeout(async () => {
+    if (!(await refreshModelsLive())) scheduleModelRetry(step + 1);
+  }, MODEL_RETRY_MS[step]);
+}
 
 // Keep the model picker current without a restart: poll hourly while the window
 // is visible, and refresh immediately when it regains focus (a stale background
