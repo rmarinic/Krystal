@@ -984,7 +984,8 @@ pub async fn chat(
     };
 
     let mut args = claude::base_args(&meta.model, &sys);
-    claude::apply_mode(&mut args, &meta.mode);   // Auto = full power; Plan = research only
+    // Auto = full power; Ask = stops for permission; Plan = research only
+    claude::apply_mode(&mut args, &meta.mode);
     claude::apply_chat_flags(&mut args, &meta.effort, fallback.as_deref(), state.suggestions());
     claude::apply_extra_dirs(&mut args, &extra_dirs);
     claude::apply_session_flags(&mut args);      // one warm process serves the whole chat
@@ -1121,6 +1122,15 @@ pub async fn chat(
         }
     };
 
+    // Where Krystal keeps files it asks Claude to touch on its behalf — the task
+    // snapshot it is told to keep current, the attachments it is told to Read.
+    // In Ask mode those must not turn into permission prompts about files the
+    // user never chose (see `claude::is_own_business`).
+    let own_dirs = [
+        state.data_dir.join("task-lists"),
+        state.data_dir.join("attachments"),
+    ];
+
     let turn = claude::run_turn(
         &session,
         &prompt,
@@ -1132,6 +1142,7 @@ pub async fn chat(
             .as_ref()
             .map(|_| artifacts::store_dir(&state.data_dir, &artifact_key))
             .as_deref(),
+        &own_dirs,
         &mut on_partial,
     )
     .await;
@@ -1261,6 +1272,30 @@ pub async fn stop_chat(
         let _ = tokio::task::spawn_blocking(move || claude::kill_process_tree(pid)).await;
     }
     Ok(json!({ "ok": pid.is_some(), "killed": pid.is_some() }))
+}
+
+/// Answer a permission prompt a turn is waiting on (Ask mode): `allow` this
+/// once, `always` (allow, and apply the rule the CLI suggested so it stops
+/// asking), or `deny`.
+///
+/// `ok: false` means the prompt was already gone — answered from another view,
+/// withdrawn because the turn was stopped, or the turn ended. That is a late
+/// click, not a failure, so it is reported rather than raised. The turn itself
+/// tells every view the prompt is settled (a `permission_gone` event), so the
+/// window, the phone and a connected Krystal all drop the card together.
+#[tauri::command]
+pub async fn answer_permission(
+    state: State<'_, AppState>,
+    thread_id: String,
+    request_id: String,
+    decision: String,
+) -> Result<Value, String> {
+    let decision = session::Decision::parse(&decision).ok_or("unknown decision")?;
+    let Some(sess) = state.sessions.get(&thread_id).await else {
+        return Ok(json!({ "ok": false }));
+    };
+    let ok = sess.answer_permission(&request_id, decision).await?;
+    Ok(json!({ "ok": ok }))
 }
 
 /// List the chat turns the app currently thinks are running, each verified

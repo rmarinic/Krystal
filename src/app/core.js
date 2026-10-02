@@ -9,7 +9,7 @@
  *
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
- *   messages → stream → mentions → skills → attachments → wizard →
+ *   messages → stream → permissions → mentions → skills → attachments → wizard →
  *   localization → settings → remote → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
@@ -178,6 +178,7 @@ const els = {
   modePicker: $('#mode-picker'),
   effortPicker: $('#effort-picker'),
   composerSuggest: $('#composer-suggest'),
+  composerPerm: $('#composer-perm'),
   branchBtn: $('#branch-btn'),
   compactBtn: $('#compact-btn'),
   clearBtn: $('#clear-btn'),
@@ -370,6 +371,10 @@ const api = {
   discordSetShareName(enabled) { return invoke('discord_set_share_name', { enabled }); },
   // `force` kills the turn's process instead of politely asking it to stop.
   stopChat(threadId, force) { return invoke('stop_chat', { threadId, force: !!force }); },
+  // Ask mode: `decision` is 'allow' | 'always' | 'deny' (see permissions.js).
+  answerPermission(threadId, requestId, decision) {
+    return invoke('answer_permission', { threadId, requestId, decision });
+  },
   activeRuns() { return invoke('active_runs'); },
   stopAllChats() { return invoke('stop_all_chats'); },
   gitStatus(cwd) { return invoke('git_status', { cwd }); },

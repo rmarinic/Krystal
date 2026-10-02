@@ -104,7 +104,7 @@
       'model.tag': 'model',
       'model.pickerTitle': 'Which Claude brain to use',
       'mode.tag': 'mode',
-      'mode.pickerTitle': 'How much Claude may do on its own: Auto acts freely; Plan only researches and proposes',
+      'mode.pickerTitle': 'How much Claude may do on its own: Auto acts freely; Ask checks with you before changing or running anything; Plan only researches and proposes',
       'effort.tag': 'effort',
       'effort.pickerTitle': 'How hard Claude thinks before it answers — higher is slower but more thorough',
       'init.editBtn': '✎ Edit instructions',
@@ -414,6 +414,8 @@
       /* ---- modes ---- */
       'mode.auto.name': 'Auto',
       'mode.auto.blurb': 'Reads, writes & runs on its own',
+      'mode.ask.name': 'Ask',
+      'mode.ask.blurb': 'Asks before it changes or runs anything',
       'mode.plan.name': 'Plan',
       'mode.plan.blurb': 'Researches & proposes — no changes',
       /* ---- effort levels ---- */
@@ -441,6 +443,33 @@
       'suggest.label': 'Next:',
       'suggest.title': 'Suggested next message — click to put it in the box',
       'suggest.dismiss': 'Dismiss',
+
+      /* ---- Ask mode: the permission prompt ---- */
+      'perm.title.run': 'Claude wants to run a command',
+      'perm.title.edit': 'Claude wants to edit a file',
+      'perm.title.write': 'Claude wants to write a file',
+      'perm.title.read': 'Claude wants to read a file',
+      'perm.title.fetch': 'Claude wants to fetch a web page',
+      'perm.title.search': 'Claude wants to search the web',
+      'perm.title.tool': 'Claude wants to use {tool}',
+      'perm.allow': 'Allow',
+      'perm.deny': 'Deny',
+      'perm.denyTitle': 'Claude stops and waits for you to say what to do instead',
+      'perm.always.generic': 'Always allow',
+      'perm.always.edits': 'Allow all edits for now',
+      'perm.always.rule': 'Don’t ask again for {rule}',
+      'perm.always.dir': 'Always allow in {dir}',
+      'perm.does.edits': 'All file edits',
+      'perm.does.dir': 'Access to {dir}',
+      'perm.scope.session': 'until this chat’s session restarts (a new model or mode, or reopening the app)',
+      'perm.scope.localSettings': 'remembered for this project on this computer',
+      'perm.scope.projectSettings': 'remembered in this project’s shared settings',
+      'perm.scope.userSettings': 'remembered for all your projects',
+      'perm.more': '+{n} waiting',
+      'perm.failed': 'Couldn’t send that answer',
+      'perm.tipLabel': 'Claude needs your permission',
+      'perm.tipBody': 'A reply in “{title}” is waiting for you to allow something.',
+      'perm.tipOpen': 'Open chat',
 
       /* ---- setup wizard / CLAUDE.md editor ---- */
       'wiz.title': '✨ Initial setup',
@@ -687,6 +716,7 @@
       'settings.runs.unknown': 'Untitled chat',
       'sidebar.streamingTitle': 'A reply is streaming in this chat',
       'sidebar.draftTitle': 'An unsent draft is waiting in this chat',
+      'sidebar.permissionTitle': 'This chat is waiting for your permission',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'no changes',
@@ -814,7 +844,7 @@
       'model.tag': 'model',
       'model.pickerTitle': 'Koji Claude model koristiti',
       'mode.tag': 'način',
-      'mode.pickerTitle': 'Koliko Claude smije sam: Auto radi slobodno; Plan samo istražuje i predlaže',
+      'mode.pickerTitle': 'Koliko Claude smije sam: Auto radi slobodno; Pitaj traži dopuštenje prije svake promjene ili pokretanja; Plan samo istražuje i predlaže',
       'effort.tag': 'trud',
       'effort.pickerTitle': 'Koliko Claude razmišlja prije odgovora — više je sporije, ali temeljitije',
       'init.editBtn': '✎ Uredi upute',
@@ -1120,6 +1150,8 @@
       /* ---- modes ---- */
       'mode.auto.name': 'Auto',
       'mode.auto.blurb': 'Čita, piše i izvodi sam',
+      'mode.ask.name': 'Pitaj',
+      'mode.ask.blurb': 'Pita prije nego što nešto promijeni ili pokrene',
       'mode.plan.name': 'Plan',
       'mode.plan.blurb': 'Istražuje i predlaže — bez promjena',
       /* ---- razine truda ---- */
@@ -1147,6 +1179,33 @@
       'suggest.label': 'Dalje:',
       'suggest.title': 'Prijedlog sljedeće poruke — klikni da je staviš u okvir',
       'suggest.dismiss': 'Odbaci',
+
+      /* ---- Ask mode: the permission prompt ---- */
+      'perm.title.run': 'Claude želi pokrenuti naredbu',
+      'perm.title.edit': 'Claude želi urediti datoteku',
+      'perm.title.write': 'Claude želi zapisati datoteku',
+      'perm.title.read': 'Claude želi pročitati datoteku',
+      'perm.title.fetch': 'Claude želi dohvatiti web-stranicu',
+      'perm.title.search': 'Claude želi pretražiti web',
+      'perm.title.tool': 'Claude želi koristiti {tool}',
+      'perm.allow': 'Dopusti',
+      'perm.deny': 'Odbij',
+      'perm.denyTitle': 'Claude staje i čeka upute što učiniti umjesto toga',
+      'perm.always.generic': 'Uvijek dopusti',
+      'perm.always.edits': 'Dopusti sva uređivanja zasad',
+      'perm.always.rule': 'Ne pitaj više za {rule}',
+      'perm.always.dir': 'Uvijek dopusti u {dir}',
+      'perm.does.edits': 'Sva uređivanja datoteka',
+      'perm.does.dir': 'Pristup mapi {dir}',
+      'perm.scope.session': 'dok se sesija ovog razgovora ne pokrene iznova (novi model ili način, ili ponovno otvaranje aplikacije)',
+      'perm.scope.localSettings': 'zapamćeno za ovaj projekt na ovom računalu',
+      'perm.scope.projectSettings': 'zapamćeno u zajedničkim postavkama projekta',
+      'perm.scope.userSettings': 'zapamćeno za sve projekte',
+      'perm.more': '+{n} čeka',
+      'perm.failed': 'Odgovor nije poslan',
+      'perm.tipLabel': 'Claude treba dopuštenje',
+      'perm.tipBody': 'Odgovor u razgovoru „{title}” čeka dopuštenje za nastavak.',
+      'perm.tipOpen': 'Otvori razgovor',
 
       /* ---- setup wizard / CLAUDE.md editor ---- */
       'wiz.title': '✨ Početno postavljanje',
@@ -1393,6 +1452,7 @@
       'settings.runs.unknown': 'Razgovor bez naslova',
       'sidebar.streamingTitle': 'U ovom razgovoru pristiže odgovor',
       'sidebar.draftTitle': 'U ovom razgovoru čeka neposlana skica',
+      'sidebar.permissionTitle': 'Ovaj razgovor čeka dopuštenje',
 
       /* ---- git status line / stop ---- */
       'git.clean': 'nema promjena',

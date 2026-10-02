@@ -38,6 +38,18 @@
       chats_one: 'chat', chats_many: 'chats',
       turns_one: 'message', turns_many: 'messages',
       plan: 'Proposed plan',
+      permRun: 'Claude wants to run a command',
+      permEdit: 'Claude wants to edit a file',
+      permWrite: 'Claude wants to write a file',
+      permRead: 'Claude wants to read a file',
+      permFetch: 'Claude wants to fetch a web page',
+      permSearch: 'Claude wants to search the web',
+      permTool: 'Claude wants to use {tool}',
+      permAllow: 'Allow', permDeny: 'Deny',
+      permAlways: 'Always allow',
+      permAlwaysEdits: 'Allow all edits for now',
+      permAlwaysRule: 'Don’t ask again for {rule}',
+      permFailed: 'Couldn’t send that answer. Check the connection and try again.',
       tool: {
         Read: 'Reading a file', Write: 'Writing a file', Edit: 'Editing a file',
         MultiEdit: 'Editing a file', NotebookEdit: 'Editing a file',
@@ -68,6 +80,18 @@
       chats_one: 'razgovor', chats_many: 'razgovora',
       turns_one: 'poruka', turns_many: 'poruka',
       plan: 'Predloženi plan',
+      permRun: 'Claude želi pokrenuti naredbu',
+      permEdit: 'Claude želi urediti datoteku',
+      permWrite: 'Claude želi zapisati datoteku',
+      permRead: 'Claude želi pročitati datoteku',
+      permFetch: 'Claude želi dohvatiti web-stranicu',
+      permSearch: 'Claude želi pretražiti web',
+      permTool: 'Claude želi koristiti {tool}',
+      permAllow: 'Dopusti', permDeny: 'Odbij',
+      permAlways: 'Uvijek dopusti',
+      permAlwaysEdits: 'Dopusti sva uređivanja zasad',
+      permAlwaysRule: 'Ne pitaj više za {rule}',
+      permFailed: 'Odgovor nije poslan. Provjeri vezu i pokušaj ponovno.',
       tool: {
         Read: 'Čitam datoteku', Write: 'Pišem datoteku', Edit: 'Uređujem datoteku',
         MultiEdit: 'Uređujem datoteku', NotebookEdit: 'Uređujem datoteku',
@@ -520,6 +544,110 @@
     return card;
   }
 
+  /* -------------------------- permission prompts -------------------------- */
+  /* Ask mode (set on the computer): the turn stops before changing or running
+   * anything and asks. The question travels with the turn's events, so a turn
+   * started here has to be answerable here — otherwise it would sit waiting for
+   * somebody to walk over to the desktop. Same three answers as the window. */
+
+  const PERM_TITLES = {
+    Bash: 'permRun', Edit: 'permEdit', MultiEdit: 'permEdit', NotebookEdit: 'permEdit',
+    Write: 'permWrite', Read: 'permRead', WebFetch: 'permFetch', WebSearch: 'permSearch',
+  };
+
+  function permToolName(tool) {
+    const m = /^mcp__(.+?)__(.+)$/.exec(tool || '');
+    return m ? m[2] + ' (' + m[1] + ')' : (tool || '');
+  }
+
+  /* What "always" would do, as the CLI proposed it (see claude.rs). */
+  function permAlwaysLabel(msg) {
+    const items = Array.isArray(msg.always) ? msg.always : [];
+    if (!items.length) return null;
+    if (items.some((a) => a.kind === 'mode' && a.text === 'acceptEdits')) return t('permAlwaysEdits');
+    const rule = items.find((a) => a.kind === 'rule');
+    if (rule) {
+      const text = rule.text || permToolName(rule.tool);
+      return t('permAlwaysRule', { rule: text.length > 30 ? text.slice(0, 29) + '…' : text });
+    }
+    return t('permAlways');
+  }
+
+  function renderPermissionCard(msg, threadId) {
+    const card = document.createElement('div');
+    card.className = 'qa perm';
+    card.dataset.pid = msg.id;
+
+    const title = document.createElement('div');
+    title.className = 'qa-title';
+    const key = PERM_TITLES[msg.tool];
+    title.textContent = '🛡 ' + (key ? t(key) : t('permTool', { tool: permToolName(msg.tool) }));
+    card.appendChild(title);
+
+    // Exactly what is being agreed to: the command, or the file and its change.
+    const edits = Array.isArray(msg.edits) ? msg.edits : [];
+    const body = edits.length > 0 || msg.content != null;
+    if (msg.detail) {
+      const what = document.createElement(body ? 'div' : 'pre');
+      what.className = body ? 'perm-path' : 'perm-what';
+      what.textContent = (msg.tool === 'Bash' ? '$ ' : '') + msg.detail;
+      card.appendChild(what);
+    }
+    if (body) {
+      const pre = document.createElement('pre');
+      pre.className = 'perm-what';
+      if (edits.length) {
+        for (const e of edits) {
+          for (const [cls, sign, text] of [['del', '- ', e.old], ['add', '+ ', e.new]]) {
+            if (!text) continue;
+            for (const line of String(text).split('\n')) {
+              const row = document.createElement('div');
+              row.className = cls;
+              row.textContent = sign + line;
+              pre.appendChild(row);
+            }
+          }
+        }
+      } else {
+        pre.textContent = msg.content;
+      }
+      card.appendChild(pre);
+    }
+
+    const acts = document.createElement('div');
+    acts.className = 'perm-acts';
+    const button = (cls, text, decision) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ' + cls;
+      b.textContent = text;
+      b.addEventListener('click', async () => {
+        const all = [...acts.querySelectorAll('button')];
+        all.forEach((x) => { x.disabled = true; });
+        try {
+          await apiJson('/api/invoke', {
+            method: 'POST',
+            body: JSON.stringify({
+              cmd: 'answer_permission',
+              args: { threadId: threadId, requestId: msg.id, decision: decision },
+            }),
+          });
+          card.remove();   // the turn's own `permission_gone` would do it too
+        } catch (e) {
+          all.forEach((x) => { x.disabled = false; });
+          if (e.message !== 'unauthorized') toast(t('permFailed'));
+        }
+      });
+      acts.appendChild(b);
+    };
+    button('primary', t('permAllow'), 'allow');
+    const always = permAlwaysLabel(msg);
+    if (always) button('', always, 'always');
+    button('', t('permDeny'), 'deny');
+    card.appendChild(acts);
+    return card;
+  }
+
   /* ------------------------------ streaming ------------------------------ */
   /* A turn is streamed for liveness and then re-read from the database once it
    * lands, so what stays on screen is byte-identical to what the desktop shows
@@ -601,6 +729,21 @@
         const el = bubble.querySelector('.chip[data-id="' + String(msg.id).replace(/"/g, '\\"') + '"]');
         if (el) el.classList.remove('working');
       },
+      // Ask mode: the turn is stopped on a question. The card sits where the
+      // turn has got to; whatever Claude says next starts below it.
+      permission(msg, threadId) {
+        if (!msg || !msg.id) return;
+        this.clearThinking();
+        if (textEl) textEl.innerHTML = renderMarkdown(text);   // close the open block, caret and all
+        textEl = null;
+        bubble.appendChild(renderPermissionCard(msg, threadId));
+      },
+      // Answered (here or on the computer) or withdrawn by a stop.
+      permissionGone(id) {
+        for (const el of bubble.querySelectorAll('.perm')) {
+          if (el.dataset.pid === id) el.remove();
+        }
+      },
       error(message) {
         this.clearThinking();
         if (raf != null) { cancelAnimationFrame(raf); raf = null; }
@@ -614,6 +757,7 @@
         if (raf != null) { cancelAnimationFrame(raf); raf = null; }
         this.clearThinking();
         if (textEl) textEl.innerHTML = renderMarkdown(text);
+        bubble.querySelectorAll('.perm').forEach((c) => c.remove());   // the turn is over: nothing left to answer
         bubble.querySelectorAll('.chip.working').forEach((c) => c.classList.remove('working'));
       },
     };
@@ -726,6 +870,8 @@
       case 'token': view.push(msg.text || ''); break;
       case 'tool': view.tool(msg); break;
       case 'tool_result': view.toolResult(msg); break;
+      case 'permission': view.permission(msg, threadId); break;
+      case 'permission_gone': view.permissionGone(msg.id); break;
       case 'title':
         // The first turn names the chat. Only rename the header if that chat is
         // still the one being looked at.

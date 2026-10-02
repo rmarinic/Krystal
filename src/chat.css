@@ -946,6 +946,68 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   .composer-suggest.in .suggest-chip { animation: none; }
 }
 
+/* ---- Ask mode: the permission prompt. A turn is stopped on this, so it docks
+   above the input where it can't scroll out of sight — amber, like every other
+   "this needs you" in the app. One calm rise-in, the same one the strip above
+   uses. ---- */
+.composer-perm { max-width: 880px; margin: 0 auto 8px; }
+.composer-perm.in .perm-card { animation: suggest-in .22s ease; }
+.perm-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--warn-bd); background: var(--bg-card);
+}
+.perm-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--fg);
+}
+.perm-ico { flex: none; font-size: 13px; }
+.perm-title { min-width: 0; }
+.perm-more {
+  margin-left: auto; flex: none;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--warn);
+}
+.perm-why { font-size: 12px; color: var(--fg-muted); line-height: 1.45; }
+.perm-path {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted);
+  word-break: break-all; line-height: 1.5;
+}
+/* What is being agreed to — the command, the diff, the file's content. Capped
+   and scrollable: the card must never push the input off the window. */
+.perm-what, .perm-card .chip-diff {
+  margin: 0; max-height: 168px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  font-family: var(--mono); font-size: 11.5px;
+}
+.perm-what {
+  padding: 8px 11px; line-height: 1.5; color: var(--fg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.perm-card .chip-diff { padding: 6px 0; line-height: 1.55; }
+.perm-card .diff-line { padding: 0 11px; white-space: pre-wrap; word-break: break-word; }
+.perm-card .diff-line.del { color: #e0857a; background: rgba(224,122,90,0.08); }
+.perm-card .diff-line.add { color: var(--accent-3); background: rgba(108,199,142,0.08); }
+.perm-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.perm-btn {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-2); background: transparent; color: var(--fg-muted);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.perm-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--fg-dim); }
+.perm-btn.allow { color: #0a0f0b; background: var(--accent-2); border-color: var(--accent-2); }
+.perm-btn.allow:hover:not(:disabled) {
+  color: #0a0f0b; background: var(--accent-3); border-color: var(--accent-3);
+}
+.perm-btn.deny { margin-left: auto; }
+.perm-btn.deny:hover:not(:disabled) { color: #ff8a8a; border-color: rgba(255,138,138,0.45); }
+.perm-btn:disabled { opacity: .55; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .composer-perm.in .perm-card { animation: none; }
+  .perm-btn { transition: none; }
+}
+
 /* ---- Attachments tray: pasted screenshots / dropped files above the input.
    Mirrors the #-reference pills, with an optional thumbnail for images. ---- */
 .composer-atts {
@@ -2856,6 +2918,15 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
   0%   { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); opacity: 1; }
   70%  { box-shadow: 0 0 0 5px rgba(108,199,142,0); opacity: .65; }
   100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); opacity: 1; }
+}
+/* …and one stopped on a permission prompt (Ask mode) is waiting on you: the
+   same mark, in amber. */
+.sidebar-list li.needs-you .live-dot { background: var(--warn); animation-name: live-pulse-warn; }
+.sidebar-list li.needs-you > a { border-color: var(--warn-bd); }
+@keyframes live-pulse-warn {
+  0%   { box-shadow: 0 0 0 0 rgba(226,155,80,0.5); opacity: 1; }
+  70%  { box-shadow: 0 0 0 5px rgba(226,155,80,0); opacity: .65; }
+  100% { box-shadow: 0 0 0 0 rgba(226,155,80,0); opacity: 1; }
 }
 
 /* ---- Sidebar: an unsent draft is waiting in this chat ---- */

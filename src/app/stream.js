@@ -401,6 +401,7 @@ function finishLive(live) {
   for (const a of live.activity) a.running = false;   // clear spinners even if backgrounded
   agentTurnEnded(live.threadId);                      // no worker is still going either
   state.live.delete(live.threadId);
+  if (typeof permissionsTurnEnded === 'function') permissionsTurnEnded(live);   // nothing left to answer
   if (live.threadId === state.activeId) {
     syncComposer();
     refreshActivityPanel();
@@ -536,6 +537,15 @@ function handleLiveEvent(live, msg) {
     // (the backend read it back off disk), so the panel can repaint live.
     live.madeArtifact = true;
     if (typeof artifactEvent === 'function') artifactEvent(msg);
+  } else if (event === 'permission') {
+    // Ask mode: the turn has stopped to ask before changing or running something.
+    // Queued on the turn (so it survives a thread switch) and shown above the
+    // composer — see permissions.js.
+    if (typeof permissionAsked === 'function') permissionAsked(live, msg);
+  } else if (event === 'permission_gone') {
+    // …and that question is settled: answered (here or from another view of this
+    // turn) or withdrawn because the turn was stopped.
+    if (typeof permissionGone === 'function') permissionGone(live, msg.id);
   } else if (event === 'tasks') {
     // Claude added/edited tasks via the snapshot file this turn — refresh the UI.
     if (typeof onTasksSynced === 'function') onTasksSynced(msg);

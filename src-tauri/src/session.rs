@@ -17,6 +17,12 @@
 //! mid-chat the old process is retired and a fresh one takes its place (see
 //! `key_of`). Anything that legitimately varies from turn to turn, like the
 //! task-list note, travels in the user message instead of the system prompt.
+//!
+//! A session's stdin carries more than messages. In **Ask** mode the CLI stops
+//! before anything that needs permission and asks its host — a `control_request`
+//! on stdout, answered by a `control_response` on stdin (the same protocol the
+//! terminal's own permission prompt sits on). The session parks each request
+//! until the user decides; see `hold_permission`/`answer_permission`.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -41,6 +47,48 @@ const IDLE_TIMEOUT_SECS: u64 = 30 * 60;
 
 /// Serial number for interrupt control requests, so no two share a request id.
 static INTERRUPTS: AtomicU64 = AtomicU64::new(0);
+
+/// The event a session feeds back into its *own* stream when a permission prompt
+/// is answered. The answer arrives through a command (the window, the phone or a
+/// connected Krystal), not through the turn — but only the turn holds the channel
+/// every view is listening on. Looping it through the stream lets `run_turn`
+/// announce it there, in order, to all of them at once.
+pub const PERMISSION_ANSWERED: &str = "krystal_permission_answered";
+
+/// What the user decided about one permission prompt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Decision {
+    /// Go ahead, this once.
+    Allow,
+    /// Go ahead, and stop asking: the CLI's own suggested rule is applied — the
+    /// same thing "Yes, and don't ask again" does in the terminal.
+    AllowAlways,
+    Deny,
+}
+
+impl Decision {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "allow" => Some(Self::Allow),
+            "always" => Some(Self::AllowAlways),
+            "deny" => Some(Self::Deny),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::AllowAlways => "always",
+            Self::Deny => "deny",
+        }
+    }
+}
+
+/// What Claude is told when the user says no. The wording is the terminal's own:
+/// it makes the model stop and wait for direction rather than hunt for another
+/// way to do the thing it was just refused.
+const DENIED_MESSAGE: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 
 /// Fingerprint of everything fixed when the process starts. Two turns can share a
 /// process only if their fingerprints match. The separator is a unit-separator
@@ -72,6 +120,14 @@ pub struct Session {
     pub pid: u32,
     pub key: String,
     last_used: Arc<StdMutex<Instant>>,
+    /// Permission prompts the CLI is waiting on: request id -> the request it
+    /// sent. Kept because the answer has to echo parts of it back (the tool's
+    /// input, the rule the CLI suggested).
+    permissions: Arc<StdMutex<HashMap<String, Value>>>,
+    /// A way to put an event of our own into `events`. Weak on purpose: the
+    /// stream must still *close* when the process dies, and a second strong
+    /// sender held here would keep it open forever.
+    loopback: mpsc::WeakUnboundedSender<Value>,
 }
 
 impl Session {
@@ -103,6 +159,7 @@ impl Session {
         let mut stderr = child.stderr.take().ok_or("no stderr")?;
 
         let (tx, rx) = mpsc::unbounded_channel();
+        let loopback = tx.downgrade();
         let exited = Arc::new(AtomicBool::new(false));
 
         // One reader for the life of the process, not the life of a turn: it keeps
@@ -149,6 +206,8 @@ impl Session {
             pid,
             key,
             last_used: Arc::new(StdMutex::new(Instant::now())),
+            permissions: Arc::new(StdMutex::new(HashMap::new())),
+            loopback,
         })
     }
 
@@ -211,6 +270,111 @@ impl Session {
     pub async fn interrupt(&self) -> Result<(), String> {
         self.write_line(&interrupt_request()).await
     }
+
+    /// Park a permission prompt until somebody answers it. `request` is the
+    /// `request` object of the CLI's `can_use_tool` control request.
+    pub fn hold_permission(&self, request_id: &str, request: Value) {
+        if let Ok(mut map) = self.permissions.lock() {
+            map.insert(request_id.to_string(), request);
+        }
+    }
+
+    /// The CLI withdrew a prompt (the turn was stopped, or it no longer matters).
+    pub fn drop_permission(&self, request_id: &str) {
+        if let Ok(mut map) = self.permissions.lock() {
+            map.remove(request_id);
+        }
+    }
+
+    /// Is a turn on this session stopped on a permission prompt? Such a session
+    /// is not idle, however long its user takes: retiring it would leave a
+    /// question on screen that nothing could answer any more (see `evict`).
+    fn awaiting_permission(&self) -> bool {
+        self.permissions.lock().map(|m| !m.is_empty()).unwrap_or(false)
+    }
+
+    /// The turn is over: nothing it asked can still be answered.
+    pub fn clear_permissions(&self) {
+        if let Ok(mut map) = self.permissions.lock() {
+            map.clear();
+        }
+    }
+
+    /// Answer a prompt directly, without parking it — for the requests Krystal
+    /// settles itself (see `claude::is_own_business`).
+    pub async fn respond_permission(
+        &self,
+        request_id: &str,
+        request: &Value,
+        decision: Decision,
+    ) -> Result<(), String> {
+        self.write_line(&permission_response(request_id, request, decision)).await
+    }
+
+    /// Answer a parked prompt with the user's decision. `Ok(false)` when there is
+    /// no such prompt any more — already answered from another view, withdrawn
+    /// by the CLI, or its turn has ended — which is not an error, just late.
+    pub async fn answer_permission(
+        &self,
+        request_id: &str,
+        decision: Decision,
+    ) -> Result<bool, String> {
+        let request = self.permissions.lock().ok().and_then(|mut m| m.remove(request_id));
+        let Some(request) = request else {
+            return Ok(false);
+        };
+        self.respond_permission(request_id, &request, decision).await?;
+        // Thinking it over is not idling: don't let the pool retire a session
+        // for having waited on its user.
+        self.touch();
+        if let Some(tx) = self.loopback.upgrade() {
+            let _ = tx.send(json!({
+                "type": PERMISSION_ANSWERED,
+                "request_id": request_id,
+                "decision": decision.as_str(),
+            }));
+        }
+        Ok(true)
+    }
+
+    /// Turn down a control request we have no answer for. Leaving one hanging
+    /// would leave the CLI waiting on it for the rest of the turn.
+    pub async fn refuse_control(&self, request_id: &str, why: &str) -> Result<(), String> {
+        self.write_line(&json!({
+            "type": "control_response",
+            "response": { "subtype": "error", "request_id": request_id, "error": why }
+        }))
+        .await
+    }
+}
+
+/// The `control_response` that settles one `can_use_tool` request.
+///
+/// Allowing echoes the tool's input back as `updatedInput` — the host is allowed
+/// to rewrite it, and we don't, but the field is what says "run it as asked".
+/// *Always* additionally hands the CLI its own `permission_suggestions` back as
+/// `updatedPermissions`: the CLI wrote the rule (and decided where it is saved),
+/// we only say yes to it, so "always" means exactly what it means in a terminal.
+fn permission_response(request_id: &str, request: &Value, decision: Decision) -> Value {
+    let response = match decision {
+        Decision::Deny => json!({ "behavior": "deny", "message": DENIED_MESSAGE }),
+        Decision::Allow | Decision::AllowAlways => {
+            let mut r = json!({
+                "behavior": "allow",
+                "updatedInput": request.get("input").cloned().unwrap_or_else(|| json!({})),
+            });
+            if decision == Decision::AllowAlways {
+                if let Some(rules) = request.get("permission_suggestions").filter(|s| s.is_array()) {
+                    r["updatedPermissions"] = rules.clone();
+                }
+            }
+            r
+        }
+    };
+    json!({
+        "type": "control_response",
+        "response": { "subtype": "success", "request_id": request_id, "response": response }
+    })
 }
 
 /// One `interrupt` control request, with an id of its own. A fresh id per
@@ -276,12 +440,16 @@ impl Pool {
 }
 
 /// Drop dead and long-idle sessions, then trim to `MAX_WARM_SESSIONS`, most
-/// stale first.
+/// stale first. A session waiting on a permission prompt is exempt from both:
+/// it looks idle precisely because it is waiting for its user.
 fn evict(map: &mut HashMap<String, Session>) {
-    map.retain(|_, s| s.alive() && s.idle_secs() < IDLE_TIMEOUT_SECS);
+    map.retain(|_, s| {
+        s.alive() && (s.awaiting_permission() || s.idle_secs() < IDLE_TIMEOUT_SECS)
+    });
     while map.len() > MAX_WARM_SESSIONS {
         let Some(stalest) = map
             .iter()
+            .filter(|(_, s)| !s.awaiting_permission())
             .max_by_key(|(_, s)| s.idle_secs())
             .map(|(k, _)| k.clone())
         else {
@@ -329,5 +497,62 @@ mod tests {
         assert_eq!(a["request"]["subtype"], "interrupt");
         // Pressing stop twice must read as two requests, not one repeated.
         assert_ne!(a["request_id"], b["request_id"]);
+    }
+
+    /// A `can_use_tool` request as the CLI sends it (trimmed to what we read).
+    fn write_request() -> Value {
+        json!({
+            "subtype": "can_use_tool",
+            "tool_name": "Write",
+            "input": { "file_path": "C:/p/a.txt", "content": "x" },
+            "permission_suggestions": [
+                { "type": "setMode", "mode": "acceptEdits", "destination": "session" }
+            ],
+        })
+    }
+
+    #[test]
+    fn allowing_runs_the_tool_exactly_as_it_was_asked() {
+        let r = permission_response("req-1", &write_request(), Decision::Allow);
+        assert_eq!(r["type"], "control_response");
+        assert_eq!(r["response"]["subtype"], "success");
+        assert_eq!(r["response"]["request_id"], "req-1");
+        let inner = &r["response"]["response"];
+        assert_eq!(inner["behavior"], "allow");
+        assert_eq!(inner["updatedInput"]["file_path"], "C:/p/a.txt");
+        // Once means once: no rule may ride along.
+        assert!(inner.get("updatedPermissions").is_none());
+    }
+
+    #[test]
+    fn always_hands_the_cli_its_own_suggested_rule_back() {
+        let r = permission_response("req-2", &write_request(), Decision::AllowAlways);
+        let inner = &r["response"]["response"];
+        assert_eq!(inner["behavior"], "allow");
+        assert_eq!(inner["updatedPermissions"][0]["mode"], "acceptEdits");
+
+        // Nothing suggested → nothing to make permanent; it is a plain allow.
+        let bare = json!({ "tool_name": "Bash", "input": { "command": "ls" } });
+        let r = permission_response("req-3", &bare, Decision::AllowAlways);
+        assert!(r["response"]["response"].get("updatedPermissions").is_none());
+    }
+
+    #[test]
+    fn denying_tells_claude_to_stop_and_wait() {
+        let r = permission_response("req-4", &write_request(), Decision::Deny);
+        let inner = &r["response"]["response"];
+        assert_eq!(inner["behavior"], "deny");
+        assert!(inner["message"].as_str().unwrap().contains("STOP"));
+        assert!(inner.get("updatedInput").is_none());
+    }
+
+    #[test]
+    fn only_the_three_decisions_parse() {
+        for d in [Decision::Allow, Decision::AllowAlways, Decision::Deny] {
+            assert_eq!(Decision::parse(d.as_str()), Some(d));
+        }
+        // Anything else must be refused, never read as a yes.
+        assert_eq!(Decision::parse("yes"), None);
+        assert_eq!(Decision::parse(""), None);
     }
 }

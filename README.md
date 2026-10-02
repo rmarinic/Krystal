@@ -40,7 +40,9 @@ no `localhost`, no Node server, no browser. It launches instantly and works enti
 - **⚡ Live streaming** — answers and tool activity stream in with a typewriter feel; pop open
   the **Activity** panel to watch shells and sub-agents work in real time.
 - **🧠 Pick the brain & the leash** — choose the model per chat (Opus / Sonnet / Haiku / Fable)
-  and a mode: **Auto** acts freely, **Plan** only researches and proposes.
+  and a mode: **Auto** acts freely, **Ask** checks with you before it changes a file or runs a
+  command (Allow / Always allow / Deny, just like Claude Code in a terminal), **Plan** only
+  researches and proposes.
 - **🪄 Setup wizard** — Claude explores your folder, asks a few tailored questions, and writes a
   `CLAUDE.md` project guide so it always knows the context.
 - **🧹 Stay sharp** — a context meter warns when a chat grows long; **Compact** keeps a summary

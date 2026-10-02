@@ -353,6 +353,37 @@ html, body {
 .qa.answered { opacity: .55; }
 .qa.answered .qa-opt, .qa.answered .qa-custom, .qa.answered .qa-send { pointer-events: none; }
 
+/* --------------------------- permission prompts -------------------------- */
+/* Ask mode: the turn is stopped on this. The question card's frame, in amber. */
+
+.perm { border-color: rgba(226, 155, 80, .42); }
+.perm .qa-title { color: var(--fg); font-weight: 600; }
+.perm-path {
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  word-break: break-all;
+}
+.perm-what {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  max-height: 32vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.perm-what .del { color: #e0857a; }
+.perm-what .add { color: var(--accent-3); }
+.perm-acts { display: flex; flex-direction: column; gap: 8px; }
+.perm-acts .btn { margin-top: 0; }
+
 /* ------------------------------- composer -------------------------------- */
 
 .composer {

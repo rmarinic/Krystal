@@ -190,7 +190,7 @@
     <!-- Composer -->
     <div class="composer" id="composer" hidden>
       <div class="composer-tools">
-        <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Plan only researches and proposes"></div>
+        <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Ask checks with you before changing or running anything; Plan only researches and proposes"></div>
         <!-- How hard Claude thinks before answering. Persisted per chat, next to
              the model and the mode. -->
         <div class="picker" id="effort-picker" data-i18n-title="effort.pickerTitle" title="How hard Claude thinks before it answers — higher is slower but more thorough"></div>
@@ -209,6 +209,10 @@
       <!-- Chats the message #-references (added via the # autocomplete). Their
            transcripts ride along as background context for this turn. -->
       <div class="composer-refs" id="composer-refs" hidden></div>
+      <!-- Ask mode: what the turn is stopped on, with Allow / Always / Deny.
+           Docked here rather than in the transcript so a turn that is waiting
+           on an answer can't scroll out of sight. Filled by app/permissions.js. -->
+      <div class="composer-perm" id="composer-perm" hidden></div>
       <!-- Predicted next message (--prompt-suggestions). Appears only when the
            CLI offers one; click to drop it into the box. -->
       <div class="composer-suggest" id="composer-suggest" hidden></div>
@@ -505,6 +509,7 @@
   <script defer src="app/messages.js"></script>
   <script defer src="app/artifacts.js"></script>
   <script defer src="app/stream.js"></script>
+  <script defer src="app/permissions.js"></script>
   <script defer src="app/mentions.js"></script>
   <script defer src="app/skills.js"></script>
   <script defer src="app/attachments.js"></script>

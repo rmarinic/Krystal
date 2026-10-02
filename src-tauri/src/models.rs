@@ -246,6 +246,9 @@ pub const DEFAULT_MODE: &str = "auto";
 
 pub const MODES: &[Mode] = &[
     Mode { id: "auto", name: "Auto", blurb: "Reads, writes & runs on its own" },
+    // The terminal's default behaviour: reading is free, anything that changes a
+    // file or runs a command stops and asks first (see `claude::apply_mode`).
+    Mode { id: "ask",  name: "Ask",  blurb: "Asks before it changes or runs anything" },
     Mode { id: "plan", name: "Plan", blurb: "Researches & proposes — no changes" },
 ];
 
@@ -257,6 +260,15 @@ pub fn is_valid_mode(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_modes_are_auto_ask_and_plan() {
+        assert!(is_valid_mode(DEFAULT_MODE));
+        assert!(is_valid_mode("ask"));
+        assert!(is_valid_mode("plan"));
+        // An unknown mode would silently run at full power — refuse it instead.
+        assert!(!is_valid_mode("yolo"));
+    }
 
     #[test]
     fn the_default_effort_is_one_we_offer() {

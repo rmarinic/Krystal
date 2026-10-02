@@ -119,6 +119,7 @@ fn main() {
             commands::generate_tasks,
             commands::chat,
             commands::stop_chat,
+            commands::answer_permission,
             commands::active_runs,
             commands::stop_all_chats,
             commands::exe_path,

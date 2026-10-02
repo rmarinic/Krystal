@@ -871,6 +871,15 @@ async fn dispatch<R: Runtime>(
 
         /* ---- turns in flight ---- */
         "stop_chat" => commands::stop_chat(st(), arg_str(a, "threadId"), arg_opt_bool(a, "force")).await,
+        // Ask mode's permission prompts travel with the turn's events, so whoever
+        // is watching the turn — the phone included — has to be able to answer.
+        "answer_permission" => commands::answer_permission(
+            st(),
+            arg_str(a, "threadId"),
+            arg_str(a, "requestId"),
+            arg_str(a, "decision"),
+        )
+        .await,
         "active_runs" => commands::active_runs(st()).await.and_then(as_json),
         "stop_all_chats" => commands::stop_all_chats(st()).await,
 

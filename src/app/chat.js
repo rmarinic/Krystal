@@ -97,6 +97,7 @@ async function openThread(id, focusMid) {
   showRemoteBtn(true);
   syncComposer();
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
+  if (typeof syncPermission === 'function') syncPermission();   // …and whatever its turn is waiting to be allowed
   refreshGit();
   activityMinH = 0;                 // new chat → re-measure the activity panel size
   if (!els.activityOverlay.hidden) refreshActivityPanel();

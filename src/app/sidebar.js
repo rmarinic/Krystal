@@ -35,8 +35,12 @@ function renderSidebar() {
     // A turn streaming in this thread (even from another open view) → live mark.
     const streaming = state.live && state.live.has(t.id);
     if (streaming) li.classList.add('streaming');
+    // …and one stopped on a permission prompt (Ask mode) is waiting on *you*:
+    // the same mark, in amber.
+    const asking = streaming && typeof threadAwaitsPermission === 'function' && threadAwaitsPermission(t.id);
+    if (asking) li.classList.add('needs-you');
     const liveDot = streaming
-      ? `<span class="live-dot" title="${tr('sidebar.streamingTitle')}" aria-hidden="true"></span>` : '';
+      ? `<span class="live-dot" title="${tr(asking ? 'sidebar.permissionTitle' : 'sidebar.streamingTitle')}" aria-hidden="true"></span>` : '';
     // An unsent draft waiting in this chat → a small pencil mark.
     const draft = typeof hasDraft === 'function' && hasDraft(t.id);
     if (draft) li.classList.add('has-draft');
