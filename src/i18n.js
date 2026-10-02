@@ -727,6 +727,19 @@
       'stop.forcedLabel': 'Force stopped',
       'stop.forcedBody': 'Claude was busy and didn’t let go, so the process was ended. Anything already written is kept; the next message starts a fresh session.',
 
+      /* ---- queued messages (sent while a turn was still running) ---- */
+      'composer.placeholderBusy': 'Claude is working — type your next message and press Enter to queue it',
+      'queue.btnTitle': 'Queue this message — it’s sent when Claude finishes (Enter)',
+      'queue.waiting': 'Queued — sent when Claude finishes',
+      'queue.held': 'Queued — on hold, the last turn didn’t finish',
+      'queue.sendNow': 'Send now',
+      'queue.edit': 'Edit — move it back to the message box',
+      'queue.remove': 'Remove from the queue',
+      'queue.tipLabel': 'Queue on hold',
+      'queue.tipBody': 'Queued messages are waiting in “{title}”, but its last turn didn’t finish — so they weren’t sent.',
+      'queue.tipOpen': 'Open chat',
+      'sidebar.queueTitle': 'Queued messages in this chat: {n}',
+
       /* ---- branch picker / git tools ---- */
       'branch.pickTitle': 'Branch & git tools',
       'branch.search': 'Search branches…',
@@ -1462,6 +1475,19 @@
       'stop.toastBody': 'Ovaj je korak zaustavljen. Sve što je već napisano ostaje sačuvano.',
       'stop.forcedLabel': 'Prisilno zaustavljeno',
       'stop.forcedBody': 'Claude je bio zauzet i nije odustao, pa je proces prekinut. Sve što je već napisano ostaje sačuvano; sljedeća poruka pokreće novu sesiju.',
+
+      /* ---- queued messages (sent while a turn was still running) ---- */
+      'composer.placeholderBusy': 'Claude radi — upiši sljedeću poruku i pritisni Enter da je staviš u red čekanja',
+      'queue.btnTitle': 'Stavi poruku u red čekanja — šalje se kad Claude završi (Enter)',
+      'queue.waiting': 'U redu čekanja — šalje se kad Claude završi',
+      'queue.held': 'U redu čekanja — zadržano, zadnji korak nije dovršen',
+      'queue.sendNow': 'Pošalji sada',
+      'queue.edit': 'Uredi — vrati u okvir za poruku',
+      'queue.remove': 'Ukloni iz reda čekanja',
+      'queue.tipLabel': 'Red čekanja zadržan',
+      'queue.tipBody': 'U razgovoru „{title}” čekaju poruke u redu, ali zadnji korak nije dovršen — zato nisu poslane.',
+      'queue.tipOpen': 'Otvori razgovor',
+      'sidebar.queueTitle': 'Poruke u redu čekanja u ovom razgovoru: {n}',
 
       /* ---- branch picker / git tools ---- */
       'branch.pickTitle': 'Grane i git alati',

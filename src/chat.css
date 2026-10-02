@@ -946,6 +946,69 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   .composer-suggest.in .suggest-chip { animation: none; }
 }
 
+/* ---- Queued messages: what was sent while a turn was still running, waiting
+   above the input to go out when it finishes. Dashed, because they are not sent
+   yet. A new one rises in — the same calm rise as the strips around it; the
+   others don't move. Amber when the queue is on hold, like every other "this
+   needs you". ---- */
+.composer-queue {
+  display: flex; flex-direction: column; gap: 5px;
+  max-width: 880px; margin: 0 auto 8px;
+}
+.composer-queue[hidden] { display: none; }
+.queue-head {
+  display: flex; align-items: center; gap: 10px; padding: 0 3px; min-height: 22px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.02em; color: var(--fg-dim);
+}
+.composer-queue.held .queue-label { color: var(--warn); }
+.queue-go {
+  margin-left: auto; flex: none; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  padding: 3px 11px; border-radius: var(--radius-sm);
+  color: #0a0f0b; background: var(--accent-2); border: 1px solid var(--accent-2);
+  transition: background .15s, border-color .15s;
+}
+.queue-go:hover { background: var(--accent-3); border-color: var(--accent-3); }
+/* Capped and scrollable: a long queue must never push the input off the window. */
+.queue-list { display: flex; flex-direction: column; gap: 4px; max-height: 124px; overflow-y: auto; }
+.queue-item {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  font-size: 12.5px; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px dashed var(--border-2);
+  border-radius: 10px; padding: 3px 5px 3px 10px;
+}
+.queue-item.in { animation: suggest-in .22s ease; }
+.queue-num { flex: none; font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--accent-2); }
+.queue-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-files { flex: none; font-size: 11px; color: var(--fg-dim); }
+.queue-act {
+  flex: none; border: none; background: transparent; color: var(--fg-dim);
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 3px 5px;
+  border-radius: 6px; transition: color .15s;
+}
+.queue-act.x { font-size: 16px; }
+.queue-act:hover { color: var(--fg); }
+.queue-act.x:hover { color: #ff8a8a; }
+
+/* The queue button: only there mid-turn, once something is typed — it sits
+   beside Stop and fades in. A quiet outline, so Stop stays the loud one. */
+.queue-btn {
+  flex: 0 0 auto; align-self: flex-end;
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border-2);
+  color: var(--accent-3); cursor: pointer;
+  transition: border-color .15s, background .15s;
+  animation: queue-btn-in .18s ease;
+}
+.queue-btn[hidden] { display: none; }
+.queue-btn:hover { border-color: var(--accent-2); background: rgba(108,199,142,0.10); }
+@keyframes queue-btn-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .queue-item.in, .queue-btn { animation: none; }
+  .queue-go, .queue-act, .queue-btn { transition: none; }
+}
+
 /* ---- Ask mode: the permission prompt. A turn is stopped on this, so it docks
    above the input where it can't scroll out of sight — amber, like every other
    "this needs you" in the app. One calm rise-in, the same one the strip above
@@ -2942,6 +3005,13 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-list .draft-dot { animation: none; }
+}
+
+/* ---- Sidebar: messages are queued in this chat (how many) ---- */
+.sidebar-list .queue-dot {
+  display: inline-block; margin-left: 7px; vertical-align: middle;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1;
+  color: var(--accent-3); opacity: .85;
 }
 
 /* ---- Settings → Activity tab ---- */

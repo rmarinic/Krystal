@@ -37,6 +37,7 @@ function autosize() {
 els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
   saveDraft(state.activeId, els.input.value);   // keep this chat's draft current
+  if (typeof syncQueueBtn === 'function') syncQueueBtn();         // something to queue mid-turn?
   if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete
   if (typeof onComposerSlash === 'function') onComposerSlash();   // / skill picker
 });
@@ -352,12 +353,18 @@ function syncComposer() {
   els.sendBtn.classList.toggle('is-stop', canStop);   // CSS morphs the icon
   els.sendBtn.title = tr(canStop ? 'composer.stopTitle' : 'composer.sendTitle');
   els.sendBtn.disabled = canStop ? false : !state.activeId;
+  // Mid-turn, Enter queues rather than sends — the box says so.
+  els.input.placeholder = tr(canStop ? 'composer.placeholderBusy' : 'composer.placeholder');
   // Compacting needs a settled session, so it can't run mid-turn — say so with a
   // real disabled state instead of a button that looks live and does nothing.
   els.compactBtn.disabled = canStop || !state.activeId;
   els.compactBtn.title = tr(canStop ? 'compact.btnTitleBusy' : 'compact.btnTitle');
   syncShellMode();   // a streaming turn suppresses shell mode; refresh the badge
   refreshActivityBtn();
+  // The queue strip words itself by whether a turn is running, and the queue
+  // button only exists while one is — both follow the same flag.
+  if (typeof renderQueue === 'function') renderQueue();
+  if (typeof syncQueueBtn === 'function') syncQueueBtn();
 }
 
 /* Build the visible assistant bubble + typewriter for a live turn and attach it
@@ -409,6 +416,9 @@ function finishLive(live) {
     if (pendingAnswer) setTimeout(flushPendingAnswer, 0);
   }
   if (state.view === 'threads') loadThreads();   // refresh sidebar title/time
+  // Anything typed while this turn ran goes next — or is held, if the turn was
+  // stopped or failed (see queue.js).
+  if (typeof queueTurnEnded === 'function') queueTurnEnded(live);
 }
 
 /* ------------------------- suggested next message ------------------------ */
@@ -552,6 +562,7 @@ function handleLiveEvent(live, msg) {
   } else if (event === 'error') {
     // A turn the user stopped exits non-zero; settle it quietly instead of
     // painting a red error chip (any partial text is already kept).
+    live.failed = true;   // either way it didn't finish — queued messages wait
     if (live.typer) {
       if (live.stopped) live.typer.finish(live.finalText || '');
       else live.typer.error(msg.message || 'error');
@@ -560,49 +571,89 @@ function handleLiveEvent(live, msg) {
   }
 }
 
+/* Enter / the send button. Takes what's in the composer and either starts a turn
+ * with it or — when this chat's turn is still running — puts it in the chat's
+ * queue, to go the moment that turn finishes (see queue.js). */
+let sendBusy = false;   // a just-pasted screenshot is still saving; don't take the message twice
 async function send() {
   const raw = els.input.value;
   const text = raw.trim();
   const hasAtts = typeof hasComposerAttachments === 'function' && hasComposerAttachments();
-  if ((!text && !hasAtts) || state.streaming || !state.activeId) return;
+  if ((!text && !hasAtts) || !state.activeId || sendBusy) return;
 
-  // `$ …` runs a shell command directly, outside Claude.
-  if (isShellInput(raw)) { runShellCommand(shellCommandOf(raw).trim()); return; }
+  // `$ …` runs a shell command directly, outside Claude — and not mid-turn.
+  if (isShellInput(raw)) {
+    if (!state.streaming) runShellCommand(shellCommandOf(raw).trim());
+    return;
+  }
 
   const threadId = state.activeId;   // capture: the active view may change mid-stream
-  // Resolve any #-referenced chats to thread ids (background context), then reset.
-  const refs = typeof resolveComposerRefs === 'function' ? resolveComposerRefs(text) : [];
+  // The #-referenced chats still named in the text (background context).
+  const refs = typeof composerRefsIn === 'function' ? composerRefsIn(text) : [];
   // Pasted/dropped attachments become file paths Claude is told to Read. Awaits
   // any in-flight save of a just-pasted screenshot so its path is ready.
-  const files = typeof collectAttachmentPaths === 'function' ? await collectAttachmentPaths(threadId) : [];
+  sendBusy = true;
+  let files = [];
+  try {
+    if (typeof collectAttachmentPaths === 'function') files = await collectAttachmentPaths(threadId);
+  } finally {
+    sendBusy = false;
+  }
   if (!text && !files.length) return;   // everything (e.g. a failed paste) dropped out
 
-  // render the user message + clear composer. Sending re-engages auto-follow
-  // (you want to watch the new reply), even if you'd scrolled up earlier.
-  stickToBottom = true;
-  state.seed = null;                 // this turn folds the compaction summary back in
-  appendMessage('user', text, files, null);
-  els.input.value = '';
+  // The message is taken — clear the composer it came from.
+  if (threadId === state.activeId) { els.input.value = ''; autosize(); }
   saveDraft(threadId, '');           // the draft was just sent — clear it
   if (typeof clearComposerRefs === 'function') clearComposerRefs(threadId);
   if (typeof clearComposerAttachments === 'function') clearComposerAttachments(threadId);
-  autosize();
-  scrollFeed();
 
-  // The liveTurn owns this turn independently of the on-screen thread. Its
-  // activity array IS the active thread's list (same ref), so tool chips keep
-  // flowing into the Activity panel and survive switching away and back.
+  const msg = { text, files, refs };
+  if (state.live.has(threadId) && typeof enqueueMessage === 'function') {
+    enqueueMessage(threadId, msg);
+    return;
+  }
+  // Sending re-engages auto-follow (you want to watch the new reply), even if
+  // you'd scrolled up earlier.
+  startTurn(threadId, msg, { follow: true });
+}
+
+/* Start a turn in `threadId` with `msg` ({ text, files, refs }) — typed just now,
+ * or taken off the chat's queue. The chat need not be on screen: a queued message
+ * goes out when its turn comes whatever you are looking at, and `openThread`
+ * re-attaches the view if you switch to it mid-turn.
+ *
+ * `follow` jumps the feed to the new reply (you pressed Enter); without it the
+ * feed only follows if you were already at the bottom, so a queued message going
+ * out doesn't yank you away from what you had scrolled up to read. */
+async function startTurn(threadId, msg, opts = {}) {
+  const { text, files } = msg;
+  const refs = (msg.refs || []).map((r) => r.id);
+  const onScreen = threadId === state.activeId;
+
+  if (onScreen) {
+    if (opts.follow) stickToBottom = true;
+    state.seed = null;               // this turn folds the compaction summary back in
+    hideSuggestion();                // the next message has been chosen
+    appendMessage('user', text, files, null);
+  }
+
+  // The liveTurn owns this turn independently of the on-screen thread. On screen
+  // its activity array IS the active thread's list (same ref), so tool chips keep
+  // flowing into the Activity panel and survive switching away and back; off
+  // screen it carries on the list of the turn before it.
   const live = {
     threadId, userText: text, userFiles: files,
-    events: [], activity: state.activity, outputs: {},
+    events: [], activity: onScreen ? state.activity : (opts.activity || []), outputs: {},
     typer: null, bubble: null, finalText: null, finalized: false,
   };
   state.live.set(threadId, live);
 
-  // assistant placeholder + typewriter, attached because this thread is on screen
+  // assistant placeholder + typewriter, attached when this thread is on screen
   // (attachLiveTyper shows the "thinking" indicator while events is empty)
-  attachLiveTyper(live);
-  scrollFeed();
+  if (onScreen) {
+    attachLiveTyper(live);
+    if (opts.follow) scrollFeed(); else maybeFollow();
+  }
   syncComposer();
   if (state.view === 'threads') renderSidebar();   // show the live mark on this row
 
@@ -611,9 +662,10 @@ async function send() {
     // exactly as the SSE stream did over HTTP. The handler routes by `live`,
     // not by the active view, so the reply always lands in `threadId`.
     const channel = new Channel();
-    channel.onmessage = (msg) => handleLiveEvent(live, msg);
+    channel.onmessage = (ev) => handleLiveEvent(live, ev);
     await invoke('chat', { threadId, text, refs, files, onEvent: channel });
   } catch (e) {
+    live.failed = true;
     if (live.typer) live.typer.error(String(e && e.message || e));
     finishLive(live);
   } finally {

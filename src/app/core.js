@@ -9,7 +9,7 @@
  *
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
- *   messages → stream → permissions → mentions → skills → attachments → wizard →
+ *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
  *   localization → settings → remote → tasks → git → links → logo → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
@@ -168,6 +168,8 @@ const els = {
   composer: $('#composer'),
   input: $('#input'),
   sendBtn: $('#send-btn'),
+  queueBtn: $('#queue-btn'),
+  composerQueue: $('#composer-queue'),
   composerRefs: $('#composer-refs'),
   attachTray: $('#composer-attachments'),
   dropHint: $('#drop-hint'),

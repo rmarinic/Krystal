@@ -206,6 +206,9 @@
         <button id="compact-btn" class="head-btn" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">🧹 Compact</button>
         <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
       </div>
+      <!-- Messages sent while a turn was still running, waiting to go out when it
+           finishes — each can be edited or dropped. Filled by app/queue.js. -->
+      <div class="composer-queue" id="composer-queue" hidden></div>
       <!-- Chats the message #-references (added via the # autocomplete). Their
            transcripts ride along as background context for this turn. -->
       <div class="composer-refs" id="composer-refs" hidden></div>
@@ -226,6 +229,9 @@
         <!-- / autocomplete: pick a Claude Code skill to start the message with -->
         <div class="mention-pop skill-pop" id="skill-pop" hidden></div>
         <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)"></textarea>
+        <!-- Mid-turn the send button is Stop; this one appears beside it once
+             there is something typed, and queues it (same as Enter). -->
+        <button class="queue-btn" id="queue-btn" type="button" data-i18n-title="queue.btnTitle" title="Queue this message — it’s sent when Claude finishes (Enter)" hidden></button>
         <button class="send-btn" id="send-btn" title="Send"></button>
       </div>
       <!-- Tiny git status line: current branch + working-tree changes. Hidden
@@ -513,6 +519,7 @@
   <script defer src="app/mentions.js"></script>
   <script defer src="app/skills.js"></script>
   <script defer src="app/attachments.js"></script>
+  <script defer src="app/queue.js"></script>
   <script defer src="app/wizard.js"></script>
   <script defer src="app/localization.js"></script>
   <script defer src="app/settings.js"></script>

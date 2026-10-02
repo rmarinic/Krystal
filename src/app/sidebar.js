@@ -46,6 +46,10 @@ function renderSidebar() {
     if (draft) li.classList.add('has-draft');
     const draftDot = draft
       ? `<span class="draft-dot" title="${tr('sidebar.draftTitle')}" aria-hidden="true">✎</span>` : '';
+    // Messages queued behind this chat's turn (or held, if that turn was stopped).
+    const queued = typeof queuedCount === 'function' ? queuedCount(t.id) : 0;
+    const queueDot = queued
+      ? `<span class="queue-dot" title="${escapeHtml(tr('sidebar.queueTitle', { n: queued }))}" aria-hidden="true">+${queued}</span>` : '';
     // When it last saw activity — “Today · 14:23”, “Yesterday · 09:10”, “4 days ago”.
     const days = dayDiff(t.updatedAt);
     const fresh = days !== null && days <= 0 ? ' today' : '';
@@ -53,7 +57,7 @@ function renderSidebar() {
       ? ` title="${escapeHtml(new Date(t.updatedAt).toLocaleString(window.I18N ? window.I18N.getLang() : []))}"` : '';
     li.innerHTML = `
       <a>
-        <span class="time${fresh}"${stampTitle}>${stampLabel(t.updatedAt)}${liveDot}${draftDot}</span>
+        <span class="time${fresh}"${stampTitle}>${stampLabel(t.updatedAt)}${liveDot}${draftDot}${queueDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
@@ -71,6 +75,7 @@ function renderSidebar() {
       li.classList.add('removing');
       await api.remove(t.id);
       if (typeof dropDraft === 'function') dropDraft(t.id);   // its draft goes with it
+      if (typeof dropQueue === 'function') dropQueue(t.id);   // …and its queued messages
       if (state.activeId === t.id) { state.activeId = null; showEmpty(); }
       // …and so do anything it had queued: attachments and #-references.
       if (typeof clearComposerAttachments === 'function') clearComposerAttachments(t.id);

@@ -113,7 +113,13 @@ function attachDroppedPath(path) {
   // The path is on THIS computer; a Krystal we're connected to could not open it.
   // (Pasting still works — that travels as data and is saved over there.)
   if (typeof remoteBlocks === 'function' && remoteBlocks(tr('remote.blocked.dropFile'))) return;
-  if (composerAttachments.some((a) => a.path === path)) return;   // no dupes
+  attachSavedPath(path);
+}
+
+/* Attach a file by a path the backend can already open: one just dropped, or one
+   coming back with a queued message that is being edited (see queue.js). */
+function attachSavedPath(path) {
+  if (!path || composerAttachments.some((a) => a.path === path)) return;   // no dupes
   const key = ++attachSeq;
   const name = basename(path);
   const isImage = isImageName(name);
@@ -131,6 +137,8 @@ function attachDroppedPath(path) {
 function renderAttachmentTray() {
   const box = els.attachTray;
   if (!box) return;
+  // An attachment on its own is a message too — mid-turn, one that can be queued.
+  if (typeof syncQueueBtn === 'function') syncQueueBtn();
   if (!composerAttachments.length) { box.hidden = true; box.innerHTML = ''; return; }
   box.innerHTML = '';
   for (const a of composerAttachments) {
@@ -182,8 +190,8 @@ function hasComposerAttachments() { return composerAttachments.length > 0; }
 
 // Ctrl+V a screenshot (or any clipboard image) → attach it. We only swallow the
 // paste when we actually took an image, so pasting text still works normally.
-// (You can type the next message while a reply streams in, so you can queue
-// attachments for it too — they just wait in the tray until the turn finishes.)
+// (You can type the next message while a reply streams in, so you can attach to
+// it too — Enter then queues the message, attachments and all; see queue.js.)
 els.input.addEventListener('paste', (e) => {
   if (!state.activeId) return;
   const items = (e.clipboardData && e.clipboardData.items) || [];

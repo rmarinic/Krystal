@@ -1192,6 +1192,14 @@ pub async fn chat(
         )
     };
 
+    // Fold in what the turn left behind BEFORE announcing it. `done` is the UI's
+    // cue to move on: it re-reads the artifacts from the database, and it sends
+    // the next queued message straight away — and a turn starting on this one's
+    // heels re-writes the task snapshot from the database, which would throw away
+    // whatever this turn ticked off if that hadn't been folded in yet.
+    sync_tasks();   // Claude may have ticked tasks off / added some this turn
+    sync_artifacts(&res, user_msg_id);
+
     // Signal completion immediately after persisting. `done` is the single
     // completion signal the UI keys on: it drops the in-flight turn and renders
     // from the DB instead. Emitting it before the (first-turn) auto-title
@@ -1206,9 +1214,6 @@ pub async fn chat(
         "usage": usage,
         "assistantId": assistant_id,
     }));
-
-    sync_tasks();   // Claude may have ticked tasks off / added some this turn
-    sync_artifacts(&res, user_msg_id);
 
     // First-turn auto-naming resolves on its own clock (a cheap Haiku call run
     // alongside the stream). When it lands, persist it and nudge the UI with a

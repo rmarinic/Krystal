@@ -166,11 +166,21 @@ function removeRef(id) {
   els.input.focus();
 }
 
-/* Thread ids still referenced in `text`, for the chat command's `refs`. */
-function resolveComposerRefs(text) {
+/* The references still named in `text`, as whole records. Their ids become the
+   chat command's `refs`; the rest is what lets a queued message get its pills
+   back if it is pulled out of the queue to be edited (see queue.js). */
+function composerRefsIn(text) {
   const out = [];
-  for (const ref of composerRefs.values()) if (text.includes(ref.token)) out.push(ref.id);
+  for (const ref of composerRefs.values()) if (text.includes(ref.token)) out.push({ ...ref });
   return out;
+}
+
+/* Put references back on the composer (its text must already be restored — a
+   reference whose token isn't in it is dropped again). */
+function restoreComposerRefs(refs) {
+  for (const ref of refs || []) if (ref && ref.id) composerRefs.set(ref.id, ref);
+  reconcileRefs();
+  renderRefPills();
 }
 
 /* Empty a chat's references — its turn was sent, or the chat itself is gone.

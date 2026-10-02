@@ -4,6 +4,12 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.24.0
+- **New: queue your next message while Claude is still working.** Until now a reply in progress left two choices: wait for it, or stop it. Now just type and press Enter — the message waits above the box and is sent the moment Claude finishes, so you can line up "and then do this" without watching the clock. Queue as many as you like; they go out one at a time, in the order you typed them, even if you've moved to another chat in the meantime.
+- Each queued message can be pulled back into the box to change it (✎) or dropped (×), attachments and #-references included. While Claude is working, a small queue button appears next to Stop once you've typed something, and the chat list shows how many messages a chat has waiting.
+- **Stopping holds the queue.** If you press Stop, or the reply fails, nothing queued is sent behind your back — it waits, marked "on hold", with a **Send now** button for when you're ready. Queued messages also survive closing Krystal, and come back on hold.
+- Sending a message now clears the "Next:" suggestion left over from the reply before it.
+
 ## v0.22.1
 - **Fixed: the model picker was stuck on an old list.** Claude Opus 5.5 came out and Krystal carried on offering Opus 5. The list isn't built into the app — Krystal asks Anthropic for it, so a new model turns up on its own — but it also remembers the last list it managed to fetch, and it was serving that one forever: the fetch had been quietly failing at every launch. Opus 5.5 is there now, and the chats you had on Opus 5 move across by themselves.
 - Two things behind that: a remembered list is now only trusted for a week, after which the app falls back to the one it shipped with rather than a stale memory; and a fetch that doesn't get through is retried within seconds instead of an hour later. (It needs a sign-in that Claude Code only renews when it actually runs, so opening Krystal after a break was usually a moment too early — the first message of the session fixes that, and now Krystal notices.)
