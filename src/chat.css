@@ -3239,7 +3239,14 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 .remote-fw-btn:disabled { opacity: .6; cursor: progress; }
 /* Reuses the list crossfade's shape, scoped to this row (list-swap itself only
    applies to .sidebar-list). */
-.remote-fw.fw-in { animation: list-swap .22s ease; }
+.remote-fw.fw-in, .remote-reach.fw-in { animation: list-swap .22s ease; }
+
+/* Whether another device has got as far as this computer. Quiet until one has. */
+.remote-reach {
+  padding-top: 11px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--fg-muted); line-height: 1.5;
+}
+.remote-reach.seen { color: var(--accent-2); }
 
 .remote-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
 .remote-toggle {
@@ -3257,7 +3264,7 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 
 @media (prefers-reduced-motion: reduce) {
   .remote-btn, .remote-dot, .remote-copy, .remote-toggle, .remote-fw-btn { transition: none; }
-  .remote-fw.fw-in { animation: none; }
+  .remote-fw.fw-in, .remote-reach.fw-in { animation: none; }
   .remote-btn.live .remote-dot { animation: none; }
 }
 

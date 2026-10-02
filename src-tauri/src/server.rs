@@ -150,11 +150,17 @@ impl Gate {
     }
 }
 
+/// The last connection that came in from another device: its address and when.
+/// `None` until one does — which is the only way this side can ever tell "the
+/// phone is typing the wrong PIN" apart from "the phone's request never arrives".
+type LastClient = Arc<Mutex<Option<(String, std::time::Instant)>>>;
+
 struct Running {
     port: u16,
     pin: String,
     /// Sending on this tells the accept loop to stop.
     stop: tokio::sync::watch::Sender<bool>,
+    last_client: LastClient,
 }
 
 /// The server handle held in `AppState`. Not running until `start` is called.
@@ -172,6 +178,10 @@ impl RemoteServer {
                 "pin": r.pin,
                 "host": lan_ip(),
                 "url": lan_ip().map(|ip| format!("http://{ip}:{}", r.port)),
+                // `null` until another device has got as far as this machine.
+                "lastClient": r.last_client.lock().unwrap().as_ref().map(|(ip, at)| {
+                    json!({ "ip": ip, "secsAgo": at.elapsed().as_secs() })
+                }),
             }),
             None => json!({ "running": false, "port": DEFAULT_PORT, "host": lan_ip() }),
         }
@@ -254,6 +264,14 @@ pub fn lan_ip() -> Option<String> {
         }
     }
     None
+}
+
+/// Did this connection come from another device? One made *on* this machine —
+/// to `localhost`, or to its own LAN address — arrives with a peer address that
+/// is loopback or the very address it was received on. Those prove nothing about
+/// the network, so they must not count as "a device reached us".
+fn from_elsewhere(peer: std::net::IpAddr, local: std::net::IpAddr) -> bool {
+    !peer.is_loopback() && peer != local
 }
 
 /* ---------------------------- Windows Firewall ---------------------------- */
@@ -412,13 +430,22 @@ pub async fn start<R: Runtime>(app: AppHandle<R>, port: u16) -> Result<Value, St
     let ctx = Ctx { app: app.clone(), gate: Gate::new(pin.clone()) };
 
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+    let last_client = LastClient::default();
+    let seen = last_client.clone();
 
     tokio::spawn(async move {
         loop {
             tokio::select! {
                 _ = stop_rx.changed() => break,
                 accepted = listener.accept() => {
-                    let Ok((stream, _peer)) = accepted else { continue };
+                    let Ok((stream, peer)) = accepted else { continue };
+                    // Noted at accept, before a byte is read: a browser that got
+                    // this far and then asked for `https://` still proves the
+                    // network path works, which is the question being answered.
+                    if stream.local_addr().is_ok_and(|l| from_elsewhere(peer.ip(), l.ip())) {
+                        *seen.lock().unwrap() =
+                            Some((peer.ip().to_string(), std::time::Instant::now()));
+                    }
                     let ctx = ctx.clone();
                     tokio::spawn(async move {
                         let io = TokioIo::new(stream);
@@ -436,7 +463,8 @@ pub async fn start<R: Runtime>(app: AppHandle<R>, port: u16) -> Result<Value, St
     });
 
     let state = app.state::<AppState>();
-    *state.remote.inner.lock().unwrap() = Some(Running { port, pin, stop: stop_tx });
+    *state.remote.inner.lock().unwrap() =
+        Some(Running { port, pin, stop: stop_tx, last_client });
     Ok(state.remote.status())
 }
 
@@ -1668,6 +1696,36 @@ mod tests {
     fn sse_frames_end_with_a_blank_line() {
         let frame = sse_frame(r#"{"type":"token","text":"hi"}"#);
         assert_eq!(&frame[..], b"data: {\"type\":\"token\",\"text\":\"hi\"}\n\n");
+    }
+
+    /* ------------------------------ who got in ---------------------------- */
+
+    #[test]
+    fn only_another_device_counts_as_a_client() {
+        let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
+        // The phone, arriving on this machine's LAN address.
+        assert!(from_elsewhere(ip("192.168.1.66"), ip("192.168.1.63")));
+        // This machine opening its own page — by `localhost`, or by the very
+        // address it shows the user — says nothing about the network.
+        assert!(!from_elsewhere(ip("127.0.0.1"), ip("127.0.0.1")));
+        assert!(!from_elsewhere(ip("192.168.1.63"), ip("192.168.1.63")));
+        assert!(!from_elsewhere(ip("::1"), ip("::1")));
+    }
+
+    #[tokio::test]
+    async fn opening_the_page_on_the_host_is_not_a_device_reaching_it() {
+        let dir = TempDir::new();
+        let app = mock_app(&dir.0);
+        let (base, _pin) = serve(&app).await;
+
+        let state = app.state::<AppState>();
+        assert!(state.remote.status()["lastClient"].is_null());
+        assert!(client().get(&base).send().await.unwrap().status().is_success());
+        // Served — and still nothing to report: a loopback request would have
+        // worked with every other device on the network locked out.
+        assert!(state.remote.status()["lastClient"].is_null());
+
+        state.remote.shutdown();
     }
 
     /* ------------------------------ firewall ------------------------------ */

@@ -560,6 +560,8 @@
       'remote.fw.allow': 'Allow',
       'remote.fw.reapply': 'Re‑apply',
       'remote.fw.allowing': 'Allowing…',
+      'remote.reach.none': 'No device has reached this computer yet. If the page just keeps loading on your phone, its request is not arriving here — check the phone is on this same Wi‑Fi (not mobile data, a guest network or a VPN) and that the address starts with http://, not https://.',
+      'remote.reach.seen': 'A device at {ip} has reached this computer — the connection works.',
 
       /* ---- remote access: driving another Krystal from here ---- */
       'remote.connectBtn': 'Remote',
@@ -1264,6 +1266,8 @@
       'remote.fw.allow': 'Dopusti',
       'remote.fw.reapply': 'Primijeni ponovno',
       'remote.fw.allowing': 'Dopuštanje…',
+      'remote.reach.none': 'Nijedan uređaj još nije došao do ovog računala. Ako se stranica na mobitelu samo učitava, zahtjev ne stiže ovamo — provjeri je li mobitel na istom Wi‑Fiju (ne na mobilnim podacima, mreži za goste ili VPN‑u) i počinje li adresa s http://, a ne https://.',
+      'remote.reach.seen': 'Uređaj na adresi {ip} došao je do ovog računala — veza radi.',
 
       /* ---- remote access: driving another Krystal from here ---- */
       'remote.connectBtn': 'Daljinski',

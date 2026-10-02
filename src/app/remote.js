@@ -16,7 +16,9 @@
               the composer, tasks, git — is working on its files instead of ours.
               This file owns the pairing and the banner; core.js owns the wire. */
 
-/* Last status we heard from OUR server: { running, port, pin, host, url }.
+/* Last status we heard from OUR server: { running, port, pin, host, url,
+ * lastClient } — the last being `{ ip, secsAgo }` once another device has got
+ * through, `null` until then.
  * Cached so re-rendering the panel (Settings measures every tab on open) paints
  * instantly instead of flashing empty while the round trip lands. */
 let remoteStatus = { running: false };
@@ -130,9 +132,11 @@ function fillRemoteHostState(el) {
       `</div>` +
       `<div class="remote-note">${escapeHtml(tr('remote.note'))}</div>` +
       `<div class="remote-fw" hidden></div>` +
+      `<div class="remote-reach"></div>` +
     `</div>`;
 
   paintFirewall(el.querySelector('.remote-fw'));
+  paintReach(el.querySelector('.remote-reach'));
 
   const copy = el.querySelector('.remote-copy');
   if (copy) {
@@ -204,6 +208,41 @@ async function paintFirewall(row) {
   }
   await remoteFirewallCheck;
   draw();
+}
+
+/* ------------------------------ the reach row ---------------------------- */
+/* The firewall can be open and the phone still sit on a page that never loads:
+ * it is on mobile data, on a guest Wi-Fi the router keeps apart, behind a VPN.
+ * None of that is visible from here — except by its absence. The server notes
+ * the last connection that came from another device (`lastClient`), so this row
+ * can say the one thing that tells those cases apart from a wrong code: whether
+ * anything has arrived at all.
+ *
+ * Polled while the card is on screen, since the moment it changes is the moment
+ * someone is standing there with a phone. Each row owns its timer and drops it
+ * as soon as the row is gone — Settings rebuilds this panel freely. */
+const REMOTE_REACH_POLL_MS = 3000;
+
+function paintReach(row) {
+  if (!row) return;
+
+  const draw = () => {
+    const seen = remoteStatus.lastClient;
+    const key = seen ? `seen:${seen.ip}` : 'none';
+    if (row.dataset.state === key) return;
+    const first = !row.dataset.state;
+    row.dataset.state = key;
+    row.classList.toggle('seen', !!seen);
+    row.textContent = seen ? tr('remote.reach.seen', { ip: seen.ip }) : tr('remote.reach.none');
+    if (!first) replayClass(row, 'fw-in');
+  };
+
+  draw();
+  const timer = setInterval(async () => {
+    if (!row.isConnected || !remoteStatus.running) { clearInterval(timer); return; }
+    await refreshRemoteStatus();
+    draw();
+  }, REMOTE_REACH_POLL_MS);
 }
 
 /* --------------------------- mirroring a turn ---------------------------- */
