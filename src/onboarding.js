@@ -81,8 +81,15 @@
     clearActions(); setError(null);
     setStatus(tr('onb.install.working'));
     el.log.hidden = false; el.log.innerHTML = '';
+    // The download says nothing for minutes on a slow line; never leave the user
+    // with only a spinner and no way out.
+    addSkip();
     const channel = new Channel();
-    channel.onmessage = (msg) => { if (msg && msg.type === 'log') appendLog(msg.line); };
+    channel.onmessage = (msg) => {
+      if (!msg) return;
+      if (msg.type === 'log') appendLog(msg.line);
+      else if (msg.type === 'progress') setStatus(tr('onb.install.progress', { mb: msg.mb }));
+    };
     try {
       const pf = await invoke('install_claude', { onEvent: channel });
       setStatus(null);

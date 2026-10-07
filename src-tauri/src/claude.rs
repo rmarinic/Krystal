@@ -216,6 +216,10 @@ fn extra_claude_dirs() -> Vec<PathBuf> {
     if let Ok(appdata) = std::env::var("APPDATA") {
         dirs.push(PathBuf::from(appdata).join("npm"));
     }
+    // `winget install Anthropic.ClaudeCode` links the exe here.
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        dirs.push(PathBuf::from(local).join("Microsoft").join("WinGet").join("Links"));
+    }
     dirs
 }
 
@@ -314,7 +318,13 @@ pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String>
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let child = cmd.spawn().map_err(|e| format!("could not start the installer: {e}"))?;
-    let (status, _log) = stream_child_logs(child, channel).await?;
+    // The script downloads a couple of hundred MB without printing a thing, which
+    // on a slow line is minutes of a spinner that looks hung. Watch the file it
+    // is writing and report its size as `{type:"progress", mb}`.
+    let progress = tokio::spawn(report_download_progress(channel.clone()));
+    let result = stream_child_logs(child, channel).await;
+    progress.abort();
+    let (status, _log) = result?;
     if status.success() {
         Ok(())
     } else {
@@ -324,6 +334,47 @@ pub async fn install_claude_code(channel: &Channel<Value>) -> Result<(), String>
         ))
     }
 }
+
+/// Size in bytes of the binary the installer script is downloading into
+/// `~/.claude/downloads` (0 when there is none).
+fn installer_download_size() -> u64 {
+    let home = match std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return 0,
+    };
+    let entries = match std::fs::read_dir(home.join(".claude").join("downloads")) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("claude-"))
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Tick once a second while the installer runs, sending the download's size
+/// whenever it has grown. Runs until aborted.
+async fn report_download_progress(channel: Channel<Value>) {
+    // A leftover from an earlier attempt is not progress.
+    let mut last = installer_download_size();
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let size = installer_download_size();
+        if size != last {
+            last = size;
+            if size > 0 {
+                let _ = channel.send(json!({ "type": "progress", "mb": size / (1024 * 1024) }));
+            }
+        }
+    }
+}
+
+/// How long to wait for a finished child's output pipes to close before giving
+/// up on them (see `stream_child_logs`).
+const PIPE_DRAIN_SECS: u64 = 3;
 
 /// Stream a spawned child's stdout and stderr to the frontend as
 /// `{type:"log", line}` (the shape the install/update panels render) and wait for
@@ -355,8 +406,16 @@ async fn stream_child_logs(
     let err_task = tokio::spawn(pump(stderr, channel.clone()));
 
     let status = child.wait().await.map_err(|e| e.to_string())?;
-    let mut log = out_task.await.unwrap_or_default();
-    log.push_str(&err_task.await.unwrap_or_default());
+    // The pipes only close once *every* process holding them has gone, and a
+    // helper the child left running inherits them — so don't wait on them
+    // forever after the child itself has exited.
+    let drain = std::time::Duration::from_secs(PIPE_DRAIN_SECS);
+    let mut log = String::new();
+    for task in [out_task, err_task] {
+        if let Ok(Ok(text)) = tokio::time::timeout(drain, task).await {
+            log.push_str(&text);
+        }
+    }
     Ok((status, log))
 }
 

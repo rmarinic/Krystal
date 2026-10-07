@@ -125,8 +125,25 @@ pub async fn refresh_models(state: State<'_, AppState>) -> CmdResult {
 /// Boot-time readiness check: is Claude Code installed, and is the user signed in?
 #[tauri::command]
 pub fn preflight(state: State<'_, AppState>) -> Value {
-    let bin = state.claude_bin();
-    let version = claude::claude_version(&bin);
+    readiness(&state)
+}
+
+/// The preflight answer. The binary's path was resolved when the app started, so
+/// if that one doesn't run, look again before calling Claude Code missing — it
+/// may have been installed (by hand, in a terminal) since — and adopt what's found.
+fn readiness(state: &AppState) -> Value {
+    let mut bin = state.claude_bin();
+    let mut version = claude::claude_version(&bin);
+    if version.is_none() {
+        let resolved = claude::resolve_claude();
+        if resolved != bin {
+            version = claude::claude_version(&resolved);
+            if version.is_some() {
+                *state.claude_bin.lock().unwrap() = resolved.clone();
+            }
+            bin = resolved;
+        }
+    }
     json!({
         "installed": version.is_some(),
         "version": version,
@@ -140,19 +157,14 @@ pub fn preflight(state: State<'_, AppState>) -> Value {
 /// rest of the app can use it without a restart. Returns the new preflight state.
 #[tauri::command]
 pub async fn install_claude(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
+    // Already there after all (installed since the app started)? Nothing to do.
+    let ready = readiness(&state);
+    if ready["installed"] == json!(true) {
+        return Ok(ready);
+    }
     claude::install_claude_code(&on_event).await?;
     // Re-resolve now that it should be on disk, and adopt the new path.
-    let resolved = claude::resolve_claude();
-    let version = claude::claude_version(&resolved);
-    if version.is_some() {
-        *state.claude_bin.lock().unwrap() = resolved.clone();
-    }
-    Ok(json!({
-        "installed": version.is_some(),
-        "version": version,
-        "authenticated": claude::is_authenticated(),
-        "claudeBin": resolved,
-    }))
+    Ok(readiness(&state))
 }
 
 /// Update the Claude Code CLI in place (the same as running `claude update` in a

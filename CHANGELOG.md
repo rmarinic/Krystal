@@ -4,6 +4,10 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.24.1
+- **Fixed: first-run setup could sit on "Installing Claude Code…" forever.** The download is a couple of hundred megabytes and said nothing while it ran, so on a slower connection it looked frozen — and there was no way past it. Krystal now shows how much has been downloaded, and **Continue anyway** stays available the whole time.
+- **Fixed: "Claude Code isn't installed" when it was.** Krystal only looked for it once, at launch, so installing it yourself while the app was open (or through winget) went unnoticed. It now looks again before saying so, and skips the install entirely if Claude Code is already there.
+
 ## v0.24.0
 - **New: queue your next message while Claude is still working.** Until now a reply in progress left two choices: wait for it, or stop it. Now just type and press Enter — the message waits above the box and is sent the moment Claude finishes, so you can line up "and then do this" without watching the clock. Queue as many as you like; they go out one at a time, in the order you typed them, even if you've moved to another chat in the meantime.
 - Each queued message can be pulled back into the box to change it (✎) or dropped (×), attachments and #-references included. While Claude is working, a small queue button appears next to Stop once you've typed something, and the chat list shows how many messages a chat has waiting.
