@@ -105,22 +105,85 @@
     }
   }
 
-  function showLogin() {
+  // `failed`: the in-app sign-in was tried and didn't land — say so, and offer the
+  // terminal as another way in.
+  function showLogin(failed) {
     el.title.textContent = tr('onb.login.title');
     el.body.textContent = tr('onb.login.body');
     el.log.hidden = true;
-    setStatus(null); setError(null); clearActions();
-    addBtn(tr('onb.login.btn'), 'primary', async () => {
+    setStatus(null); setError(failed ? tr('onb.login.failed') : null); clearActions();
+    addBtn(tr('onb.login.btn'), 'primary', doLogin);
+    if (failed) addBtn(tr('onb.login.terminal'), 'ghost', loginInTerminal);
+    addSkip();
+  }
+
+  // Sign in right here: the backend runs Claude Code's own sign-in hidden, which
+  // opens the browser and normally finishes by itself. Some setups get a code on
+  // the page instead, so there is a box to paste it into.
+  async function doLogin() {
+    clearActions(); setError(null);
+    el.body.textContent = tr('onb.login.waitingBody');
+    setStatus(tr('onb.login.waiting'));
+    let cancelled = false;
+
+    const row = document.createElement('div');
+    row.className = 'onb-code';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = tr('onb.login.codePlaceholder');
+    input.autocomplete = 'off'; input.spellcheck = false;
+    const submit = document.createElement('button');
+    submit.className = 'onb-btn ghost';
+    submit.textContent = tr('onb.login.codeSubmit');
+    const sendCode = async () => {
+      const code = input.value.trim();
+      if (!code) return;
       setError(null);
+      submit.disabled = true;
       try {
-        await invoke('open_login');
-        el.body.textContent = tr('onb.login.opened');
+        await invoke('submit_login_code', { code });
       } catch (err) {
         setError(tr('onb.error.generic', { err: String((err && err.message) || err) }));
       }
+      submit.disabled = false;
+    };
+    submit.onclick = sendCode;
+    input.onkeydown = (e) => { if (e.key === 'Enter') sendCode(); };
+    row.append(input, submit);
+
+    const channel = new Channel();
+    channel.onmessage = (msg) => {
+      // The link arriving means the sign-in is live and listening for a code.
+      if (!msg || msg.type !== 'url' || row.isConnected) return;
+      el.actions.prepend(row);
+      addBtn(tr('onb.login.reopen'), 'link', () => invoke('open_external', { url: msg.url }).catch(() => {}));
+    };
+    addBtn(tr('onb.login.cancel'), 'link', () => {
+      cancelled = true;
+      invoke('cancel_login').catch(() => {});
     });
-    addBtn(tr('onb.login.recheck'), 'ghost', recheckLogin);
-    addSkip();
+
+    try {
+      const pf = await invoke('start_login', { onEvent: channel });
+      if (pf && pf.authenticated) showReady();
+      else showLogin(!cancelled);
+    } catch (err) {
+      showLogin(true);
+      setError(tr('onb.error.generic', { err: String((err && err.message) || err) }));
+    }
+  }
+
+  async function loginInTerminal() {
+    setError(null);
+    try {
+      await invoke('open_login');
+      el.body.textContent = tr('onb.login.opened');
+      clearActions();
+      addBtn(tr('onb.login.recheck'), 'primary', recheckLogin);
+      addSkip();
+    } catch (err) {
+      setError(tr('onb.error.generic', { err: String((err && err.message) || err) }));
+    }
   }
 
   async function recheckLogin() {
@@ -144,6 +207,19 @@
     setStatus(null); setError(null); clearActions();
     setTimeout(hide, 1500);
   }
+
+  // The boot check can be wrong, and a sign-in can lapse later. When Claude Code
+  // itself answers "Not logged in · Please run /login", the app hands the message
+  // here: bring the sign-in screen back instead of leaving the user with advice
+  // meant for a terminal. Returns whether it was that kind of error.
+  window.krystalNeedsLogin = (message) => {
+    if (!/not logged in|please run \/login/i.test(String(message || ''))) return false;
+    cache();
+    if (!el.overlay) return false;
+    show();
+    showLogin();
+    return true;
+  };
 
   /* -------------------------------- boot --------------------------------- */
 

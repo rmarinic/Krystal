@@ -1194,6 +1194,7 @@ mod tests {
             db: std::sync::Mutex::new(conn),
             caps: crate::claude::Caps { pandoc: false, python_docx: false },
             claude_bin: std::sync::Mutex::new("claude".into()),
+            login: Default::default(),
             discord: crate::discord::Presence::new(),
             running: std::sync::Mutex::new(std::collections::HashMap::new()),
             run_procs: std::sync::Mutex::new(std::collections::HashMap::new()),

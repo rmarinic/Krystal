@@ -39,6 +39,7 @@ function footBtn(text, cls, onclick) {
 }
 
 function initError(message, retry) {
+  if (window.krystalNeedsLogin) window.krystalNeedsLogin(message);
   const err = document.createElement('span');
   err.className = 'init-err';
   err.textContent = '⚠ ' + message;

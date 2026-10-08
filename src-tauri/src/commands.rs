@@ -23,6 +23,8 @@ pub struct AppState {
     /// Claude Code at runtime and we then need every command to use the new path
     /// without a restart.
     pub claude_bin: std::sync::Mutex<String>,
+    /// The onboarding screen's sign-in, while one is in flight.
+    pub login: claude::LoginFlow,
     /// Discord Rich Presence handle (opt-in; off until the user enables it).
     pub discord: discord::Presence,
     /// PIDs of in-flight `claude` chat processes, keyed by thread id, so a
@@ -147,7 +149,7 @@ fn readiness(state: &AppState) -> Value {
     json!({
         "installed": version.is_some(),
         "version": version,
-        "authenticated": claude::is_authenticated(),
+        "authenticated": version.is_some() && claude::is_authenticated(&bin),
         "claudeBin": bin,
     })
 }
@@ -228,13 +230,39 @@ pub async fn update_claude_npm(state: State<'_, AppState>, on_event: Channel<Val
     }))
 }
 
-/// Open a real terminal running interactive `claude`, which walks the user
-/// through Anthropic's normal browser sign-in. The UI re-checks via `preflight`.
+/// Sign in from inside the app: the CLI's own browser sign-in, run hidden (see
+/// `claude::run_login`). Stays pending until the CLI finishes — or `cancel_login`
+/// ends it — then returns the fresh preflight state.
+#[tauri::command]
+pub async fn start_login(state: State<'_, AppState>, on_event: Channel<Value>) -> CmdResult {
+    let bin = state.claude_bin();
+    claude::run_login(&bin, &state.login, &on_event).await?;
+    Ok(readiness(&state))
+}
+
+/// Pass on the code the sign-in page showed, when it shows one.
+#[tauri::command]
+pub async fn submit_login_code(state: State<'_, AppState>, code: String) -> CmdResult {
+    state.login.send_code(&code).await?;
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
+pub fn cancel_login(state: State<'_, AppState>) -> Value {
+    state.login.cancel();
+    json!({ "ok": true })
+}
+
+/// The fallback for when the in-app sign-in doesn't work out.
+/// Open a real terminal running `claude auth login`, which goes straight to
+/// Anthropic's normal browser sign-in (bare `claude` only does that on a first
+/// run — otherwise it sits at a prompt saying "run /login"). By full path, so it
+/// works where `claude` isn't on the PATH. The UI re-checks via `preflight`.
 #[tauri::command]
 pub fn open_login(state: State<'_, AppState>) -> CmdResult {
     let bin = state.claude_bin();
     let mut cmd = std::process::Command::new("cmd");
-    cmd.args(["/c", "start", "Krystal — Claude login", "cmd", "/k", &bin]);
+    cmd.args(["/c", "start", "Krystal — Claude login", "cmd", "/k", &bin, "auth", "login"]);
     cmd.spawn()
         .map_err(|e| format!("could not open the login window: {e}"))?;
     Ok(json!({ "ok": true }))

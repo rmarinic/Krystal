@@ -65,6 +65,7 @@ fn main() {
                 db: std::sync::Mutex::new(conn),
                 caps,
                 claude_bin: std::sync::Mutex::new(claude_bin.clone()),
+                login: Default::default(),
                 discord: discord::Presence::new(),
                 running: std::sync::Mutex::new(std::collections::HashMap::new()),
                 run_procs: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -86,6 +87,9 @@ fn main() {
             commands::install_claude,
             commands::update_claude,
             commands::update_claude_npm,
+            commands::start_login,
+            commands::submit_login_code,
+            commands::cancel_login,
             commands::open_login,
             commands::open_external,
             commands::open_webview,
@@ -180,6 +184,7 @@ fn main() {
                 // Remote access is bound to a LAN port — it must not outlive the
                 // window either, or the port stays held until the process dies.
                 state.remote.shutdown();
+                state.login.cancel();
                 tauri::async_runtime::block_on(state.sessions.retire_all());
             }
         });

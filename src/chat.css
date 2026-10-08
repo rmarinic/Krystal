@@ -2674,6 +2674,19 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 .onb-btn.link:hover { color: var(--fg-muted); }
 .onb-btn[disabled] { opacity: .55; cursor: default; transform: none; box-shadow: none; }
 
+/* The sign-in's "paste the code" row: takes the actions' full width, so the
+   buttons after it wrap onto their own line. */
+.onb-code { display: flex; gap: 8px; flex: 1 0 100%; animation: onb-code-in .22s ease; }
+.onb-code input {
+  flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px;
+  background: #060a07; border: 1px solid var(--border-2); color: var(--fg);
+  font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  transition: border-color .15s ease;
+}
+.onb-code input:focus { outline: none; border-color: var(--accent-2); }
+@keyframes onb-code-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .onb-code { animation: none; } }
+
 .onb-error { margin: 4px 0 0; font-size: 12.5px; color: var(--warn); }
 .onb-error[hidden] { display: none; }
 

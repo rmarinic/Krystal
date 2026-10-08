@@ -563,6 +563,7 @@ function handleLiveEvent(live, msg) {
     // A turn the user stopped exits non-zero; settle it quietly instead of
     // painting a red error chip (any partial text is already kept).
     live.failed = true;   // either way it didn't finish — queued messages wait
+    if (!live.stopped && window.krystalNeedsLogin) window.krystalNeedsLogin(msg.message);
     if (live.typer) {
       if (live.stopped) live.typer.finish(live.finalText || '');
       else live.typer.error(msg.message || 'error');
