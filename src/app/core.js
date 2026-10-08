@@ -386,6 +386,7 @@ const api = {
   gitFetch(cwd) { return invoke('git_fetch', { cwd }); },
   gitPull(cwd) { return invoke('git_pull', { cwd }); },
   gitPush(cwd) { return invoke('git_push', { cwd }); },
+  ciRuns(cwd) { return invoke('ci_runs', { cwd }); },
   openExternal(url) { return invoke('open_external', { url }); },
   openWebview(url) { return invoke('open_webview', { url }); },
   claudeMdExists(cwd) { return invoke('claude_md_exists', { cwd }); },

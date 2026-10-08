@@ -678,6 +678,8 @@
       'link.failLabel': "Couldn't open link",
       'settings.gitStatus.name': 'Git branch status',
       'settings.gitStatus.desc': 'Show the current branch and working-tree changes under the message box. Hidden automatically when the project folder is not a git repository.',
+      'settings.ciStatus.name': 'Build & deploy status',
+      'settings.ciStatus.desc': 'Show the project’s GitHub Actions runs next to the branch: a dot for the latest build, the recent runs on click, and a note when a run you were waiting on finishes. Needs the GitHub CLI (gh), installed and signed in; hidden when the project isn’t on GitHub.',
       'settings.promptSuggestions.name': 'Suggest a next message',
       'settings.promptSuggestions.desc': 'After a reply, let Claude offer a likely next message under the message box — click it to put it in. It only appears once a conversation is under way and only when Claude has a confident guess.',
       'settings.logoLife.name': 'Extra effects',
@@ -779,6 +781,21 @@
       'branch.pushedLabel': 'Pushed',
       'branch.pushFailLabel': 'Push failed',
       'branch.actionDone': 'Done.',
+
+      /* ---- GitHub Actions build chip ---- */
+      'ci.build': 'Build',
+      'ci.running': 'running',
+      'ci.queued': 'queued',
+      'ci.passed': 'passed',
+      'ci.failed': 'failed',
+      'ci.cancelled': 'cancelled',
+      'ci.skipped': 'skipped',
+      'ci.chipTitle': '{state} · {when} — click for recent runs',
+      'ci.recent': 'Recent runs',
+      'ci.openRun': 'Open this run on GitHub',
+      'ci.openAll': 'All runs on GitHub ↗',
+      'ci.open': 'Open on GitHub',
+      'ci.tipLabel': '{workflow}: {state}',
     },
 
     hr: {
@@ -1436,6 +1453,8 @@
       'link.failLabel': 'Nije moguće otvoriti poveznicu',
       'settings.gitStatus.name': 'Git status grane',
       'settings.gitStatus.desc': 'Prikaži trenutačnu granu i promjene u radnom stablu ispod okvira za poruku. Automatski se skriva kad mapa projekta nije git repozitorij.',
+      'settings.ciStatus.name': 'Status builda i deploya',
+      'settings.ciStatus.desc': 'Prikaži GitHub Actions pokretanja projekta pokraj grane: točka za zadnji build, nedavna pokretanja na klik i obavijest kad završi pokretanje koje se čekalo. Potreban je GitHub CLI (gh), instaliran i prijavljen; skriveno kad projekt nije na GitHubu.',
       'settings.promptSuggestions.name': 'Predloži sljedeću poruku',
       'settings.promptSuggestions.desc': 'Nakon odgovora Claude može ispod okvira ponuditi vjerojatnu sljedeću poruku — klikom je ubaciš u okvir. Pojavljuje se tek kad razgovor krene i samo kad Claude ima siguran prijedlog.',
       'settings.logoLife.name': 'Dodatni efekti',
@@ -1537,6 +1556,21 @@
       'branch.pushedLabel': 'Poslano',
       'branch.pushFailLabel': 'Slanje nije uspjelo',
       'branch.actionDone': 'Gotovo.',
+
+      /* ---- GitHub Actions build chip ---- */
+      'ci.build': 'Build',
+      'ci.running': 'u tijeku',
+      'ci.queued': 'na čekanju',
+      'ci.passed': 'uspjelo',
+      'ci.failed': 'nije uspjelo',
+      'ci.cancelled': 'otkazano',
+      'ci.skipped': 'preskočeno',
+      'ci.chipTitle': '{state} · {when} — klikni za nedavna pokretanja',
+      'ci.recent': 'Nedavna pokretanja',
+      'ci.openRun': 'Otvori ovo pokretanje na GitHubu',
+      'ci.openAll': 'Sva pokretanja na GitHubu ↗',
+      'ci.open': 'Otvori na GitHubu',
+      'ci.tipLabel': '{workflow}: {state}',
     },
   };
 

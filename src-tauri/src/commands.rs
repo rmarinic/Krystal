@@ -1561,6 +1561,79 @@ pub fn git_push(cwd: String) -> Value {
     first
 }
 
+/* ----------------------------- GitHub Actions ---------------------------- */
+
+/// How many recent workflow runs the status line's popover lists.
+const CI_RUN_LIMIT: &str = "15";
+
+/// Trim `gh run list --json …` down to what the UI draws. Anything that isn't
+/// the array gh promises yields an empty list rather than an error.
+fn parse_ci_runs(raw: &str) -> Vec<Value> {
+    let s = |r: &Value, k: &str| r.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    serde_json::from_str::<Vec<Value>>(raw)
+        .unwrap_or_default()
+        .iter()
+        .map(|r| {
+            json!({
+                "id": r.get("databaseId").and_then(|v| v.as_i64()).unwrap_or(0),
+                "workflow": s(r, "workflowName"),
+                "title": s(r, "displayTitle"),
+                "status": s(r, "status"),
+                "conclusion": s(r, "conclusion"),
+                "branch": s(r, "headBranch"),
+                "event": s(r, "event"),
+                "createdAt": s(r, "createdAt"),
+                "updatedAt": s(r, "updatedAt"),
+                "url": s(r, "url"),
+            })
+        })
+        .collect()
+}
+
+/// The project's recent GitHub Actions runs, newest first, for the build chip in
+/// the git status line. Asked of the GitHub CLI (`gh`) rather than the REST API
+/// directly: it already knows which repository the folder belongs to and carries
+/// the user's sign-in, so private repositories work with nothing to configure.
+/// `available` is false — and the UI simply shows no chip — when `gh` isn't
+/// installed (`reason: "gh"`) or can't answer for this folder (not a GitHub
+/// repository, not signed in, offline: `reason: "repo"`).
+///
+/// Async + `spawn_blocking` because this is a network round trip: a plain
+/// command would hold the main thread for as long as GitHub takes to reply.
+#[tauri::command]
+pub async fn ci_runs(cwd: String) -> Value {
+    tokio::task::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new("gh");
+        cmd.current_dir(&cwd)
+            .args(["run", "list", "--limit", CI_RUN_LIMIT, "--json"])
+            .arg("databaseId,workflowName,displayTitle,status,conclusion,headBranch,event,createdAt,updatedAt,url")
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_NO_UPDATE_NOTIFIER", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(claude::CREATE_NO_WINDOW);
+        }
+        match cmd.output() {
+            Ok(out) if out.status.success() => json!({
+                "available": true,
+                "runs": parse_ci_runs(&String::from_utf8_lossy(&out.stdout)),
+            }),
+            Ok(out) => json!({
+                "available": false,
+                "reason": "repo",
+                "error": String::from_utf8_lossy(&out.stderr).trim(),
+            }),
+            Err(e) => json!({ "available": false, "reason": "gh", "error": e.to_string() }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "available": false, "reason": "gh", "error": e.to_string() }))
+}
+
 /* ------------------------------ claude usage ----------------------------- */
 /* Estimate Claude Code subscription usage by summing *weighted* tokens from the
  * local session transcripts (~/.claude/projects/**/*.jsonl) into a rolling
@@ -2855,6 +2928,31 @@ mod tests {
 
     fn task(id: i64, title: &str, note: Option<&str>, done: bool) -> Value {
         json!({ "id": id, "title": title, "note": note, "done": done })
+    }
+
+    /// The UI keys a run by `id` and colours it from `status`/`conclusion`; a
+    /// run still in flight has no conclusion yet, and gh's output that isn't the
+    /// promised array (an error page, nothing at all) must read as "no runs".
+    #[test]
+    fn ci_runs_are_trimmed_to_what_the_ui_draws() {
+        let raw = r#"[
+            {"databaseId":42,"workflowName":"Release","displayTitle":"Release v1","status":"completed",
+             "conclusion":"success","headBranch":"v1","event":"push","createdAt":"2026-10-08T09:15:06Z",
+             "updatedAt":"2026-10-08T09:21:14Z","url":"https://github.com/o/r/actions/runs/42"},
+            {"databaseId":43,"workflowName":"CI","status":"in_progress","conclusion":null}
+        ]"#;
+        let runs = parse_ci_runs(raw);
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0]["id"], 42);
+        assert_eq!(runs[0]["workflow"], "Release");
+        assert_eq!(runs[0]["branch"], "v1");
+        assert_eq!(runs[0]["url"], "https://github.com/o/r/actions/runs/42");
+        assert_eq!(runs[1]["status"], "in_progress");
+        assert_eq!(runs[1]["conclusion"], "");
+        assert_eq!(runs[1]["title"], "");
+
+        assert!(parse_ci_runs("").is_empty());
+        assert!(parse_ci_runs(r#"{"message":"Not Found"}"#).is_empty());
     }
 
     /// The snapshot is the whole task-sync contract: whatever `render` writes,

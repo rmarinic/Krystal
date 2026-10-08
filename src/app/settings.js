@@ -38,7 +38,7 @@ function syncDiscordProject() {
 
 const SETTINGS_KEY = 'krystal.settings';
 const SETTINGS_DEFAULTS = {
-  gitStatus: true, logoLife: true, discordShareName: true, linkOpen: 'ask',
+  gitStatus: true, ciStatus: true, logoLife: true, discordShareName: true, linkOpen: 'ask',
   // Ask the CLI to predict a sensible next message after each turn.
   promptSuggestions: true,
   // Claude-usage calibration caps (weighted tokens). null = not calibrated yet.
@@ -68,7 +68,7 @@ function setSettingVal(k, v) {           // non-boolean (e.g. the link-open choi
   applySetting(k);
 }
 function applySetting(k) {
-  if (k === 'gitStatus') refreshGit();
+  if (k === 'gitStatus' || k === 'ciStatus') refreshGit();
   else if (k === 'promptSuggestions') pushSuggestionsSetting();
   else if (k === 'logoLife') { scheduleLogoLife(); applyExtraEffects(); }
   else if (k === 'discordShareName') {
@@ -95,6 +95,7 @@ const SETTINGS_TABS = [
   { id: 'general', rows: [
     { key: 'linkOpen', type: 'choice', choices: ['ask', 'browser', 'app'] },
     { key: 'gitStatus' },
+    { key: 'ciStatus', sub: true },
     { key: 'promptSuggestions' },
     { key: 'logoLife' },
     { key: 'claudeUpdate', type: 'action' },

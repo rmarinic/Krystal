@@ -4,6 +4,12 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.26.0
+- **New: see your builds and deploys without leaving Krystal.** If the project is on GitHub and uses GitHub Actions, a small dot now sits next to the branch name under the message box: green when the latest run passed, red when it failed, amber and pulsing while one is queued or running. It shows the run that matters right now — one in progress if there is one, otherwise the latest on your branch.
+- Click it for the recent runs — what each was for, which branch, how long ago and how long it took. Clicking a run opens it on GitHub.
+- **Told when it lands.** A run that was in progress raises a note the moment it finishes, with the result, whichever chat you happen to be in — so you can push, carry on, and hear about it.
+- This needs the GitHub CLI (`gh`) installed and signed in; without it, or in a project that isn't on GitHub, the dot simply isn't there. It can be switched off in Settings → General → **Build & deploy status**.
+
 ## v0.24.1
 - **Fixed: first-run setup could sit on "Installing Claude Code…" forever.** The download is a couple of hundred megabytes and said nothing while it ran, so on a slower connection it looked frozen — and there was no way past it. Krystal now shows how much has been downloaded, and **Continue anyway** stays available the whole time.
 - **Fixed: "Claude Code isn't installed" when it was.** Krystal only looked for it once, at launch, so installing it yourself while the app was open (or through winget) went unnoticed. It now looks again before saying so, and skips the install entirely if Claude Code is already there.
