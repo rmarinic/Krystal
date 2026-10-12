@@ -68,12 +68,15 @@ async function openThread(id, focusMid) {
     : t.messages;
 
   hydrateAgentRuns(id, saved);              // so sub-agent chips can open their run
+  let ckpt = '';                            // the turn each reply belongs to (review.js)
   for (let i = 0; i < saved.length; i++) {
     const m = saved[i];
     // A turn cut short marks both of its rows; only the last one wears the badge.
     const next = saved[i + 1];
     const meta = (m.partial && next && next.partial) ? Object.assign({}, m, { partial: false }) : m;
-    appendMessage(m.role, m.text, m.files, meta);
+    const el = appendMessage(m.role, m.text, m.files, meta);
+    if (m.role === 'user') ckpt = m.ckpt || '';
+    else if (m.role === 'assistant' && typeof attachTurnChanges === 'function') attachTurnChanges(el, m.segments, ckpt, id);
   }
   updateUsage(t.usage, { silent: true });   // set meter without popping a tip on open
 

@@ -245,7 +245,15 @@ pub struct Mode {
 pub const DEFAULT_MODE: &str = "auto";
 
 pub const MODES: &[Mode] = &[
-    Mode { id: "auto", name: "Auto", blurb: "Reads, writes & runs on its own" },
+    // Nothing is checked. The id is still `auto` because that is what every
+    // existing chat has stored; the *name* stopped being "Auto" when Claude
+    // Code's own Auto mode (below) arrived and meant something else.
+    Mode { id: "auto", name: "Full access", blurb: "Reads, writes & runs on its own — nothing is checked" },
+    // Claude Code's Auto mode: no prompts either, but a classifier looks at each
+    // action first and stops the ones that look destructive or off-task.
+    Mode { id: "guarded", name: "Auto", blurb: "Works on its own; risky actions are checked first" },
+    // Edits go through; anything else that needs permission still asks.
+    Mode { id: "edits", name: "Accept edits", blurb: "Edits files freely, asks before running commands" },
     // The terminal's default behaviour: reading is free, anything that changes a
     // file or runs a command stops and asks first (see `claude::apply_mode`).
     Mode { id: "ask",  name: "Ask",  blurb: "Asks before it changes or runs anything" },
@@ -262,10 +270,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_modes_are_auto_ask_and_plan() {
+    fn the_modes_are_the_five_we_offer() {
         assert!(is_valid_mode(DEFAULT_MODE));
-        assert!(is_valid_mode("ask"));
-        assert!(is_valid_mode("plan"));
+        for id in ["guarded", "edits", "ask", "plan"] {
+            assert!(is_valid_mode(id), "{id} should be offered");
+        }
         // An unknown mode would silently run at full power — refuse it instead.
         assert!(!is_valid_mode("yolo"));
     }

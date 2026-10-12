@@ -268,6 +268,25 @@ pub fn open_login(state: State<'_, AppState>) -> CmdResult {
     Ok(json!({ "ok": true }))
 }
 
+/// Raise a desktop notification — a reply landed, or a turn stopped to ask for
+/// permission, while the window was in the background. The frontend decides
+/// *when* (it knows what is on screen and whether the user switched this off);
+/// this only shows it. A machine with notifications turned off simply shows
+/// nothing, which is not an error worth reporting to anyone.
+#[tauri::command]
+pub fn notify<R: tauri::Runtime>(app: tauri::AppHandle<R>, title: String, body: String) -> CmdResult {
+    use tauri_plugin_notification::NotificationExt;
+    // A toast is no place for a whole answer.
+    let clip = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+    let _ = app
+        .notification()
+        .builder()
+        .title(clip(&title, 120))
+        .body(clip(&body, 240))
+        .show();
+    Ok(json!({ "ok": true }))
+}
+
 /// Open a URL in the user's default browser. Validated to http(s) only and free
 /// of control/quote characters, then handed to `explorer.exe` (which launches
 /// the default handler) as a single argument — no shell, so no `cmd` re-parsing.
@@ -930,6 +949,75 @@ pub async fn generate_tasks(
     }
 }
 
+/* ------------------------------- rewind ---------------------------------- */
+
+/// What Claude is told, on the chat's next message, after its files were rewound.
+/// It still remembers making those edits; without this it would build on changes
+/// that are no longer there.
+const REWIND_NOTE: &str = "FILES REWOUND: since your last reply the user restored this project's files to how they were before an earlier message in this conversation. File edits you made from that message onward have been undone and are no longer on disk. Do not assume any of them are still in place — re-read a file before you rely on it or change it.";
+
+/// Put the project's files back to how they were before one message of a chat
+/// was answered: that turn's edits are undone, and every later turn's with them.
+/// `ckpt` is the id that message was sent under (`messages.ckpt`).
+///
+/// The remembering is the CLI's, not ours — it keeps a copy of each file it is
+/// about to edit, filed under the message that asked (see `Session::spawn`). So
+/// this covers what Claude's own file tools changed; a file a shell command
+/// rewrote is not something the CLI ever saw. With `dry_run` nothing is touched
+/// and the answer says what would be (`files`, `insertions`, `deletions`).
+///
+/// The conversation itself is left alone: this is "undo the changes", not "forget
+/// the discussion". Claude is told on the next message (`REWIND_NOTE`).
+#[tauri::command]
+pub async fn rewind_files(
+    state: State<'_, AppState>,
+    thread_id: String,
+    ckpt: String,
+    dry_run: Option<bool>,
+) -> CmdResult {
+    let dry_run = dry_run.unwrap_or(false);
+    if ckpt.trim().is_empty() {
+        return Err("this message has no checkpoint".into());
+    }
+    if state.running.lock().unwrap().contains_key(&thread_id) {
+        return Err("busy".into());
+    }
+    let mut meta = {
+        let conn = state.db.lock().unwrap();
+        db::get_meta(&conn, &thread_id)
+    }
+    .ok_or("unknown thread")?;
+    // The checkpoints belong to the chat's session. A chat that has been cleared
+    // or compacted since has started a new one, and the old copies went with it.
+    if meta.session_id.is_none() && state.sessions.get(&thread_id).await.is_none() {
+        return Ok(json!({ "canRewind": false }));
+    }
+    // Same model the next turn will run on, so this uses (or starts) the very
+    // process that turn will — see `session_setup`.
+    meta.model = {
+        let catalog = state.models.lock().unwrap();
+        models::effective_id(&catalog, &meta.model)
+    };
+    let setup = session_setup(&state, &meta);
+    let session = state
+        .sessions
+        .acquire(&thread_id, &state.claude_bin(), &setup.args, &meta.cwd, meta.orch)
+        .await?;
+    let answer = session.rewind_files(ckpt.trim(), dry_run).await?;
+
+    let can = answer.get("canRewind").and_then(|v| v.as_bool()).unwrap_or(false);
+    if can && !dry_run {
+        state.sessions.leave_note(&thread_id, REWIND_NOTE.to_string());
+    }
+    Ok(json!({
+        "canRewind": can,
+        "files": answer.get("filesChanged").cloned().unwrap_or_else(|| json!([])),
+        "insertions": answer.get("insertions").cloned().unwrap_or(json!(0)),
+        "deletions": answer.get("deletions").cloned().unwrap_or(json!(0)),
+        "error": answer.get("error").cloned().unwrap_or(Value::Null),
+    }))
+}
+
 /* -------------------------------- chat ----------------------------------- */
 
 #[tauri::command]
@@ -973,6 +1061,60 @@ pub async fn chat(
     // process fixes its system prompt at spawn, and this note changes whenever the
     // task list does — putting it there would retire the session on every turn.
     let task_awareness = prepare_task_awareness(&state.data_dir, &state.db, &meta.cwd);
+    let SessionSetup { args, artifact_cfg, artifact_key } = session_setup(&state, &meta);
+
+    // Pull in any chats the user #-referenced as background context.
+    let references = {
+        let conn = state.db.lock().unwrap();
+        build_reference_context(&conn, &refs, &thread_id)
+    };
+
+    // Per-turn notes: the task list, and anything that happened to the project
+    // between turns that Claude couldn't have seen (its files being rewound).
+    let notes = [
+        state.sessions.take_note(&thread_id),
+        task_awareness.as_ref().map(|t| t.note.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("\n\n");
+
+    let seed = meta.seed.clone();
+    let prompt = claude::build_prompt(
+        &text,
+        &files,
+        seed.as_deref(),
+        references.as_deref(),
+        Some(notes.as_str()),
+    );
+    // A one-time compact seed is folded into this prompt, then cleared.
+    if seed.is_some() {
+        let conn = state.db.lock().unwrap();
+        db::set_seed(&conn, &thread_id, None);
+    }
+
+    // First-turn auto-naming: a thread still on its default title needs a name.
+    // The name is made from the *answer* (see the end of this function), so all
+    // that is decided here is whether this turn owes the chat one.
+    let needs_title = match &meta.title {
+        None => true,
+        Some(s) => s.trim().is_empty() || s == "New chat",
+    };
+    chat_turn(state, thread_id, text, files, on_event, meta, task_awareness, args, artifact_cfg, artifact_key, prompt, needs_title).await
+}
+
+/// What a chat's `claude` process is started with. The arguments are also the
+/// session's *identity* (`session::key_of`), so everything that needs the chat's
+/// process — a turn, a rewind — must build them here and nowhere else: two
+/// slightly different lists would mean two processes for one chat.
+struct SessionSetup {
+    args: Vec<String>,
+    artifact_cfg: Option<std::path::PathBuf>,
+    artifact_key: String,
+}
+
+fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
     let mut sys = state.sys_prompt();
 
     // Orchestrator mode: run `meta.model` as a supervisor that delegates to
@@ -1045,43 +1187,27 @@ pub async fn chat(
         args.push(sid.clone());
     }
 
-    // Pull in any chats the user #-referenced as background context.
-    let references = {
-        let conn = state.db.lock().unwrap();
-        build_reference_context(&conn, &refs, &thread_id)
-    };
+    SessionSetup { args, artifact_cfg, artifact_key }
+}
 
-    let seed = meta.seed.clone();
-    let prompt = claude::build_prompt(
-        &text,
-        &files,
-        seed.as_deref(),
-        references.as_deref(),
-        task_awareness.as_ref().map(|t| t.note.as_str()),
-    );
-    // A one-time compact seed is folded into this prompt, then cleared.
-    if seed.is_some() {
-        let conn = state.db.lock().unwrap();
-        db::set_seed(&conn, &thread_id, None);
-    }
-
-    // First-turn auto-naming: kick off a cheap Haiku call to title the chat from
-    // the user's opening message, running it alongside the main stream so it adds
-    // no perceptible latency. A thread still on its default title needs a name.
-    let needs_title = match &meta.title {
-        None => true,
-        Some(s) => s.trim().is_empty() || s == "New chat",
-    };
-    let title_task = if needs_title {
-        let bin = state.claude_bin();
-        let cwd = meta.cwd.clone();
-        let opening = text.clone();
-        Some(tokio::spawn(async move {
-            claude::generate_title(&bin, &cwd, &opening).await
-        }))
-    } else {
-        None
-    };
+/// The second half of `chat`: everything from saving the user's message to
+/// landing the answer. Split from the first only so the argument assembly could
+/// be shared (see `session_setup`).
+#[allow(clippy::too_many_arguments)]
+async fn chat_turn(
+    state: State<'_, AppState>,
+    thread_id: String,
+    text: String,
+    files: Vec<String>,
+    on_event: Channel<Value>,
+    meta: db::ThreadMeta,
+    task_awareness: Option<TaskAwareness>,
+    args: Vec<String>,
+    artifact_cfg: Option<std::path::PathBuf>,
+    artifact_key: String,
+    prompt: String,
+    needs_title: bool,
+) -> Result<(), String> {
 
     // Fold any edits Claude made to the task snapshot back into the database and
     // nudge the UI. Called on EVERY exit path below, not just the happy one: the
@@ -1126,11 +1252,15 @@ pub async fn chat(
     // closed app, a crashed session or a stop must never swallow their message.
     // The row is marked in-flight until the turn lands; the frontend is told its
     // id so re-opening the chat mid-turn doesn't paint the message twice.
+    // The turn's name as far as the CLI is concerned: it checkpoints the
+    // project's files under it before answering, which is what lets the turn's
+    // changes be undone later (see `rewind_files`).
+    let ckpt = uuid::Uuid::new_v4().to_string();
     let user_msg_id = {
         let conn = state.db.lock().unwrap();
-        db::begin_turn(&conn, &thread_id, &text, &files)
+        db::begin_turn(&conn, &thread_id, &text, &files, &ckpt)
     };
-    let _ = on_event.send(json!({ "type": "saved", "userId": user_msg_id }));
+    let _ = on_event.send(json!({ "type": "saved", "userId": user_msg_id, "ckpt": ckpt }));
 
     // The answer is written down as it arrives (see `PARTIAL_SAVE_MS`), so an
     // interrupted reply is still there to come back to instead of vanishing.
@@ -1174,6 +1304,7 @@ pub async fn chat(
     let turn = claude::run_turn(
         &session,
         &prompt,
+        &ckpt,
         &on_event,
         &state.running,
         &thread_id,
@@ -1255,16 +1386,29 @@ pub async fn chat(
         "assistantId": assistant_id,
     }));
 
-    // First-turn auto-naming resolves on its own clock (a cheap Haiku call run
-    // alongside the stream). When it lands, persist it and nudge the UI with a
-    // lightweight `title` event so the header/sidebar pick up the nicer name.
-    if let Some(task) = title_task {
-        if let Ok(Some(named)) = task.await {
-            {
+    // First-turn auto-naming: a cheap Haiku call that titles the chat from the
+    // reply it just got. It can only start now that there is a reply to read, so
+    // it runs after `done` — the turn is already over as far as the UI goes, and
+    // the chat wears its fallback title for the second or two this takes. When
+    // it lands, persist it and nudge the UI with a lightweight `title` event so
+    // the header/sidebar pick up the nicer name.
+    if needs_title && !res.final_text.trim().is_empty() {
+        let named = claude::generate_title(&state.claude_bin(), &meta.cwd, &text, &res.final_text).await;
+        if let Some(named) = named {
+            // The chat may have been renamed by hand while this was out; a name
+            // somebody typed always beats one that was guessed.
+            let untouched = {
                 let conn = state.db.lock().unwrap();
-                db::set_title(&conn, &thread_id, &named);
+                let still_fallback =
+                    db::get_meta(&conn, &thread_id).and_then(|m| m.title).as_deref() == Some(fallback_title.as_str());
+                if still_fallback {
+                    db::set_title(&conn, &thread_id, &named);
+                }
+                still_fallback
+            };
+            if untouched {
+                let _ = on_event.send(json!({ "type": "title", "title": named }));
             }
-            let _ = on_event.send(json!({ "type": "title", "title": named }));
         }
     }
     Ok(())

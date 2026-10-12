@@ -122,6 +122,20 @@ check('activity lines land on the timeline in order', () => {
   eq(typeof log[1].at, 'number', 'timestamped');
 });
 
+check('what a step returned is folded into that step, not added as a line', () => {
+  const A = loadAgents();
+  A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });
+  A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Bash', toolId: 'sub_1', detail: 'npm test' });
+  A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Read', toolId: 'sub_2', target: 'a.js' });
+  A.agentActivitySeen({ id: 'tu_1', kind: 'result', toolId: 'sub_1', text: '3 failing', isError: true });
+  A.agentActivitySeen({ id: 'tu_1', kind: 'result', toolId: 'nobody', text: 'stray' });   // no such step
+  const log = A.agentRun('tu_1').log;
+  eq(log.length, 2, 'still two steps');
+  eq(log[0].output, '3 failing', 'output on the step that ran it');
+  eq(log[0].isError, true, 'failure kept');
+  eq(log[1].output, null, 'the other step is untouched');
+});
+
 check('the timeline is capped, keeping the newest steps', () => {
   const A = loadAgents();
   A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });

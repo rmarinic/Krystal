@@ -41,6 +41,8 @@ const SETTINGS_DEFAULTS = {
   gitStatus: true, ciStatus: true, logoLife: true, discordShareName: true, linkOpen: 'ask',
   // Ask the CLI to predict a sensible next message after each turn.
   promptSuggestions: true,
+  // A desktop notification when a reply lands (or asks) while the window is away.
+  notify: true,
   // Claude-usage calibration caps (weighted tokens). null = not calibrated yet.
   usageCap5h: null, usageCap7d: null,
   // Weekly reset anchor read off Claude's /usage (local weekday 0=Sun..6=Sat + "HH:MM").
@@ -97,6 +99,7 @@ const SETTINGS_TABS = [
     { key: 'gitStatus' },
     { key: 'ciStatus', sub: true },
     { key: 'promptSuggestions' },
+    { key: 'notify' },
     { key: 'logoLife' },
     { key: 'claudeUpdate', type: 'action' },
   ] },

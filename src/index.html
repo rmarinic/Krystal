@@ -323,6 +323,32 @@
     </div>
   </div>
 
+  <!-- ============= Changes panel: what a reply changed ============= -->
+  <!-- Opened from the "changed files" strip under a reply: the files it edited
+       as diffs, line comments that go back to Claude as one message, and undo
+       (the CLI's own file checkpoints). See app/review.js. -->
+  <div class="modal-overlay review-overlay" id="review-overlay" hidden>
+    <div class="init-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
+      <header class="init-head review-head">
+        <span class="agent-ico" aria-hidden="true">📝</span>
+        <div class="agent-heading">
+          <div class="init-title" id="review-title" data-i18n="review.title">Changes in this reply</div>
+          <div class="review-sub" id="review-sub"></div>
+        </div>
+        <button class="init-x" id="review-close" data-i18n-title="review.close" title="Close">×</button>
+      </header>
+      <div class="init-body review-body" id="review-body"></div>
+      <footer class="init-foot review-foot">
+        <span class="review-hint" id="review-hint"></span>
+        <button class="init-act danger" id="review-undo" data-i18n="review.undo">Undo these changes…</button>
+        <button class="init-act ghost" id="review-undo-cancel" hidden data-i18n="review.cancel">Cancel</button>
+        <button class="init-act danger" id="review-undo-go" hidden data-i18n="review.undoGo">Undo changes</button>
+        <button class="init-act ghost" id="review-done" data-i18n="review.close">Close</button>
+        <button class="init-act primary" id="review-send" disabled></button>
+      </footer>
+    </div>
+  </div>
+
   <!-- ============= Tasks panel: per-project to-do list ============= -->
   <div class="modal-overlay" id="tasks-overlay" hidden>
     <div class="init-modal tasks-modal" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
@@ -513,6 +539,7 @@
   <script defer src="app/agents.js"></script>
   <script defer src="app/search.js"></script>
   <script defer src="app/messages.js"></script>
+  <script defer src="app/review.js"></script>
   <script defer src="app/artifacts.js"></script>
   <script defer src="app/stream.js"></script>
   <script defer src="app/permissions.js"></script>

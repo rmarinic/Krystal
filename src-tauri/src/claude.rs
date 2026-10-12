@@ -709,21 +709,26 @@ pub fn base_args(model: &str, sys_prompt: &str) -> Vec<String> {
 ///
 /// `default` rather than leaving the mode unset: a `defaultMode` in the user's
 /// settings would otherwise decide what a mode called "Ask" means.
+///
+/// `edits` and `guarded` are the two steps between Ask and full access, and both
+/// are Claude Code's own: `acceptEdits` lets file edits through and still asks
+/// about the rest; `auto` asks about nothing but has a classifier look at each
+/// action first. Either can still end up with a question for the user, so both
+/// get the same host-answered prompt Ask does.
 pub fn apply_mode(args: &mut Vec<String>, mode: &str) {
-    match mode {
-        "plan" => {
-            args.retain(|a| a != "--dangerously-skip-permissions");
-            args.push("--permission-mode".into());
-            args.push("plan".into());
-        }
-        "ask" => {
-            args.retain(|a| a != "--dangerously-skip-permissions");
-            args.push("--permission-mode".into());
-            args.push("default".into());
-            args.push("--permission-prompt-tool".into());
-            args.push("stdio".into());
-        }
-        _ => {}
+    let permission_mode = match mode {
+        "plan" => "plan",
+        "ask" => "default",
+        "edits" => "acceptEdits",
+        "guarded" => "auto",
+        _ => return,
+    };
+    args.retain(|a| a != "--dangerously-skip-permissions");
+    args.push("--permission-mode".into());
+    args.push(permission_mode.into());
+    if mode != "plan" {
+        args.push("--permission-prompt-tool".into());
+        args.push("stdio".into());
     }
 }
 
@@ -907,6 +912,9 @@ async fn handle_control(
 /// * `--autocompact auto` — let the CLI compact a conversation that outgrows its
 ///   window, natively and mid-turn. Krystal's own Compact button still exists for
 ///   when the *user* wants a reset; this is the safety net underneath it.
+/// * `--forward-subagent-text` — a sub-agent's own words come through the stream
+///   too, not just the tools it reaches for, so the agent inspector can show what
+///   a worker is saying rather than only a list of file names.
 /// * `--prompt-suggestions` — asks the CLI to predict a sensible next message and
 ///   emit it as a `prompt_suggestion` event. It only fires once a conversation has
 ///   some history, and only when the model has a confident guess, so treat it as
@@ -967,6 +975,7 @@ pub fn apply_chat_flags(
     }
     args.push("--autocompact".into());
     args.push("auto".into());
+    args.push("--forward-subagent-text".into());
     if suggestions {
         args.push("--prompt-suggestions".into());
     }
@@ -1699,6 +1708,7 @@ const PARTIAL_SAVE_MS: u128 = 1200;
 pub async fn run_turn(
     session: &Session,
     prompt: &str,
+    turn_uuid: &str,
     channel: &Channel<Value>,
     running: &std::sync::Mutex<HashMap<String, u32>>,
     thread_id: &str,
@@ -1707,7 +1717,7 @@ pub async fn run_turn(
     own_dirs: &[PathBuf],
     on_partial: &mut (dyn FnMut(&str, &[Value]) + Send),
 ) -> Result<ChatResult, String> {
-    let mut events = session.begin_turn(prompt).await?;
+    let mut events = session.begin_turn(prompt, turn_uuid).await?;
 
     // Register the PID for the Activity panel's "running turns" list; `stop_chat`
     // interrupts through the session rather than killing this.
@@ -1724,31 +1734,75 @@ pub async fn run_turn(
     // The content isn't in the call we watch go by — it's what the MCP server
     // resolved and wrote to disk — so we pick it up when the result lands.
     let mut pending_artifacts: HashMap<String, String> = HashMap::new();
+    let mut background = BackgroundAgents::default();
+    // The text of the answers already given this turn, when it runs to more than
+    // one (see `BackgroundAgents`): a later `result` carries only its own.
+    let mut carried = String::new();
+    // Between a `result` that didn't end the turn and the CLI picking it back up.
+    let mut between_answers = false;
     let mut got_result = false;
     let mut last_save = std::time::Instant::now();
     let mut saved_len = 0usize;
 
-    while let Some(ev) = events.recv().await {
+    loop {
+        // Waiting on the CLI to come back with what a finished agent reported is
+        // the one place a turn waits on a promise rather than on work, so it is
+        // the one place it gives up: no follow-up within `FOLLOW_UP_WAIT_MS` means
+        // the report was already folded into the answer we have.
+        let next = if between_answers && background.running.is_empty() {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(FOLLOW_UP_WAIT_MS),
+                events.recv(),
+            )
+            .await
+            {
+                Ok(ev) => ev,
+                Err(_) => break,
+            }
+        } else {
+            events.recv().await
+        };
+        let Some(ev) = next else { break };
         // Ask mode: the CLI stopping to ask permission (or taking the question
         // back). Not part of the transcript — the turn just waits here, still
         // reading, until `answer_permission` writes the reply on stdin.
         if handle_control(session, &ev, own_dirs, channel).await {
             continue;
         }
-        let is_result = ev.get("type").and_then(|v| v.as_str()) == Some("result");
+        let ty = ev.get("type").and_then(|v| v.as_str());
+        let is_result = ty == Some("result");
+        if ty == Some("system") && ev.get("subtype").and_then(|v| v.as_str()) == Some("init") {
+            between_answers = false;
+        }
         route_event(
             &ev,
             &mut result,
             &mut tool_blocks,
             &mut ask,
             &mut seen_agent_msgs,
+            &mut background,
             artifact_dir,
             &mut pending_artifacts,
             channel,
         );
         if is_result {
             got_result = true;
-            break;
+            // A later answer's `result` names only its own text; put the earlier
+            // ones back in front of it.
+            if !carried.is_empty() && !result.final_text.starts_with(&carried) {
+                result.final_text = format!("{carried}\n\n{}", result.final_text);
+            }
+            if result.is_error || !background.holds_turn() {
+                break;
+            }
+            // Agents are still out, or one came back and Claude hasn't said what
+            // it found: the turn isn't over, whatever the CLI calls it. Keep
+            // reading, and keep the next answer from fusing onto this one.
+            between_answers = true;
+            ask.flush(&mut result, channel);
+            carried = result.final_text.trim_end().to_string();
+            ask_emit_text(&mut result, channel, "\n\n");
+            continue;
         }
         // Keep the half-written answer on disk. Only when it actually grew, and
         // never more than once per `PARTIAL_SAVE_MS`.
@@ -1794,6 +1848,85 @@ pub async fn run_turn(
     Ok(result)
 }
 
+/// How long a turn waits for the CLI to pick itself back up after a background
+/// agent reported in. It normally does within a second or two.
+const FOLLOW_UP_WAIT_MS: u64 = 8000;
+
+/// Sub-agents the CLI launched **in the background** during this turn.
+///
+/// A background agent turns one turn into several as far as the CLI is concerned.
+/// The call that launches it returns at once ("Async agent launched…"), Claude
+/// says it will report back, and the CLI emits a `result` — while the agent is
+/// still working. When the agent finishes, the CLI wakes itself up, tells Claude,
+/// and a second answer follows with a `result` of its own. Ending at the first
+/// `result` cuts all of that off: the agent appears to finish the instant it
+/// starts, its report is never seen, and the answer the user was waiting for is
+/// thrown away with the tail of the stream.
+///
+/// So the turn is held open for as long as this says there is more to come.
+#[derive(Default)]
+struct BackgroundAgents {
+    /// Still working: task id -> the `tool_use` id of the call that launched it.
+    running: HashMap<String, String>,
+    /// Every call that launched one, by `tool_use` id — its immediate tool result
+    /// is launch paperwork, not the agent's report.
+    launched: std::collections::HashSet<String>,
+    /// An agent reported in and the CLI hasn't started the answer about it yet.
+    unreported: bool,
+}
+
+impl BackgroundAgents {
+    /// Background *shells* are tasks too, and a dev server never finishes — only
+    /// agents hold a turn open.
+    fn is_agent(task: &Value) -> bool {
+        task.get("task_type").and_then(|v| v.as_str()).map_or(true, |t| t == "local_agent")
+    }
+
+    fn started(&mut self, ev: &Value) {
+        if !ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false) || !Self::is_agent(ev) {
+            return;
+        }
+        let task = ev.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let tool = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+        if task.is_empty() {
+            return;
+        }
+        self.running.insert(task.to_string(), tool.to_string());
+        if !tool.is_empty() {
+            self.launched.insert(tool.to_string());
+        }
+    }
+
+    /// `background_tasks_changed` lists everything still in the background, so it
+    /// settles any agent whose own ending we never saw.
+    fn sync(&mut self, ev: &Value) {
+        let Some(tasks) = ev.get("tasks").and_then(|v| v.as_array()) else {
+            return;
+        };
+        let live: std::collections::HashSet<&str> = tasks
+            .iter()
+            .filter(|t| Self::is_agent(t))
+            .filter_map(|t| t.get("task_id").and_then(|v| v.as_str()))
+            .collect();
+        self.running.retain(|id, _| live.contains(id.as_str()));
+    }
+
+    /// An agent finished. `true` when it was one of ours running in the background.
+    fn finished(&mut self, ev: &Value) -> bool {
+        let task = ev.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let tool = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+        let ours = self.running.remove(task).is_some() || self.launched.contains(tool);
+        if ours {
+            self.unreported = true;
+        }
+        ours
+    }
+
+    fn holds_turn(&self) -> bool {
+        !self.running.is_empty() || self.unreported
+    }
+}
+
 fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {
     let id = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
     if id.is_empty() {
@@ -1825,6 +1958,36 @@ fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {
         msg["durationMs"] = json!(n);
     }
     let _ = channel.send(msg);
+}
+
+/// How much of one sub-agent step the inspector is sent: what it ran, and what
+/// came back. Generous on the first — a command cut off mid-flag tells you
+/// nothing — and bounded on the second, which can be a whole file.
+const AGENT_DETAIL_CAP: usize = 2000;
+const AGENT_OUTPUT_CAP: usize = 1500;
+
+/// What one of a sub-agent's own tools returned, as an `agent_activity` line for
+/// the step that ran it (`toolId`). The worker's tool results come back through
+/// the stream tagged with the parent Task's id, like its messages do.
+fn emit_agent_tool_results(parent: &str, ev: &Value, channel: &Channel<Value>) {
+    let Some(blocks) = ev.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_array()) else {
+        return;
+    };
+    for block in blocks {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+            continue;
+        }
+        let Some(tool_id) = block.get("tool_use_id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let output = tool_result_text(block.get("content"));
+        let _ = channel.send(json!({
+            "type": "agent_activity", "id": parent,
+            "kind": "result", "toolId": tool_id,
+            "text": cap_text(output.trim(), AGENT_OUTPUT_CAP),
+            "isError": block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false),
+        }));
+    }
 }
 
 /// Forward what a sub-agent is *saying and doing* right now as `agent_activity`
@@ -1865,7 +2028,7 @@ fn emit_agent_activity(
                 }
                 let _ = channel.send(json!({
                     "type": "agent_activity", "id": parent,
-                    "kind": "text", "text": take_chars(t, 600),
+                    "kind": "text", "text": take_chars(t, AGENT_DETAIL_CAP),
                 }));
             }
             Some("tool_use") => {
@@ -1876,11 +2039,14 @@ fn emit_agent_activity(
                     "type": "agent_activity", "id": parent,
                     "kind": "tool", "tool": name,
                 });
+                if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
+                    line["toolId"] = json!(id);
+                }
                 if let Some(t) = target {
                     line["target"] = json!(t);
                 }
                 if let Some(d) = detail {
-                    line["detail"] = json!(take_chars(&d, 300));
+                    line["detail"] = json!(take_chars(&d, AGENT_DETAIL_CAP));
                 }
                 let _ = channel.send(line);
             }
@@ -2036,6 +2202,7 @@ fn route_event(
     tool_blocks: &mut HashMap<i64, (String, String, String)>,
     ask: &mut AskParser,
     seen_agent_msgs: &mut std::collections::HashSet<String>,
+    background: &mut BackgroundAgents,
     artifact_dir: Option<&std::path::Path>,
     pending_artifacts: &mut HashMap<String, String>,
     channel: &Channel<Value>,
@@ -2050,6 +2217,8 @@ fn route_event(
             if let Some(m) = ev.get("model").and_then(|v| v.as_str()) {
                 result.main_model = Some(m.to_string());
             }
+            // A new answer is starting: whatever an agent reported is in it.
+            background.unreported = false;
             // The authoritative list of `/skill-name` commands this session can
             // run — including the ones built into the CLI binary, which exist
             // nowhere on disk for `skills::scan` to find. Forwarded so the
@@ -2093,7 +2262,25 @@ fn route_event(
                 Some("task_started") | Some("task_progress") | Some("task_updated")
             ) =>
         {
+            if ev.get("subtype").and_then(|v| v.as_str()) == Some("task_started") {
+                background.started(ev);
+            }
             emit_agent_progress(ev, channel);
+        }
+        "system" if ev.get("subtype").and_then(|v| v.as_str()) == Some("background_tasks_changed") => {
+            background.sync(ev);
+        }
+        // A background agent finished. Its report arrives here rather than as the
+        // result of the call that launched it (that returned long ago), so this is
+        // where the Task's chip gets its output — and its final tally.
+        "system" if ev.get("subtype").and_then(|v| v.as_str()) == Some("task_notification") => {
+            if background.finished(ev) {
+                emit_agent_progress(ev, channel);
+                let id = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+                let summary = ev.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+                let failed = ev.get("status").and_then(|v| v.as_str()) == Some("failed");
+                attach_output(result, id, summary, failed, channel);
+            }
         }
         // Consolidated assistant message: carries `model` + `usage`. Worker
         // sub-agents surface here tagged with their own (cheaper) model, so this
@@ -2259,6 +2446,14 @@ fn route_event(
         // tool_result blocks. We mine those for the shell/sub-agent output shown
         // in the Activity panel (the live deltas above never include it).
         "user" => {
+            // A sub-agent's own tool results: none of them belong to a chip in
+            // this transcript — they go to that agent's timeline.
+            if let Some(parent) = ev.get("parent_tool_use_id").and_then(|v| v.as_str()) {
+                if !parent.is_empty() {
+                    emit_agent_tool_results(parent, ev, channel);
+                    return;
+                }
+            }
             if let Some(arr) = ev
                 .get("message")
                 .and_then(|m| m.get("content"))
@@ -2270,6 +2465,12 @@ fn route_event(
                     }
                     let id = block.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
                     if id.is_empty() {
+                        continue;
+                    }
+                    // Launching a background agent "returns" at once with a note
+                    // that it is running. That is not its report: the chip stays
+                    // live until the agent itself reports in.
+                    if background.launched.contains(id) {
                         continue;
                     }
                     let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -2335,14 +2536,44 @@ fn clean_title(raw: &str) -> String {
     }
 }
 
-/// Name a chat from its first message using the cheapest model — a tiny one-off
-/// call kept deliberately short (small input, tiny output) so it costs almost
-/// nothing and returns fast. Returns None on any failure (caller falls back to
-/// the truncated first message). Never resumes a session — it's standalone.
-pub async fn generate_title(bin: &str, cwd: &str, user_prompt: &str) -> Option<String> {
-    let sys = "You generate an extremely short title for a chat, summarizing what the user wants. \
-        Rules: 2–5 words, at most ~40 characters; no quotes; no trailing punctuation; no preamble or explanation. \
-        Reply with ONLY the title, written in the same language as the user's message.";
+/// How much of a reply the title call gets to read, from each end.
+const TITLE_REPLY_HEAD: usize = 1200;
+const TITLE_REPLY_TAIL: usize = 600;
+
+/// The part of a reply worth titling from. A long answer says what it is about
+/// at the top and what it came to at the bottom, so those two ends are kept and
+/// the middle — where the working-out lives — is dropped.
+fn title_excerpt(reply: &str) -> String {
+    let reply = reply.trim();
+    let chars: Vec<char> = reply.chars().collect();
+    if chars.len() <= TITLE_REPLY_HEAD + TITLE_REPLY_TAIL {
+        return reply.to_string();
+    }
+    let head: String = chars[..TITLE_REPLY_HEAD].iter().collect();
+    let tail: String = chars[chars.len() - TITLE_REPLY_TAIL..].iter().collect();
+    format!("{head}\n[…]\n{tail}")
+}
+
+/// Name a chat from the **answer** to its first message using the cheapest
+/// model — a tiny one-off call kept deliberately short (small input, tiny
+/// output) so it costs almost nothing and returns fast. The reply is what gets
+/// summarized: an opening message is often a vague "can you look at this", and
+/// only the answer says what the chat turned out to be about. The message rides
+/// along as context for a reply that doesn't stand on its own. Returns None on
+/// any failure (caller keeps the truncated first message). Never resumes a
+/// session — it's standalone.
+pub async fn generate_title(bin: &str, cwd: &str, user_prompt: &str, reply: &str) -> Option<String> {
+    // The title names the chat's SUBJECT, not what happened in it: the chat goes
+    // on being used for that subject, and "Fixed …" is stale by the next message.
+    let sys = "You generate an extremely short title for a chat. Read the assistant's reply to work out \
+        the SUBJECT of the conversation — the specific thing, area or topic it is about — and name that. \
+        The title is a noun phrase naming the topic, never a description of what was done: no verbs of action \
+        or outcome (fixed, added, updated, explained, investigating, how to…). \
+        Good: \"Stop-button race in session pool\". Bad: \"Fixed the stop-button race in the session pool\". \
+        Be specific — name the actual component or topic, not a generic label like \"Bug fix\" or \"Code question\". \
+        The user's message is context only — do not just rephrase it. \
+        Rules: 2–6 words, at most ~40 characters; no quotes; no trailing punctuation; no preamble or explanation. \
+        Reply with ONLY the title, written in the same language as the assistant's reply.";
     let args = vec![
         "-p".into(),
         "--output-format".into(),
@@ -2355,8 +2586,11 @@ pub async fn generate_title(bin: &str, cwd: &str, user_prompt: &str) -> Option<S
         sys.into(),
     ];
     let prompt = format!(
-        "Title this conversation based on the user's first message:\n\n{}",
-        take_chars(user_prompt, 1000)
+        "Name the subject of this conversation.\n\n\
+         ===== User's message (context) =====\n{}\n\n\
+         ===== Assistant's reply (find the subject here) =====\n{}",
+        take_chars(user_prompt, 400),
+        title_excerpt(reply)
     );
     match run_claude_text(bin, &args, cwd, &prompt).await {
         Ok((text, _)) => {
@@ -2510,6 +2744,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn title_excerpt_keeps_both_ends_of_a_long_reply() {
+        // A short reply goes through whole.
+        assert_eq!(title_excerpt("  Fixed the scroll lock.  "), "Fixed the scroll lock.");
+
+        // A long one keeps its opening and its conclusion and drops the middle —
+        // counted in characters, so multi-byte text can't split mid-letter.
+        let long = format!("POČETAK{}KRAJ", "š".repeat(5000));
+        let cut = title_excerpt(&long);
+        assert!(cut.starts_with("POČETAK"));
+        assert!(cut.ends_with("KRAJ"));
+        assert!(cut.contains("[…]"));
+        assert!(cut.chars().count() < TITLE_REPLY_HEAD + TITLE_REPLY_TAIL + 10);
+    }
+
+    #[test]
     fn logged_out_notice_is_recognised() {
         assert!(looks_logged_out("Not logged in · Please run /login"));
         assert!(!looks_logged_out("{\"summary\":\"a login page\",\"questions\":[]}"));
@@ -2540,6 +2789,131 @@ mod tests {
         assert!(has_pair(&args, "--permission-mode", "default"));
         // Without this the CLI has nobody to ask and refuses everything instead.
         assert!(has_pair(&args, "--permission-prompt-tool", "stdio"));
+    }
+
+    #[test]
+    fn the_in_between_modes_are_claude_codes_own_and_can_still_ask() {
+        for (mode, flag) in [("edits", "acceptEdits"), ("guarded", "auto")] {
+            let args = mode_args(mode);
+            assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"), "{mode}");
+            assert!(has_pair(&args, "--permission-mode", flag), "{mode}");
+            // Whatever they don't wave through still needs somebody to ask.
+            assert!(has_pair(&args, "--permission-prompt-tool", "stdio"), "{mode}");
+        }
+    }
+
+    /// A channel that keeps what was sent on it, for the tests below.
+    fn recording_channel() -> (Channel<Value>, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let channel = Channel::new(move |payload| {
+            if let tauri::ipc::InvokeResponseBody::Json(raw) = payload {
+                if let Ok(v) = serde_json::from_str::<Value>(&raw) {
+                    sink.lock().unwrap().push(v);
+                }
+            }
+            Ok(())
+        });
+        (channel, seen)
+    }
+
+    /// Feed a run of stream events through `route_event`, as a turn would.
+    fn route_all(events: &[Value], result: &mut ChatResult, background: &mut BackgroundAgents, channel: &Channel<Value>) {
+        let mut tool_blocks = HashMap::new();
+        let mut ask = AskParser::default();
+        let mut seen = std::collections::HashSet::new();
+        let mut pending = HashMap::new();
+        for ev in events {
+            route_event(ev, result, &mut tool_blocks, &mut ask, &mut seen, background, None, &mut pending, channel);
+        }
+    }
+
+    #[test]
+    fn a_background_agent_holds_the_turn_until_claude_has_reported_on_it() {
+        let (channel, seen) = recording_channel();
+        let mut result = ChatResult::default();
+        result.push_tool(json!({ "type": "tool", "name": "Agent", "id": "toolu_1" }));
+        let mut bg = BackgroundAgents::default();
+
+        // Launched: the call "returns" at once, and the CLI ends its turn.
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "t1", "tool_use_id": "toolu_1",
+                        "is_backgrounded": true, "task_type": "local_agent", "description": "Read the notes" }),
+                json!({ "type": "user", "message": { "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_1", "content": "Async agent launched successfully." }
+                ] } }),
+                json!({ "type": "result", "result": "I'll report back." }),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        assert!(bg.holds_turn(), "the agent is still out");
+        // The launch note is paperwork — it must not pass for the agent's report.
+        assert!(result.segments[0].get("output").is_none());
+        assert!(!seen.lock().unwrap().iter().any(|e| e["type"] == "tool_result"));
+
+        // It finishes: the report lands on the chip, and the turn is still owed
+        // the answer Claude gives about it.
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_notification", "task_id": "t1", "tool_use_id": "toolu_1",
+                        "status": "completed", "summary": "The notes say hello.",
+                        "usage": { "total_tokens": 900, "tool_uses": 2, "duration_ms": 4000 } }),
+                json!({ "type": "system", "subtype": "background_tasks_changed", "tasks": [] }),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        assert_eq!(result.segments[0]["output"], "The notes say hello.");
+        assert!(bg.running.is_empty());
+        assert!(bg.holds_turn(), "Claude hasn't said what the agent found yet");
+
+        route_all(&[json!({ "type": "system", "subtype": "init", "session_id": "s" })], &mut result, &mut bg, &channel);
+        assert!(!bg.holds_turn(), "the follow-up answer has started; its result ends the turn");
+
+        let seen = seen.lock().unwrap();
+        let done = seen.iter().find(|e| e["type"] == "tool_result").expect("the report is streamed");
+        assert_eq!(done["id"], "toolu_1");
+        assert_eq!(done["output"], "The notes say hello.");
+        // …and the final tally came with it.
+        assert!(seen.iter().any(|e| e["type"] == "agent_progress" && e["toolUses"] == 2));
+    }
+
+    #[test]
+    fn foreground_agents_and_background_shells_do_not_hold_a_turn() {
+        let (channel, _seen) = recording_channel();
+        let mut result = ChatResult::default();
+        let mut bg = BackgroundAgents::default();
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a", "tool_use_id": "toolu_a",
+                        "is_backgrounded": false, "task_type": "local_agent" }),
+                // A dev server left running never finishes; it must not pin the turn open.
+                json!({ "type": "system", "subtype": "task_started", "task_id": "b", "tool_use_id": "toolu_b",
+                        "is_backgrounded": true, "task_type": "local_bash" }),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        assert!(!bg.holds_turn());
+    }
+
+    #[test]
+    fn a_sub_agents_tool_output_goes_to_its_timeline_not_the_transcript() {
+        let (channel, seen) = recording_channel();
+        let mut result = ChatResult::default();
+        let mut bg = BackgroundAgents::default();
+        route_all(
+            &[json!({ "type": "user", "parent_tool_use_id": "toolu_1", "message": { "content": [
+                { "type": "tool_result", "tool_use_id": "toolu_sub", "content": "1\thello" }
+            ] } })],
+            &mut result, &mut bg, &channel,
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["type"], "agent_activity");
+        assert_eq!(seen[0]["id"], "toolu_1");
+        assert_eq!(seen[0]["kind"], "result");
+        assert_eq!(seen[0]["toolId"], "toolu_sub");
+        assert!(result.segments.is_empty());
     }
 
     #[test]

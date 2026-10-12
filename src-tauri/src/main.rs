@@ -50,6 +50,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let dir = app.path().app_data_dir().expect("resolve app data dir");
             std::fs::create_dir_all(&dir).ok();
@@ -92,6 +93,7 @@ fn main() {
             commands::cancel_login,
             commands::open_login,
             commands::open_external,
+            commands::notify,
             commands::open_webview,
             commands::list_projects,
             commands::create_project,
@@ -102,6 +104,7 @@ fn main() {
             commands::get_thread,
             commands::create_thread,
             commands::branch_thread,
+            commands::rewind_files,
             commands::delete_thread,
             commands::set_model,
             commands::set_mode,

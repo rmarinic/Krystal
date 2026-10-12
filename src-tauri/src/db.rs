@@ -72,6 +72,10 @@ const SCHEMA: &str = r#"
           -- 1 while a turn is still being written (or if it never finished:
           -- the app closed mid-answer). Cleared when the turn lands.
           partial    INTEGER DEFAULT 0,
+          -- On a user message: the id the CLI checkpoints the project's files
+          -- under before answering it, so they can be put back (see
+          -- `commands::rewind_files`). NULL on turns from before that existed.
+          ckpt       TEXT,
           ts         TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id);
@@ -167,6 +171,7 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN orch_sub TEXT DEFAULT 'auto'", []);
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN effort TEXT DEFAULT 'high'", []);
     let _ = conn.execute("ALTER TABLE messages ADD COLUMN partial INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE messages ADD COLUMN ckpt TEXT", []);
 
     let json_file = db_path
         .parent()
@@ -421,7 +426,7 @@ pub fn get_thread(conn: &Connection, id: &str) -> Option<Value> {
 
 fn messages_of(conn: &Connection, id: &str) -> Vec<Value> {
     let mut stmt = conn
-        .prepare("SELECT id,role,text,files,segments,compacted,favorite,ts,partial FROM messages WHERE thread_id = ?1 ORDER BY id ASC")
+        .prepare("SELECT id,role,text,files,segments,compacted,favorite,ts,partial,ckpt FROM messages WHERE thread_id = ?1 ORDER BY id ASC")
         .unwrap();
     let rows = stmt
         .query_map([id], |r| {
@@ -443,6 +448,7 @@ fn messages_of(conn: &Connection, id: &str) -> Vec<Value> {
                 "favorite": r.get::<_, i64>(6)? != 0,
                 "ts": r.get::<_, Option<String>>(7)?,
                 "partial": r.get::<_, i64>(8)? != 0,
+                "ckpt": r.get::<_, Option<String>>(9)?,
             }))
         })
         .unwrap();
@@ -610,7 +616,7 @@ fn title_from(user_text: &str) -> String {
 /// `abort_turn`. The thread also takes its fallback title now rather than at the
 /// end, so a chat interrupted on its first turn is still findable in the sidebar.
 /// Returns the message's row id.
-pub fn begin_turn(conn: &Connection, id: &str, user_text: &str, files: &[String]) -> i64 {
+pub fn begin_turn(conn: &Connection, id: &str, user_text: &str, files: &[String], ckpt: &str) -> i64 {
     let t = now();
     let files_json = if files.is_empty() {
         None
@@ -618,8 +624,8 @@ pub fn begin_turn(conn: &Connection, id: &str, user_text: &str, files: &[String]
         Some(serde_json::to_string(files).unwrap_or_else(|_| "[]".into()))
     };
     let _ = conn.execute(
-        "INSERT INTO messages (thread_id,role,text,files,compacted,favorite,partial,ts) VALUES (?1,'user',?2,?3,0,0,1,?4)",
-        params![id, user_text, files_json, t],
+        "INSERT INTO messages (thread_id,role,text,files,compacted,favorite,partial,ts,ckpt) VALUES (?1,'user',?2,?3,0,0,1,?4,?5)",
+        params![id, user_text, files_json, t, Some(ckpt).filter(|c| !c.is_empty())],
     );
     let msg_id = conn.last_insert_rowid();
 
@@ -1466,7 +1472,7 @@ mod tests {
     fn the_users_message_is_saved_before_the_answer_is_asked_for() {
         let conn = db();
         let id = thread(&conn);
-        begin_turn(&conn, &id, "how do I ship this?", &[]);
+        begin_turn(&conn, &id, "how do I ship this?", &[], "");
 
         // Nothing has come back from Claude yet, and it is already on disk —
         // closing the app here must not lose what was typed.
@@ -1486,7 +1492,7 @@ mod tests {
     fn a_half_written_answer_survives_the_app_closing() {
         let conn = db();
         let id = thread(&conn);
-        let uid = begin_turn(&conn, &id, "explain the pool", &[]);
+        let uid = begin_turn(&conn, &id, "explain the pool", &[], "");
         let aid = save_partial(&conn, &id, None, "The pool keeps", &[]);
         // Same row on every flush, not a new one per tick.
         let again = save_partial(
@@ -1511,7 +1517,7 @@ mod tests {
     fn finishing_a_turn_fills_in_the_rows_it_opened() {
         let conn = db();
         let id = thread(&conn);
-        let uid = begin_turn(&conn, &id, "hello", &[]);
+        let uid = begin_turn(&conn, &id, "hello", &[], "");
         let aid = save_partial(&conn, &id, None, "Hel", &[]);
         let (usage, _title, assistant_id, _ts) = finish_turn(
             &conn,
@@ -1540,7 +1546,7 @@ mod tests {
     fn a_turn_that_answered_nothing_still_keeps_the_message() {
         let conn = db();
         let id = thread(&conn);
-        let uid = begin_turn(&conn, &id, "wait, stop", &[]);
+        let uid = begin_turn(&conn, &id, "wait, stop", &[], "");
         let aid = save_partial(&conn, &id, None, "", &[]);
         abort_turn(&conn, uid, Some(aid));
 
@@ -1557,7 +1563,7 @@ mod tests {
     fn aborting_keeps_an_answer_that_had_already_started() {
         let conn = db();
         let id = thread(&conn);
-        let uid = begin_turn(&conn, &id, "long one", &[]);
+        let uid = begin_turn(&conn, &id, "long one", &[], "");
         let aid = save_partial(&conn, &id, None, "Sure — first", &[]);
         abort_turn(&conn, uid, Some(aid));
 
@@ -1572,7 +1578,7 @@ mod tests {
         let conn = db();
         let id = thread(&conn);
         set_title(&conn, &id, "Shipping the release");
-        begin_turn(&conn, &id, "and now the changelog", &[]);
+        begin_turn(&conn, &id, "and now the changelog", &[], "");
         let title: Option<String> = conn
             .query_row("SELECT title FROM threads WHERE id = ?1", [&id], |r| r.get(0))
             .unwrap();

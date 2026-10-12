@@ -851,6 +851,9 @@ async fn dispatch<R: Runtime>(
         "get_thread" => commands::get_thread(st(), arg_str(a, "id")),
         "create_thread" => commands::create_thread(st(), arg_str(a, "cwd")),
         "branch_thread" => commands::branch_thread(st(), arg_str(a, "id")),
+        "rewind_files" => {
+            commands::rewind_files(st(), arg_str(a, "threadId"), arg_str(a, "ckpt"), arg_opt_bool(a, "dryRun")).await
+        }
         "delete_thread" => commands::delete_thread(st(), arg_str(a, "id")).await,
         "rename_thread" => commands::rename_thread(st(), arg_str(a, "id"), arg_str(a, "title")),
         "clear_thread" => commands::clear_thread(st(), arg_str(a, "id")).await,

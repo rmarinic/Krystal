@@ -133,14 +133,47 @@ function agentActivitySeen(msg) {
   if (!msg || !msg.id) return;
   const r = adoptAgentRun(msg.id);
   if (!r) return;
+  // What a step came back with belongs to that step, not on a line of its own.
+  if (msg.kind === 'result') return agentStepResult(r, msg);
   const entry = {
     kind: msg.kind === 'tool' ? 'tool' : 'text',
     tool: msg.tool || '', target: msg.target || '', detail: msg.detail || '',
+    toolId: msg.toolId || '', output: null, isError: false,
     text: msg.text || '', at: Date.now(),
   };
   r.log.push(entry);
   while (r.log.length > AGENT_LOG_MAX) r.log.shift();
   agentRunChanged(r, entry);
+}
+
+/* One of the worker's own tools returned: fold the output into the step that ran
+ * it (newest first — the step is almost always the last one or two). */
+function agentStepResult(r, msg) {
+  let step = null;
+  for (let i = r.log.length - 1; i >= 0 && !step; i--) {
+    if (r.log[i].toolId && r.log[i].toolId === msg.toolId) step = r.log[i];
+  }
+  if (!step) return;
+  step.output = msg.text || '';
+  step.isError = !!msg.isError;
+  if (agentOpenId !== r.id || els.agentOverlay.hidden) return;
+  const row = els.agentBody.querySelector(`.ag-row[data-tool="${cssEsc(step.toolId)}"] .ag-body`);
+  if (!row || row.querySelector('.ag-out')) return;
+  row.appendChild(agentStepOutput(step));
+  agentFollow();
+}
+
+/* A step's output, folded away by default so the timeline still reads as a list
+ * of steps — open the one you care about. */
+function agentStepOutput(entry) {
+  const d = document.createElement('details');
+  d.className = 'ag-out' + (entry.isError ? ' err' : '');
+  const sum = document.createElement('summary');
+  sum.textContent = tr('chip.outputLabel');
+  const pre = document.createElement('pre');
+  pre.textContent = entry.output || tr('agent.noOutput');
+  d.append(sum, pre);
+  return d;
 }
 
 /* The Task's tool_result — the worker finished and handed its report back. */
@@ -365,12 +398,14 @@ function agentRow(kind, r, entry) {
       '<span class="ag-label"></span>';
     body.querySelector('.ag-label').textContent =
       toolLabel(entry.tool) + (entry.target ? ' · ' + entry.target : '');
+    if (entry.toolId) row.dataset.tool = entry.toolId;
     if (entry.detail && entry.detail !== entry.target) {
       const d = document.createElement('div');
       d.className = 'ag-detail';
       d.textContent = entry.detail;
       body.appendChild(d);
     }
+    if (entry.output != null) body.appendChild(agentStepOutput(entry));
   } else if (kind === 'text') {
     body.textContent = entry.text;
   } else {

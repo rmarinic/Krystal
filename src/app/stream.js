@@ -421,6 +421,21 @@ function finishLive(live) {
   if (typeof queueTurnEnded === 'function') queueTurnEnded(live);
 }
 
+/* -------------------------- desktop notifications ------------------------ */
+/* A reply that lands while you are in another window is easy to miss for an
+ * hour. So when a turn ends — or stops to ask permission — and Krystal isn't the
+ * window in front, the OS says so. Never while you are looking at the app: the
+ * in-app tips already cover a chat that is merely off screen. */
+
+function notifyAway(threadId, kind, body) {
+  if (!settingOn('notify')) return;
+  if (!document.hidden && document.hasFocus()) return;
+  const thread = (state.threads || []).find((t) => t.id === threadId);
+  const chat = (thread && thread.title) || tr('notify.chatFallback');
+  const text = String(body || '').replace(/\s+/g, ' ').trim();
+  api.notify(tr('notify.' + kind, { chat }), text).catch(() => {});
+}
+
 /* ------------------------- suggested next message ------------------------ */
 /* The CLI can predict what the user is likely to ask next (--prompt-suggestions)
  * and emits it after a turn. It only offers one once a conversation has history,
@@ -478,6 +493,7 @@ function handleLiveEvent(live, msg) {
     // app goes away mid-answer. Remember where the turn starts: `openThread`
     // skips those rows while the turn is live, since the live view paints them.
     live.savedFrom = msg.userId;
+    live.ckpt = msg.ckpt || '';   // what undoing this turn's file changes is keyed by
   } else if (event === 'token') {
     live.events.push({ type: 'token', text: msg.text });
     if (live.typer) live.typer.push(msg.text);
@@ -497,6 +513,10 @@ function handleLiveEvent(live, msg) {
     live.finalText = msg.text;
     if (live.typer) {
       live.typer.finish(msg.text);
+      // What this reply changed, as a strip that opens the review panel.
+      if (typeof attachTurnChanges === 'function') {
+        attachTurnChanges(live.bubble, liveTurnSegments(live), live.ckpt, live.threadId);
+      }
       if (msg.assistantId && live.bubble) {   // make the fresh reply starrable right away
         live.bubble.dataset.mid = msg.assistantId;
         const sb = live.bubble.querySelector('.star');
@@ -510,6 +530,7 @@ function handleLiveEvent(live, msg) {
     // The turn's artifacts are in the database now, with the version they
     // settled on — refresh so the panel stops showing a version-less live view.
     if (live.madeArtifact && typeof artifactsTurnEnded === 'function') artifactsTurnEnded();
+    if (!live.stopped) notifyAway(live.threadId, 'done', msg.text);
     finishLive(live);
   } else if (event === 'title') {
     // Late-arriving first-turn auto-title (fires after `done`). Refresh the
@@ -563,6 +584,7 @@ function handleLiveEvent(live, msg) {
     // A turn the user stopped exits non-zero; settle it quietly instead of
     // painting a red error chip (any partial text is already kept).
     live.failed = true;   // either way it didn't finish — queued messages wait
+    if (!live.stopped) notifyAway(live.threadId, 'failed', msg.message);
     if (!live.stopped && window.krystalNeedsLogin) window.krystalNeedsLogin(msg.message);
     if (live.typer) {
       if (live.stopped) live.typer.finish(live.finalText || '');

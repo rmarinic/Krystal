@@ -150,6 +150,11 @@ impl Session {
             cmd.env("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "1")
                 .env("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "5");
         }
+        // Have the CLI keep a copy of every file it is about to edit, filed under
+        // the message that asked for the edit — which is what lets a turn's
+        // changes be undone later (see `rewind_files`). Headless sessions don't
+        // do this unless asked.
+        cmd.env("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1");
         cmd.kill_on_drop(true);
         let mut child = cmd.spawn().map_err(|e| format!("failed to start claude: {e}"))?;
 
@@ -241,9 +246,13 @@ impl Session {
     /// Hand the process the next user message and take the event stream for the
     /// turn. Anything still buffered from before is dropped first: a turn must
     /// never be handed the tail of the previous one.
+    ///
+    /// `uuid` names the message. The CLI files its checkpoint of the project
+    /// under that name, so it is the handle `rewind_files` is later given.
     pub async fn begin_turn(
         &self,
         prompt: &str,
+        uuid: &str,
     ) -> Result<tokio::sync::OwnedMutexGuard<mpsc::UnboundedReceiver<Value>>, String> {
         if !self.alive() {
             return Err("the claude session has stopped".into());
@@ -251,12 +260,47 @@ impl Session {
         self.touch();
         let mut rx = self.events.clone().lock_owned().await;
         while rx.try_recv().is_ok() {}
-        self.write_line(&json!({
+        let mut msg = json!({
             "type": "user",
             "message": { "role": "user", "content": [{ "type": "text", "text": prompt }] }
-        }))
-        .await?;
+        });
+        if !uuid.is_empty() {
+            msg["uuid"] = json!(uuid);
+        }
+        self.write_line(&msg).await?;
         Ok(rx)
+    }
+
+    /// Put the project's files back to how they were before the message named
+    /// `message_id` was answered — or, with `dry_run`, only say what that would
+    /// touch. Returns the CLI's own answer: `canRewind`, and on a dry run
+    /// `filesChanged`/`insertions`/`deletions`.
+    ///
+    /// Only between turns: the reply comes back on the same stream a turn reads,
+    /// and files changing underneath a turn in flight would be worse than waiting.
+    pub async fn rewind_files(&self, message_id: &str, dry_run: bool) -> Result<Value, String> {
+        if !self.alive() {
+            return Err("the claude session has stopped".into());
+        }
+        let Ok(mut rx) = self.events.clone().try_lock_owned() else {
+            return Err("busy".into());
+        };
+        self.touch();
+        while rx.try_recv().is_ok() {}
+        let request_id = format!("krystal-rewind-{}", INTERRUPTS.fetch_add(1, Ordering::Relaxed));
+        self.write_line(&rewind_request(&request_id, message_id, dry_run)).await?;
+
+        let wait = async {
+            while let Some(ev) = rx.recv().await {
+                if let Some(answer) = control_answer(&ev, &request_id) {
+                    return answer;
+                }
+            }
+            Err("the claude session ended before it answered".to_string())
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(REWIND_TIMEOUT_SECS), wait)
+            .await
+            .unwrap_or_else(|_| Err("claude did not answer in time".into()))
     }
 
     /// Ask the CLI to abandon the turn in flight. Unlike killing the process this
@@ -377,6 +421,34 @@ fn permission_response(request_id: &str, request: &Value, decision: Decision) ->
     })
 }
 
+/// How long a rewind may take before we stop waiting on it. A freshly resumed
+/// session has to load its transcript first, so this is not a tight bound.
+const REWIND_TIMEOUT_SECS: u64 = 45;
+
+fn rewind_request(request_id: &str, message_id: &str, dry_run: bool) -> Value {
+    json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "rewind_files", "user_message_id": message_id, "dry_run": dry_run }
+    })
+}
+
+/// If `ev` is the CLI's reply to our control request `request_id`: what it said.
+fn control_answer(ev: &Value, request_id: &str) -> Option<Result<Value, String>> {
+    if ev.get("type").and_then(|v| v.as_str()) != Some("control_response") {
+        return None;
+    }
+    let r = ev.get("response")?;
+    if r.get("request_id").and_then(|v| v.as_str()) != Some(request_id) {
+        return None;
+    }
+    Some(if r.get("subtype").and_then(|v| v.as_str()) == Some("success") {
+        Ok(r.get("response").cloned().unwrap_or_else(|| json!({})))
+    } else {
+        Err(r.get("error").and_then(|v| v.as_str()).unwrap_or("claude refused the request").to_string())
+    })
+}
+
 /// One `interrupt` control request, with an id of its own. A fresh id per
 /// interrupt matters: repeats of a single fixed request id are exactly what a CLI
 /// would dedupe away, and a repeat is precisely what a user sends when the first
@@ -393,7 +465,7 @@ fn interrupt_request() -> Value {
 /// The warm sessions, one per chat. Held behind an async lock so the map can be
 /// consulted from a command handler without blocking the window's message loop.
 #[derive(Default)]
-pub struct Pool(TokioMutex<HashMap<String, Session>>);
+pub struct Pool(TokioMutex<HashMap<String, Session>>, StdMutex<HashMap<String, String>>);
 
 impl Pool {
     /// The session for `thread_id`, started if there isn't a usable one. A session
@@ -431,6 +503,22 @@ impl Pool {
     /// goes away. The next message simply starts a fresh one.
     pub async fn retire(&self, thread_id: &str) {
         self.0.lock().await.remove(thread_id);
+    }
+
+    /// Leave a note for a chat's next message — something that happened to the
+    /// project between turns that Claude has no way of knowing (its files were
+    /// rewound). It rides on the user message like any per-turn context, and is
+    /// kept here rather than on the `Session` because the session may well be
+    /// retired before that message is sent.
+    pub fn leave_note(&self, thread_id: &str, note: String) {
+        if let Ok(mut notes) = self.1.lock() {
+            notes.insert(thread_id.to_string(), note);
+        }
+    }
+
+    /// Take (and forget) the note left for this chat, if any.
+    pub fn take_note(&self, thread_id: &str) -> Option<String> {
+        self.1.lock().ok().and_then(|mut notes| notes.remove(thread_id))
     }
 
     /// Retire everything (app shutdown). `kill_on_drop` does the rest.
@@ -487,6 +575,35 @@ mod tests {
             key_of(&["ab".to_string(), "c".to_string()], "/p"),
             key_of(&["a".to_string(), "bc".to_string()], "/p")
         );
+    }
+
+    #[test]
+    fn a_rewind_reply_is_matched_to_its_own_request() {
+        let req = rewind_request("rw-1", "msg-uuid", true);
+        assert_eq!(req["request"]["subtype"], "rewind_files");
+        assert_eq!(req["request"]["user_message_id"], "msg-uuid");
+        assert_eq!(req["request"]["dry_run"], true);
+
+        let ok = json!({ "type": "control_response", "response": {
+            "subtype": "success", "request_id": "rw-1",
+            "response": { "canRewind": true, "filesChanged": ["a.txt"] } } });
+        assert_eq!(control_answer(&ok, "rw-1").unwrap().unwrap()["filesChanged"][0], "a.txt");
+        // Somebody else's reply (an interrupt's, say) is not ours to take.
+        assert!(control_answer(&ok, "rw-2").is_none());
+        assert!(control_answer(&json!({ "type": "assistant" }), "rw-1").is_none());
+
+        let refused = json!({ "type": "control_response", "response": {
+            "subtype": "error", "request_id": "rw-1", "error": "no checkpoint" } });
+        assert_eq!(control_answer(&refused, "rw-1").unwrap().unwrap_err(), "no checkpoint");
+    }
+
+    #[test]
+    fn a_note_left_for_a_chat_is_handed_over_once() {
+        let pool = Pool::default();
+        pool.leave_note("t1", "files were rewound".into());
+        assert_eq!(pool.take_note("t2"), None);
+        assert_eq!(pool.take_note("t1").as_deref(), Some("files were rewound"));
+        assert_eq!(pool.take_note("t1"), None);
     }
 
     #[test]

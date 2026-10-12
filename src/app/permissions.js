@@ -33,6 +33,10 @@ function permissionAsked(live, msg) {
   const queue = permissionQueue(live);
   if (queue.some((p) => p.id === msg.id)) return;
   queue.push(msg);
+  // The turn is stuck until this is answered — worth a nudge if you're elsewhere.
+  if (queue.length === 1 && typeof notifyAway === 'function') {
+    notifyAway(live.threadId, 'ask', msg.why || msg.detail || msg.target || msg.tool);
+  }
   if (live.threadId === state.activeId) renderPermission();
   else if (queue.length === 1) tipPermission(live);   // it's waiting in a chat you can't see
   if (state.view === 'threads') renderSidebar();
