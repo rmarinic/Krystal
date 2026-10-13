@@ -2323,6 +2323,36 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 .ci-fail .ci-state { color: #d88; }
 .ci-run .ci-state { color: var(--warn); }
 
+/* The run panel: one run's jobs and steps (reuses the .init-modal shell and the
+ * agent inspector's header), with the end of a failed step's log under it. */
+.ci-overlay { z-index: 60; }
+.ci-modal { width: min(720px, 100%); }
+.ci-sub { font-family: var(--mono); font-size: 11.5px; }
+.ci-body { height: min(56vh, 520px); padding: 14px 18px 18px; }
+.ci-job {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg);
+}
+.ci-job + .ci-job { margin-top: 12px; }
+.ci-job.enter { animation: ag-row-in .2s ease; }
+.ci-job-head, .ci-step { display: flex; align-items: center; gap: 9px; }
+.ci-job-head {
+  padding: 8px 12px; background: var(--bg-elev); border-bottom: 1px solid var(--border);
+  font-size: 12.5px; font-weight: 600;
+}
+.ci-steps { list-style: none; margin: 0; padding: 5px 0; }
+.ci-step { flex-wrap: wrap; padding: 3px 12px; font-size: 12px; color: var(--fg-muted); }
+.ci-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-took { flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+.ci-step.ci-fail { color: var(--fg); }
+.ci-step.ci-off { color: var(--fg-dim); }
+.ci-step .ag-out { margin: 2px 0 4px 15px; }
+.ci-step .ag-out > pre { max-height: 300px; }
+.ci-empty { text-align: center; padding: 38px 10px; font-size: 12.5px; color: var(--fg-muted); }
+.agent-status.ok { color: var(--accent-3); border-color: rgba(108,199,142,0.4); }
+@media (prefers-reduced-motion: reduce) {
+  .ci-job.enter { animation: none; }
+}
+
 /* Action footer (New / Fetch / Pull / Push) */
 .branch-actions {
   display: flex; gap: 4px; padding: 6px; border-top: 1px solid var(--border);
@@ -3784,4 +3814,164 @@ body.is-remote .project-screen { top: 35px; }
 @media (max-width: 900px) {
   .artifact-modal { grid-template-columns: minmax(0, 1fr); }
   .artifact-list { display: none; }
+}
+
+/* ============================================================
+ * Notifications — the bell, its panel, toasts (app/notifications.js)
+ * ============================================================ */
+
+/* The bell wears the .head-btn box, like the gear beside it. */
+.notif-toggle { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.notif-toggle svg { display: block; transform-origin: 50% 3px; }
+.notif-toggle.has { color: var(--accent-3); }
+/* In the chat header it sits right after the tools, at their spacing. */
+.chat-head-main > .notif-toggle { margin-left: -8px; }
+/* On the project picker it floats just left of the gear. */
+.project-bell {
+  position: absolute; top: 18px; right: 141px; z-index: 5;
+  background: var(--bg-card);
+}
+.notif-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  background: var(--accent-2); color: #0a0f0b;
+  font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.notif-badge[hidden] { display: none; }
+/* Something new: the bell swings once and the count pops. */
+.notif-toggle.ring svg { animation: bell-ring .6s ease; }
+.notif-toggle.ring .notif-badge { animation: badge-pop .3s cubic-bezier(.2,.9,.3,1.25); }
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-13deg); }
+  45% { transform: rotate(9deg); }
+  70% { transform: rotate(-4deg); }
+}
+@keyframes badge-pop { from { transform: scale(.5); } to { transform: none; } }
+
+/* ---- The panel under the bell ---- */
+.notif-pop {
+  position: fixed; z-index: 110;
+  width: 350px; max-width: calc(100vw - 24px); max-height: min(520px, calc(100vh - 90px));
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity .16s ease, transform .18s ease;
+}
+.notif-pop.open { opacity: 1; transform: none; }
+.notif-pop[hidden] { display: none; }
+.notif-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--border);
+}
+.notif-heading { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--fg); }
+.notif-clear {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  background: none; border: none; padding: 0; cursor: pointer; transition: color .15s ease;
+}
+.notif-clear:hover { color: var(--accent-3); }
+.notif-empty { padding: 22px 18px 24px; font-size: 13px; line-height: 1.55; color: var(--fg-dim); text-align: center; }
+.notif-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+.notif-row { position: relative; border-radius: 8px; transition: background .15s ease; }
+.notif-row:hover { background: var(--bg-card); }
+
+/* What a notification says — shared by a panel row and a toast. */
+.notif-open {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%;
+  padding: 10px 30px 10px 10px; text-align: left; cursor: pointer;
+  background: none; border: none; color: inherit; font: inherit;
+}
+.notif-ico {
+  flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 12px; font-weight: 700; line-height: 1;
+  color: var(--accent-3); background: rgba(108,199,142,0.14);
+}
+.notif-open.tone-warn .notif-ico { color: var(--warn); background: var(--warn-bg); box-shadow: 0 0 0 1px var(--warn-bd) inset; }
+.notif-open.tone-high .notif-ico { color: #e07a5a; background: rgba(224,122,90,0.12); }
+.notif-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.notif-kind {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent-3);
+}
+.notif-open.tone-warn .notif-kind { color: var(--warn); }
+.notif-open.tone-high .notif-kind { color: #e07a5a; }
+.notif-chat {
+  font-size: 13.5px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notif-where {
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notif-snip {
+  margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--fg-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.notif-x {
+  position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
+  border: none; background: none; border-radius: 5px; cursor: pointer;
+  color: var(--fg-dim); font-size: 15px; line-height: 1;
+  opacity: 0; transition: opacity .15s ease, color .15s ease;
+}
+.notif-row:hover .notif-x, .toast:hover .notif-x, .notif-x:focus-visible { opacity: 1; }
+.notif-x:hover { color: var(--fg); }
+
+/* ---- Toasts: in from the right under the bell, out the same way ---- */
+.toasts {
+  position: fixed; top: 60px; right: 18px; z-index: 110;
+  width: 340px; max-width: calc(100vw - 36px);
+  pointer-events: none;
+}
+body.is-remote .toasts { top: 95px; }
+.toast {
+  position: relative; overflow: hidden; pointer-events: auto;
+  margin-bottom: 10px; box-sizing: border-box;
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  opacity: 0; transform: translateX(28px);
+  transition: opacity .24s ease, transform .3s ease, border-color .16s ease;
+}
+.toast.show { opacity: 1; transform: none; }
+.toast:hover { border-color: var(--accent-2); }
+/* Leaving: slide out, then the gap closes so the ones below move up. */
+.toast.out {
+  opacity: 0; transform: translateX(28px); margin-bottom: 0; pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease, height .2s ease .14s, margin-bottom .2s ease .14s;
+}
+/* How long it has left. Stops while the pointer is on it, then starts over. */
+.toast-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--accent-2); opacity: .55;
+  transform-origin: left center; transform: scaleX(1);
+}
+.toast-bar.run { animation: toast-drain linear forwards; }
+.toast.held .toast-bar { animation: none; }
+@keyframes toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .notif-toggle.ring svg, .notif-toggle.ring .notif-badge { animation: none; }
+  .notif-pop { transform: none; transition: opacity .12s ease; }
+  .toast, .toast.out { transform: none; transition: opacity .15s ease; }
+  .toast-bar { display: none; }
+}
+
+/* ---- Project list: a project with a turn still running ---- */
+.proj-meta-idle[hidden], .proj-meta-live[hidden] { display: none; }
+.proj-meta-live { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
+.proj-live-label { flex: none; color: var(--accent-3); }
+.proj-live-rest { margin-left: -4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.proj-meta-live .live-dot {
+  flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--accent-2);
+  box-shadow: 0 0 0 0 rgba(108,199,142,0.5);
+  animation: live-pulse 1.6s ease-out infinite;
+}
+.project-card.active .project-open { border-color: rgba(108,199,142,0.34); }
+/* …and one stopped on a permission prompt is waiting on you: the same, in amber. */
+.project-card.needs-you .project-open { border-color: var(--warn-bd); }
+.project-card.needs-you .proj-live-label { color: var(--warn); }
+.project-card.needs-you .live-dot { background: var(--warn); animation-name: live-pulse-warn; }
+@media (prefers-reduced-motion: reduce) {
+  .proj-meta-live .live-dot { animation: none; }
 }

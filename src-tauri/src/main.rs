@@ -141,6 +141,7 @@ fn main() {
             commands::git_pull,
             commands::git_push,
             commands::ci_runs,
+            commands::ci_run,
             commands::claude_usage,
             commands::compact_thread,
             commands::run_shell,

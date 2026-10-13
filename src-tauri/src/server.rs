@@ -999,6 +999,7 @@ async fn dispatch<R: Runtime>(
         "git_pull" => as_json(commands::git_pull(arg_str(a, "cwd"))),
         "git_push" => as_json(commands::git_push(arg_str(a, "cwd"))),
         "ci_runs" => as_json(commands::ci_runs(arg_str(a, "cwd")).await),
+        "ci_run" => as_json(commands::ci_run(arg_str(a, "cwd"), arg_i64(a, "id")).await),
 
         /* ---- usage ---- */
         "claude_usage" => as_json(commands::claude_usage(

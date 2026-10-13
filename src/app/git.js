@@ -32,8 +32,8 @@ async function refreshGit() {
 /* ----------------------------- GitHub Actions ---------------------------- */
 /* A build chip at the end of the git status line: a coloured dot + the workflow
  * that matters right now (one that is running, else the latest on this branch,
- * else the latest at all). Clicking it lists the recent runs; a run opens on
- * GitHub. The backend asks the GitHub CLI (`ci_runs`), so the chip simply isn't
+ * else the latest at all). Clicking it lists the recent runs; a run opens in
+ * the run panel further down. The backend asks the GitHub CLI (`ci_runs`), so the chip simply isn't
  * there when `gh` is missing or the folder isn't a GitHub repository.
  *
  * Polled — quickly while something is running, lazily otherwise, not at all
@@ -91,12 +91,16 @@ function ciAgo(iso) {
   return rtf.format(-Math.round(secs / 86400), 'day');
 }
 
+// "4m 12s" between two timestamps; nothing when either is missing.
+function ciTook(from, to) {
+  const s = Math.round((new Date(to) - new Date(from)) / 1000);
+  return !(s > 0) ? '' : s < 60 ? s + 's' : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
 // When it started if it is still going; when it landed and how long it took if not.
 function ciWhen(run) {
   if (ciState(run) === 'run') return ciAgo(run.createdAt);
-  const s = Math.round((new Date(run.updatedAt) - new Date(run.createdAt)) / 1000);
-  const took = !(s > 0) ? '' : s < 60 ? s + 's' : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
-  return [ciAgo(run.updatedAt), took].filter(Boolean).join(' · ');
+  return [ciAgo(run.updatedAt), ciTook(run.createdAt, run.updatedAt)].filter(Boolean).join(' · ');
 }
 
 // The one run the chip stands for.
@@ -175,7 +179,7 @@ function announceCi(run) {
     key: 'ci', cls: st === 'fail' ? 'high' : '', icon: st === 'ok' ? '✅' : st === 'fail' ? '⚠️' : '⏹',
     label: tr('ci.tipLabel', { workflow: run.workflow || tr('ci.build'), state: ciStateLabel(run) }),
     body: escapeHtml(run.title || run.branch),
-    actions: [{ text: tr('ci.open'), run: (close) => { ciOpen(run.url); close(); } }],
+    actions: [{ text: tr('ci.details'), run: (close) => { openCiRun(run); close(); } }],
   });
 }
 
@@ -221,13 +225,194 @@ function renderCiPop() {
   list.scrollTop = scroll;
   list.querySelectorAll('.ci-item').forEach((li) => {
     const run = ci.runs[Number(li.dataset.i)];
-    li.title = tr('ci.openRun');
-    li.onclick = () => ciOpen(run.url);
+    li.title = tr('ci.viewRun');
+    li.onclick = () => openCiRun(run);
   });
   // Every run's address is <repo>/actions/runs/<id>; the list lives one level up.
   branchPop.querySelector('[data-act="all"]').onclick =
     () => ciOpen(String(ci.runs[0].url).replace(/\/runs\/\d+.*$/, ''));
 }
+
+/* -------------------------------- run panel ------------------------------ */
+/* One run, opened from a row of the list above: its jobs and their steps, each
+ * with how long it took, and — for a run that failed — the end of the failed
+ * step's log, which is usually the whole answer. Kept fresh while the run is
+ * still going. `ci_run` asks the GitHub CLI, like the list does.
+ *
+ * It opens at once on what the list already knows (title, state, timing) and
+ * fills in the steps when they arrive: the log of a failure is a slow fetch. */
+
+let ciView = null;   // { path, run, logs, loaded, error, timer }
+
+function openCiRun(run) {
+  closeBranchPicker();
+  if (ciView) clearTimeout(ciView.timer);
+  ciView = { path: gitCwd(), run, logs: [], loaded: false, error: false, timer: null };
+  renderCiRun(false);
+  openOverlay(els.ciOverlay);
+  els.ciBody.scrollTop = 0;
+  loadCiRun();
+}
+
+function closeCiRun() {
+  if (ciView) clearTimeout(ciView.timer);
+  ciView = null;
+  closeOverlay(els.ciOverlay);
+}
+
+async function loadCiRun() {
+  const mine = ciView;
+  if (!mine) return;
+  clearTimeout(mine.timer);
+  if (document.hidden) { mine.timer = setTimeout(loadCiRun, CI_POLL_ACTIVE_MS); return; }
+  let r = null;
+  try { r = await api.ciRun(mine.path, mine.run.id); } catch (_) {}
+  if (ciView !== mine) return;                 // closed, or another run opened, while we asked
+  const first = !mine.loaded;
+  if (r && r.available && r.run) {
+    Object.assign(mine, { run: r.run, logs: r.logs || [], loaded: true, error: false });
+  } else if (first) {
+    mine.error = true;
+  }
+  renderCiRun(first && mine.loaded);
+  if (mine.loaded && ciState(mine.run) === 'run') mine.timer = setTimeout(loadCiRun, CI_POLL_ACTIVE_MS);
+}
+
+/* `enter` plays the rows in — only when the steps first arrive, never on a refresh. */
+function renderCiRun(enter) {
+  const v = ciView;
+  if (!v) return;
+  const run = v.run;
+  const st = ciState(run);
+  els.ciTitle.textContent = run.title || run.workflow || tr('ci.build');
+  els.ciSub.textContent = [
+    run.workflow, run.branch, run.sha && String(run.sha).slice(0, 7), run.event,
+    run.number ? '#' + run.number : '', run.attempt > 1 ? tr('ci.attempt', { n: run.attempt }) : '',
+  ].filter(Boolean).join(' · ');
+  els.ciStatus.className = 'agent-status' + (st === 'run' ? ' running' : st === 'fail' ? ' error' : st === 'ok' ? ' ok' : '');
+  els.ciStatus.innerHTML = (st === 'run' ? '<span class="agent-live-dot"></span>' : '') + escapeHtml(ciStateLabel(run));
+  els.ciHint.textContent = ciWhen(run);
+  els.ciFix.hidden = !(v.loaded && st === 'fail' && state.activeId);
+
+  const body = els.ciBody;
+  const scroll = body.scrollTop;
+  body.innerHTML = '';
+  const jobs = (v.loaded && run.jobs) || [];
+  if (!jobs.length) {
+    const note = document.createElement('div');
+    note.className = 'ci-empty';
+    note.textContent = tr(v.error ? 'ci.loadFail' : v.loaded ? 'ci.noJobs' : 'ci.loading');
+    body.appendChild(note);
+    return;
+  }
+  for (const job of jobs) body.appendChild(ciJobEl(job, v.logs.filter((l) => l.job === job.name), enter));
+  body.scrollTop = scroll;
+}
+
+function ciRowParts(item, running) {
+  const dot = document.createElement('i');
+  dot.className = 'ci-dot';
+  const name = document.createElement('span');
+  name.className = 'ci-name';
+  name.textContent = item.name;
+  name.title = item.name;
+  const took = document.createElement('span');
+  took.className = 'ci-took';
+  took.textContent = ciTook(item.startedAt, running ? new Date().toISOString() : item.completedAt);
+  return [dot, name, took];
+}
+
+function ciLogEl(log) {
+  const d = document.createElement('details');
+  d.className = 'ag-out err';
+  d.open = true;
+  const sum = document.createElement('summary');
+  sum.textContent = tr(log.cut ? 'ci.logCut' : 'ci.log');
+  const pre = document.createElement('pre');
+  pre.textContent = log.text;
+  d.append(sum, pre);
+  return d;
+}
+
+function ciJobEl(job, logs, enter) {
+  const box = document.createElement('section');
+  box.className = 'ci-job' + (enter ? ' enter' : '');
+  // The state class sits on each row, not the box: `.ci-fail .ci-dot` would
+  // otherwise paint every step of a failed job red.
+  const head = document.createElement('header');
+  head.className = 'ci-job-head ci-' + ciState(job);
+  head.append(...ciRowParts(job, ciState(job) === 'run' && !!job.startedAt));
+  box.appendChild(head);
+
+  const list = document.createElement('ul');
+  list.className = 'ci-steps';
+  const loose = logs.slice();
+  for (const step of (job.steps || [])) {
+    const st = ciState(step);
+    const li = document.createElement('li');
+    li.className = 'ci-step ci-' + (st === 'run' && step.status !== 'in_progress' ? 'off' : st);
+    li.append(...ciRowParts(step, step.status === 'in_progress'));
+    const at = loose.findIndex((l) => l.step === step.name);
+    if (at >= 0) li.appendChild(ciLogEl(loose.splice(at, 1)[0]));
+    list.appendChild(li);
+  }
+  // Log lines gh couldn't pin to a step still belong to this job.
+  for (const log of loose) {
+    const li = document.createElement('li');
+    li.className = 'ci-step ci-fail';
+    li.append(...ciRowParts({ name: log.step }, false), ciLogEl(log));
+    list.appendChild(li);
+  }
+  if (list.children.length) box.appendChild(list);
+  return box;
+}
+
+/* What "Ask Claude to fix it" sends: which run, what failed, and the log ends. */
+function ciFixMessage(v) {
+  const run = v.run;
+  const parts = [
+    tr('ci.fixHead', { title: run.title || run.workflow, workflow: run.workflow || '—', branch: run.branch || '—' }),
+    run.url,
+  ];
+  for (const l of v.logs) {
+    parts.push('', tr('ci.fixStep', { job: l.job, step: l.step }), '```', l.text, '```');
+  }
+  if (!v.logs.length) {
+    for (const job of (run.jobs || [])) {
+      for (const step of (job.steps || [])) {
+        if (ciState(step) === 'fail') parts.push(tr('ci.fixFailed', { job: job.name, step: step.name }));
+      }
+    }
+  }
+  parts.push('', tr('ci.fixAsk'));
+  return parts.join('\n');
+}
+
+function sendCiFix() {
+  const threadId = state.activeId;
+  if (!ciView || !threadId) return;
+  const msg = { text: ciFixMessage(ciView), files: [], refs: [] };
+  closeCiRun();
+  if (state.live.has(threadId) && typeof enqueueMessage === 'function') enqueueMessage(threadId, msg);
+  else startTurn(threadId, msg, { follow: true });
+}
+
+els.ciClose.onclick = closeCiRun;
+els.ciDone.onclick = closeCiRun;
+els.ciWeb.onclick = () => { if (ciView) ciOpen(ciView.run.url); };
+els.ciFix.onclick = sendCiFix;
+
+// Backdrop click closes — unless the release just ended a text drag-select
+// (same guard as the agent inspector): a log is something you select from.
+let ciPressOnBackdrop = false;
+els.ciOverlay.addEventListener('mousedown', (e) => { ciPressOnBackdrop = (e.target === els.ciOverlay); });
+els.ciOverlay.addEventListener('mouseup', (e) => {
+  if (ciPressOnBackdrop && e.target === els.ciOverlay) closeCiRun();
+  ciPressOnBackdrop = false;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.ciOverlay.hidden) closeCiRun();
+});
 
 /* ------------------------------ branch picker ---------------------------- */
 /* Clicking the branch name in the git status line opens a small searchable

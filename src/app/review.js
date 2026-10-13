@@ -136,7 +136,7 @@ function openReview(opts) {
   // go and look at something doesn't throw a half-written review away.
   const comments = opts.msgEl._reviewComments || (opts.msgEl._reviewComments = []);
   review = { ...opts, comments, rewind: null };
-  renderReview();
+  renderReviewPanel();
   openOverlay(els.reviewOverlay);
   els.reviewBody.scrollTop = 0;
 }
@@ -146,7 +146,7 @@ function closeReview() {
   closeOverlay(els.reviewOverlay);
 }
 
-function renderReview() {
+function renderReviewPanel() {
   if (!review) return;
   const { added, removed } = reviewTotals(review.files);
   els.reviewSub.innerHTML =

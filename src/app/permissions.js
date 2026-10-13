@@ -38,8 +38,13 @@ function permissionAsked(live, msg) {
     notifyAway(live.threadId, 'ask', msg.why || msg.detail || msg.target || msg.tool);
   }
   if (live.threadId === state.activeId) renderPermission();
-  else if (queue.length === 1) tipPermission(live);   // it's waiting in a chat you can't see
+  // It's waiting in a chat you can't see: the sidebar marks it, but a turn that
+  // has silently stopped is worth saying out loud, once (notifications.js).
+  else if (queue.length === 1 && typeof notifyChat === 'function') {
+    notifyChat(live, 'ask', msg.why || msg.detail || msg.target || permissionToolName(msg.tool));
+  }
   if (state.view === 'threads') renderSidebar();
+  if (typeof paintProjectActivity === 'function') paintProjectActivity();
 }
 
 /* A question is settled or withdrawn. */
@@ -49,15 +54,21 @@ function permissionGone(live, id) {
   const at = queue.findIndex((p) => p.id === id);
   if (at < 0) return;
   queue.splice(at, 1);
-  if (!queue.length) dropPermissionTip(live.threadId);
+  if (!queue.length) dropPermissionNote(live.threadId);
   if (live.threadId === state.activeId) renderPermission();
   if (state.view === 'threads') renderSidebar();
+  if (typeof paintProjectActivity === 'function') paintProjectActivity();
+}
+
+/* Nothing is being asked in this chat any more — take its notification down. */
+function dropPermissionNote(threadId) {
+  if (typeof dropNotifications === 'function') dropNotifications(threadId, 'ask');
 }
 
 /* The turn is over — whatever it was still asking can't be answered any more. */
 function permissionsTurnEnded(live) {
   if (live.permissions) live.permissions.length = 0;
-  dropPermissionTip(live.threadId);
+  dropPermissionNote(live.threadId);
   if (live.threadId === state.activeId) renderPermission();
 }
 
@@ -233,34 +244,9 @@ async function answerPermission(threadId, id, decision, acts) {
   if (live) permissionGone(live, id);
 }
 
-/* ------------------------- a question you can't see ----------------------- */
-/* The turn is waiting in a chat that isn't on screen. The sidebar marks it, but
- * a turn that has silently stopped is worth saying out loud, once. */
-const permissionTips = new Map();   // threadId -> close()
-
-function tipPermission(live) {
-  dropPermissionTip(live.threadId);
-  const thread = state.threads.find((t) => t.id === live.threadId);
-  const title = (thread && thread.title) || tr('nav.newChatTitle');
-  const close = showTip({
-    key: 'perm-' + live.threadId, cls: 'warn', icon: '🛡', label: tr('perm.tipLabel'),
-    body: escapeHtml(tr('perm.tipBody', { title })),
-    actions: [{ text: tr('perm.tipOpen'), run: (done) => { done(); openThread(live.threadId); } }],
-  });
-  permissionTips.set(live.threadId, close);
-}
-
-function dropPermissionTip(threadId) {
-  const close = permissionTips.get(threadId);
-  if (!close) return;
-  permissionTips.delete(threadId);
-  close();
-}
-
-/* Opening a chat: show what its turn is waiting on (and it no longer needs a
- * tip pointing at it). Called from `openThread`. */
+/* Opening a chat: show what its turn is waiting on. Called from `openThread`
+ * (which has already cleared the notification pointing at it). */
 function syncPermission() {
-  if (state.activeId) dropPermissionTip(state.activeId);
   renderPermission();
 }
 

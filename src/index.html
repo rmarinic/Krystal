@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Krystal · claude code</title>
 
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238fe0aa'/><stop offset='1' stop-color='%236cc78e'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='%230a0f0b' stroke='url(%23g)' stroke-width='2'/><text x='16' y='22' font-family='monospace' font-size='17' font-weight='700' fill='url(%23g)' text-anchor='middle'>K</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0f0b'/><g transform='translate(16 16) scale(.04) translate(-540 -512)'><path fill='%23a8ecbf' d='M300 296l55-58v548h-55zM410 500L632 250h69L410 577.5z'/><path fill='%236cc78e' d='M355 238l55 58v490h-55zM410 577.5L701 250h69L410 655zM590 452l190 322h-69L548.5 499z'/><path fill='%232f7d55' d='M548.5 499L711 774h-69L507 546z'/></g></svg>">
 
   <link rel="stylesheet" href="base.css">
   <link rel="stylesheet" href="chat.css">
@@ -37,6 +37,8 @@
     <button class="lang-toggle project-lang head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
     <!-- Settings (feature toggles + Discord presence live here) -->
     <button class="settings-toggle project-settings head-btn" data-i18n-title="settings.title" title="Settings"></button>
+    <!-- Notifications: what happened in chats you weren't looking at. See app/notifications.js. -->
+    <button class="notif-toggle project-bell head-btn" type="button" title="Notifications"></button>
     <div class="project-wrap">
       <div class="project-head">
         <div class="logo project-logo">
@@ -158,6 +160,8 @@
           <button class="settings-toggle head-btn" data-i18n-title="settings.title" title="Settings"></button>
           <button class="lang-toggle head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
         </div>
+        <!-- Outside the tools so it is there with no chat open, too. -->
+        <button class="notif-toggle head-btn" type="button" title="Notifications"></button>
       </div>
       <div class="meter-row" id="meter-row" hidden>
         <div class="meter"><div class="meter-fill" id="meter-fill"></div></div>
@@ -251,6 +255,11 @@
   <!-- Side tips: context-rot nudges + hint results slide in here -->
   <div class="tips" id="tips" aria-live="polite"></div>
 
+  <!-- Notifications (app/notifications.js): toasts slide in under the bell and
+       leave on their own; the bell's panel keeps them until the chat is opened. -->
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="notif-pop" id="notif-pop" role="dialog" aria-label="Notifications" hidden></div>
+
   <!-- ===================== Initialize wizard ======================= -->
   <div class="modal-overlay" id="init-overlay" hidden>
     <div class="init-modal" role="dialog" aria-modal="true" aria-labelledby="init-modal-title">
@@ -319,6 +328,30 @@
         <span class="agent-hint" id="agent-hint"></span>
         <button class="init-act danger" id="agent-stop" hidden data-i18n="agent.stopBtn">Stop</button>
         <button class="init-act ghost" id="agent-done" data-i18n="agent.close">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ============= Run panel: one GitHub Actions run ============= -->
+  <!-- Opened from a row of the build chip's recent-runs list: the run's jobs and
+       steps, and the end of the log of whatever failed. See app/git.js. -->
+  <div class="modal-overlay ci-overlay" id="ci-overlay" hidden>
+    <div class="init-modal ci-modal" role="dialog" aria-modal="true" aria-labelledby="ci-title">
+      <header class="init-head agent-head">
+        <span class="agent-ico" aria-hidden="true">🚀</span>
+        <div class="agent-heading">
+          <div class="init-title" id="ci-title"></div>
+          <div class="agent-sub ci-sub" id="ci-sub"></div>
+        </div>
+        <span class="agent-status" id="ci-status"></span>
+        <button class="init-x" id="ci-close" data-i18n-title="ci.close" title="Close">×</button>
+      </header>
+      <div class="init-body ci-body" id="ci-body"></div>
+      <footer class="init-foot ci-foot">
+        <span class="agent-hint" id="ci-hint"></span>
+        <button class="init-act primary" id="ci-fix" hidden data-i18n="ci.fix">Ask Claude to fix it</button>
+        <button class="init-act ghost" id="ci-web" data-i18n="ci.open">Open on GitHub</button>
+        <button class="init-act ghost" id="ci-done" data-i18n="ci.close">Close</button>
       </footer>
     </div>
   </div>
@@ -559,6 +592,7 @@
   <script defer src="app/orchestrator.js"></script>
   <script defer src="app/pins.js"></script>
   <script defer src="app/remote.js"></script>
+  <script defer src="app/notifications.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

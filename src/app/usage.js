@@ -77,7 +77,7 @@ function usageLevel(f) {
 }
 
 function fmtPct(f) { return f == null ? '—' : Math.min(999, Math.round(f * 100)) + '%'; }
-function fmtDur(secs) {
+function fmtResetIn(secs) {
   if (secs == null) return '';
   const s = Math.max(0, Math.round(secs));
   if (s < 60) return tr('usage.resetSoon');
@@ -143,7 +143,7 @@ function usageBarsHtml(opts) {
   if (opts.withReset) {
     const secs = usageResetSecs();
     if (secs != null && secs > 0) {
-      h += `<div class="usage-reset">${escapeHtml(tr('usage.resetIn', { time: fmtDur(secs) }))}</div>`;
+      h += `<div class="usage-reset">${escapeHtml(tr('usage.resetIn', { time: fmtResetIn(secs) }))}</div>`;
     }
     const wk = weeklyNextReset();
     if (wk != null) {
@@ -274,7 +274,7 @@ function warnWindow(tag, f, warnKey, highKey, withReset) {
   usageWarned[k] = true;
   const isHigh = lvl === 'high';
   const vars = { pct: fmtPct(f) };
-  if (withReset) vars.time = fmtDur(usageResetSecs());
+  if (withReset) vars.time = fmtResetIn(usageResetSecs());
   showTip({
     key: 'usage-' + tag, cls: isHigh ? 'high' : 'warn', icon: '⚡',
     label: tr('usage.warnLabel'),

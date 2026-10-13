@@ -40,6 +40,8 @@ async function openThread(id, focusMid) {
   detachLiveTyper(state.live.get(state.activeId));
 
   state.activeId = id;
+  // Looking at a chat settles whatever the bell was holding for it.
+  if (typeof dropNotifications === 'function') dropNotifications(id);
   state.tipLevelShown = null;
   if (state.view === 'threads') renderSidebar();
 

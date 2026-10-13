@@ -43,7 +43,10 @@ async function renderProjects() {
       <button class="project-open">
         <span class="proj-name">${escapeHtml(p.name || basename(p.path))}</span>
         <span class="proj-path">${escapeHtml(p.path || '')}</span>
-        <span class="proj-meta">${escapeHtml(tr('project.meta', { n, chats, when }))}</span>
+        <span class="proj-meta">
+          <span class="proj-meta-idle">${escapeHtml(tr('project.meta', { n, chats, when }))}</span>
+          <span class="proj-meta-live" hidden></span>
+        </span>
       </button>
       <button class="proj-move" title="${escapeHtml(tr('project.moveTitle'))}">📁</button>
       <button class="proj-del" title="${tr('project.removeTitle')}">×</button>`;
@@ -61,6 +64,8 @@ async function renderProjects() {
     };
     els.projectList.appendChild(li);
   }
+  // Mark the ones with a turn still running (notifications.js).
+  if (typeof paintProjectActivity === 'function') paintProjectActivity();
 }
 
 /* Point a project at a different folder — you moved or renamed it on disk, or the

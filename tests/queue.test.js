@@ -53,7 +53,7 @@ function load(storage) {
   strip.hidden = true;
   const button = stubEl('button');
   const input = stubEl('textarea');
-  const calls = { started: [], tips: [], sidebar: 0, opened: [], refs: [], files: [], drafts: [] };
+  const calls = { started: [], notes: [], sidebar: 0, opened: [], refs: [], files: [], drafts: [] };
   const ctx = {
     els: { composerQueue: strip, queueBtn: button, input },
     state: {
@@ -69,7 +69,8 @@ function load(storage) {
     basename: (p) => String(p).split(/[\\/]/).filter(Boolean).pop(),
     renderSidebar: () => { calls.sidebar++; },
     openThread: (id) => { calls.opened.push(id); },
-    showTip: (tip) => { calls.tips.push(tip); return () => {}; },
+    // The bell (notifications.js): what is raised for a chat that isn't on screen.
+    notifyChat: (live, kind) => { calls.notes.push({ threadId: live.threadId, kind }); },
     // As the real one does: the turn is live from the moment it starts.
     startTurn: (threadId, msg, opts) => {
       calls.started.push({ threadId, msg, opts });
@@ -191,7 +192,7 @@ check('a stopped turn holds the queue, and "Send now" releases it', () => {
   eq(calls.started.length, 0, 'not sent');
   eq(Q.queuedCount('t1'), 1, 'still queued');
   eq(labelOf(strip), 'queue.held', 'says it is on hold');
-  eq(calls.tips.length, 0, 'no tip for a chat you are looking at');
+  eq(calls.notes.length, 0, 'nothing raised for a chat you are looking at');
   strip.byClass('queue-go')[0].onclick();
   eq(calls.started.length, 1, 'sent on request');
   eq(calls.started[0].opts.follow, true, 'and the feed follows it');
@@ -215,7 +216,7 @@ check('a chat you are not looking at still sends its queue', () => {
   eq(calls.started.length, 1, 'sent');
   eq(calls.started[0].threadId, 't2', 'to that chat');
   eq(calls.started[0].opts.activity, live.activity, 'its activity list carries over');
-  eq(calls.tips.length, 0, 'nothing to say');
+  eq(calls.notes.length, 0, 'nothing to say');
 });
 
 check('…and says so when that chat\'s turn was stopped instead', () => {
@@ -224,10 +225,18 @@ check('…and says so when that chat\'s turn was stopped instead', () => {
   Q.enqueueMessage('t2', msg('carry on'));
   ended(Q, ctx, live, { stopped: true });
   eq(calls.started.length, 0, 'not sent');
-  eq(calls.tips.length, 1, 'one tip');
-  eq(calls.tips[0].body.includes('Refactor'), true, 'names the chat');
-  calls.tips[0].actions[0].run(() => {});
-  eq(calls.opened[0], 't2', 'its button opens the chat');
+  eq(calls.notes.length, 1, 'one notification');
+  eq(calls.notes[0].threadId, 't2', 'for that chat');
+  eq(calls.notes[0].kind, 'held', 'saying its queue is on hold');
+});
+
+check('…but not when it failed: the failure is already announced', () => {
+  const { Q, ctx, calls } = load();
+  const live = running(ctx, 't2');
+  Q.enqueueMessage('t2', msg('carry on'));
+  ended(Q, ctx, live, { failed: true });
+  eq(calls.started.length, 0, 'not sent');
+  eq(calls.notes.length, 0, 'no second notification');
 });
 
 check('an answer picked on a question card goes before the queue', () => {

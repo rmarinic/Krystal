@@ -42,7 +42,7 @@ function load() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'permissions.js'), 'utf8');
   const strip = stubEl('div');
   strip.hidden = true;
-  const calls = { answered: [], tips: [], closedTips: 0, sidebar: 0, opened: [] };
+  const calls = { answered: [], tips: [], notes: [], dropped: [], sidebar: 0, opened: [] };
   const ctx = {
     els: { composerPerm: strip },
     state: { activeId: 't1', live: new Map(), view: 'threads', threads: [{ id: 't2', title: 'Refactor' }] },
@@ -56,7 +56,10 @@ function load() {
     renderDiff: () => stubEl('div'),
     renderSidebar: () => { calls.sidebar++; },
     openThread: (id) => { calls.opened.push(id); },
-    showTip: (tip) => { calls.tips.push(tip); return () => { calls.closedTips++; }; },
+    showTip: (tip) => { calls.tips.push(tip); return () => {}; },
+    // The bell (notifications.js): what is raised for a chat, and taken down again.
+    notifyChat: (live, kind, text) => { calls.notes.push({ threadId: live.threadId, kind, text }); },
+    dropNotifications: (threadId, kind) => { calls.dropped.push({ threadId, kind }); },
     api: {
       answerPermission: async (threadId, id, decision) => {
         calls.answered.push({ threadId, id, decision });
@@ -119,7 +122,7 @@ check('a question on the open chat shows its card and marks the sidebar', () => 
   eq(strip.hidden, false, 'strip shown');
   eq(strip.dataset.pid, 'r1', 'question on show');
   eq(calls.sidebar, 1, 'sidebar re-rendered');
-  eq(calls.tips.length, 0, 'no tip for a chat you are looking at');
+  eq(calls.notes.length, 0, 'nothing raised for a chat you are looking at');
 });
 
 check('the same question announced twice is one question', () => {
@@ -155,27 +158,38 @@ check('a question settled out of order leaves the one on show alone', () => {
   eq(live.permissions.length, 1, 'unknown id ignored');
 });
 
-check('a question in a chat you are not looking at raises a tip, once', () => {
+check('a question in a chat you are not looking at raises a notification, once', () => {
   const { P, ctx, strip, calls } = load();
   const other = liveTurn(ctx, 't2');
   P.permissionAsked(other, bash('r1', 'npm install'));
   P.permissionAsked(other, bash('r2', 'git push'));
   eq(strip.hidden, true, 'nothing shown on the open chat');
-  eq(calls.tips.length, 1, 'one tip, not one per question');
-  eq(calls.tips[0].body.includes('Refactor'), true, 'names the chat');
-  // Its button takes you there.
-  calls.tips[0].actions[0].run(() => {});
-  eq(calls.opened[0], 't2', 'opens the waiting chat');
+  eq(calls.notes.length, 1, 'one notification, not one per question');
+  eq(calls.notes[0].threadId, 't2', 'for the waiting chat');
+  eq(calls.notes[0].kind, 'ask', 'as a permission prompt');
+  eq(calls.notes[0].text, 'npm install', 'saying what is being asked');
 });
 
-check('opening that chat shows the question and retires the tip', () => {
-  const { P, ctx, strip, calls } = load();
+check('the notification comes down when the last question is settled', () => {
+  const { P, ctx, calls } = load();
+  const other = liveTurn(ctx, 't2');
+  P.permissionAsked(other, bash('r1', 'npm install'));
+  P.permissionAsked(other, bash('r2', 'git push'));
+  P.permissionGone(other, 'r1');
+  eq(calls.dropped.length, 0, 'still one waiting');
+  P.permissionGone(other, 'r2');
+  eq(calls.dropped.length, 1, 'taken down');
+  eq(calls.dropped[0].threadId, 't2', 'for that chat');
+  eq(calls.dropped[0].kind, 'ask', 'only the permission prompt');
+});
+
+check('opening that chat shows the question', () => {
+  const { P, ctx, strip } = load();
   const other = liveTurn(ctx, 't2');
   P.permissionAsked(other, bash('r1', 'npm install'));
   ctx.state.activeId = 't2';
   P.syncPermission();
   eq(strip.dataset.pid, 'r1', 'question on show');
-  eq(calls.closedTips, 1, 'tip closed');
 });
 
 check('the end of the turn clears whatever it was still asking', () => {

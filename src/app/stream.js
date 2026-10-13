@@ -409,6 +409,7 @@ function finishLive(live) {
   agentTurnEnded(live.threadId);                      // no worker is still going either
   state.live.delete(live.threadId);
   if (typeof permissionsTurnEnded === 'function') permissionsTurnEnded(live);   // nothing left to answer
+  if (typeof paintProjectActivity === 'function') paintProjectActivity();       // its project may be idle now
   if (live.threadId === state.activeId) {
     syncComposer();
     refreshActivityPanel();
@@ -531,11 +532,19 @@ function handleLiveEvent(live, msg) {
     // settled on — refresh so the panel stops showing a version-less live view.
     if (live.madeArtifact && typeof artifactsTurnEnded === 'function') artifactsTurnEnded();
     if (!live.stopped) notifyAway(live.threadId, 'done', msg.text);
+    // …and the bell, if it landed in a chat that isn't on screen (notifications.js)
+    // — unless a queued message is about to start the next turn there: it isn't
+    // finished until the queue is.
+    const moreQueued = typeof queuedCount === 'function' && queuedCount(live.threadId) > 0;
+    if (!live.stopped && !moreQueued && typeof notifyChat === 'function') {
+      notifyChat(live, turnEndKind(live), msg.text, msg.title);
+    }
     finishLive(live);
   } else if (event === 'title') {
     // Late-arriving first-turn auto-title (fires after `done`). Refresh the
     // header if this thread is on screen, and the sidebar regardless.
     if (live.threadId === state.activeId) els.title.textContent = msg.title;
+    if (typeof notificationRetitled === 'function') notificationRetitled(live.threadId, msg.title);
     if (state.view === 'threads') loadThreads();
   } else if (event === 'agent_progress') {
     // Live sub-agent tally (tokens, steps, last tool): into the Activity panel's
@@ -585,6 +594,7 @@ function handleLiveEvent(live, msg) {
     // painting a red error chip (any partial text is already kept).
     live.failed = true;   // either way it didn't finish — queued messages wait
     if (!live.stopped) notifyAway(live.threadId, 'failed', msg.message);
+    if (!live.stopped && typeof notifyChat === 'function') notifyChat(live, 'failed', msg.message);
     if (!live.stopped && window.krystalNeedsLogin) window.krystalNeedsLogin(msg.message);
     if (live.typer) {
       if (live.stopped) live.typer.finish(live.finalText || '');
@@ -670,6 +680,7 @@ async function startTurn(threadId, msg, opts = {}) {
     typer: null, bubble: null, finalText: null, finalized: false,
   };
   state.live.set(threadId, live);
+  if (typeof liveTurnStarted === 'function') liveTurnStarted(live);   // which project it is working in
 
   // assistant placeholder + typewriter, attached when this thread is on screen
   // (attachLiveTyper shows the "thinking" indicator while events is empty)
@@ -690,6 +701,9 @@ async function startTurn(threadId, msg, opts = {}) {
   } catch (e) {
     live.failed = true;
     if (live.typer) live.typer.error(String(e && e.message || e));
+    if (!live.finalized && !live.stopped && typeof notifyChat === 'function') {
+      notifyChat(live, 'failed', String(e && e.message || e));
+    }
     finishLive(live);
   } finally {
     if (threadId === state.activeId) els.input.focus();

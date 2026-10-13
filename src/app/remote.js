@@ -269,8 +269,9 @@ function remoteTurnStarted(threadId, text) {
     remote: true,
   };
   state.live.set(threadId, live);
+  if (typeof liveTurnStarted === 'function') liveTurnStarted(live);
   if (onScreen) {
-    stickToBottom = true;              // watch it arrive, as if it were typed here
+    stickToBottom = true;             // watch it arrive, as if it were typed here
     appendMessage('user', live.userText, [], null);
     attachLiveTyper(live);
     scrollFeed();

@@ -90,9 +90,10 @@ function queueTurnEnded(live) {
   if (!queuedCount(threadId)) return;
   const onScreen = threadId === state.activeId;
   // Stopped or failed: hold. On screen the strip already says so (syncComposer
-  // repainted it); a chat you can't see is worth a word.
+  // repainted it); a chat you can't see is worth a word — unless the failure has
+  // just been announced, which already points at this chat (notifications.js).
   if (live.stopped || live.failed) {
-    if (!onScreen) tipQueueHeld(threadId);
+    if (!onScreen && live.stopped && typeof notifyChat === 'function') notifyChat(live, 'held', '');
     return;
   }
   // An answer picked on a question card belongs to the turn that just asked it,
@@ -210,17 +211,4 @@ function syncQueueBtn() {
 if (els.queueBtn) {
   els.queueBtn.innerHTML = QUEUE_SVG;
   els.queueBtn.onclick = () => { send(); els.input.focus(); };
-}
-
-/* --------------------------- a queue you can't see ------------------------ */
-/* A turn was stopped or failed in a chat that isn't on screen, and messages are
- * still waiting behind it. Nothing will send them now, so say so, once. */
-function tipQueueHeld(threadId) {
-  const thread = state.threads.find((t) => t.id === threadId);
-  const title = (thread && thread.title) || tr('nav.newChatTitle');
-  showTip({
-    key: 'queue-' + threadId, cls: 'warn', icon: '⏸', label: tr('queue.tipLabel'),
-    body: escapeHtml(tr('queue.tipBody', { title })),
-    actions: [{ text: tr('queue.tipOpen'), run: (done) => { done(); openThread(threadId); } }],
-  });
 }

@@ -10,7 +10,8 @@
  * Load order (see index.html):
  *   core → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
- *   localization → settings → remote → tasks → git → links → logo → boot
+ *   localization → settings → remote → tasks → git → links → logo →
+ *   notifications → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -191,6 +192,8 @@ const els = {
   meterFill: $('#meter-fill'),
   meterLabel: $('#meter-label'),
   tips: $('#tips'),
+  toasts: $('#toasts'),
+  notifPop: $('#notif-pop'),
   hintBtn: $('#hint-btn'),
   activityBtn: $('#activity-btn'),
   activityOverlay: $('#activity-overlay'),
@@ -207,6 +210,16 @@ const els = {
   agentStop: $('#agent-stop'),
   agentDone: $('#agent-done'),
   agentClose: $('#agent-close'),
+  ciOverlay: $('#ci-overlay'),
+  ciTitle: $('#ci-title'),
+  ciSub: $('#ci-sub'),
+  ciStatus: $('#ci-status'),
+  ciBody: $('#ci-body'),
+  ciHint: $('#ci-hint'),
+  ciFix: $('#ci-fix'),
+  ciWeb: $('#ci-web'),
+  ciDone: $('#ci-done'),
+  ciClose: $('#ci-close'),
   reviewOverlay: $('#review-overlay'),
   reviewSub: $('#review-sub'),
   reviewBody: $('#review-body'),
@@ -397,6 +410,7 @@ const api = {
   gitPull(cwd) { return invoke('git_pull', { cwd }); },
   gitPush(cwd) { return invoke('git_push', { cwd }); },
   ciRuns(cwd) { return invoke('ci_runs', { cwd }); },
+  ciRun(cwd, id) { return invoke('ci_run', { cwd, id }); },
   openExternal(url) { return invoke('open_external', { url }); },
   notify(title, body) { return invoke('notify', { title, body }); },
   rewindFiles(threadId, ckpt, dryRun) { return invoke('rewind_files', { threadId, ckpt, dryRun }); },

@@ -43,6 +43,8 @@ const SETTINGS_DEFAULTS = {
   promptSuggestions: true,
   // A desktop notification when a reply lands (or asks) while the window is away.
   notify: true,
+  // A toast inside the app when something happens in a chat that isn't on screen.
+  toasts: true,
   // Claude-usage calibration caps (weighted tokens). null = not calibrated yet.
   usageCap5h: null, usageCap7d: null,
   // Weekly reset anchor read off Claude's /usage (local weekday 0=Sun..6=Sat + "HH:MM").
@@ -100,6 +102,7 @@ const SETTINGS_TABS = [
     { key: 'ciStatus', sub: true },
     { key: 'promptSuggestions' },
     { key: 'notify' },
+    { key: 'toasts' },
     { key: 'logoLife' },
     { key: 'claudeUpdate', type: 'action' },
   ] },
