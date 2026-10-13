@@ -4,6 +4,15 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.28.0
+- **New: a notification bell.** When something happens in a chat you aren't looking at — Claude finished, has a question for you, is waiting for your permission, or the reply failed — a small note slides in at the top right and the bell keeps it for you. Each one says which chat and which project; click it to go straight there, even if that means switching project. Opening the chat clears its notification, so the list is only ever what you haven't seen yet.
+- The notes that slide in can be switched off in Settings → General → **In-app notifications**; the bell keeps collecting either way.
+- **See which projects are busy.** On the project list, a project where Claude is still working shows a pulsing dot and "Working now" — amber if it's waiting for your OK.
+- **Builds: see what went wrong, and hand it to Claude.** Clicking a run in the build list now opens it inside Krystal: its jobs and steps with how long each took, updating while it runs. For a failed run you get the end of the log of each step that failed, and **Ask Claude to fix it** sends that to Claude as a message.
+- **Fixed: the Changes panel opened empty.** Clicking the "changed files" strip under a reply showed a blank window instead of the changes.
+- **Fixed: the sub-agent timer showed nonsense.**
+- **A new logo.**
+
 ## v0.27.0
 - **New: see what a reply changed, comment on it, and undo it.** A reply that edits files now leaves a small strip under it — how many files, how many lines added and removed. Click it for the changes themselves, file by file. Click any line to leave a comment; your comments go to Claude together, as one message, so a review reads like a review. And **Undo these changes** puts the files back to how they were before that message — it first tells you what it would restore, and only does it when you say so. The conversation stays, and Claude is told the edits are gone.
 - Undo covers the files Claude edited itself (not ones a command changed), works in any project — git or not — and is there for replies from this version on. Clearing or compacting a chat starts its undo history over.
