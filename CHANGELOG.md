@@ -4,6 +4,14 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.29.0
+- **New: keyboard shortcuts.** Get around Krystal without the mouse — every shortcut is Ctrl plus a key the left hand reaches without moving, so they work one-handed and on small keyboards without arrow keys:
+  - **Ctrl+Q / Ctrl+E** — back and forward through the chats you've opened, like a browser, even across projects. The mouse's back and forward buttons do the same.
+  - **Ctrl+Tab** — jump to the chat you were just in; press again to come back.
+  - **Ctrl+W** — the project list. **Ctrl+N** — a new chat. **Ctrl+S** — the list of shortcuts (Settings → **Shortcuts**).
+- **Stop now stops sub-agents too.** A helper agent Claude had sent off in the background could keep working after you pressed Stop. Stopping a chat now ends them as well.
+- **Fixed: the countdown bar on notification pop-ups.**
+
 ## v0.28.0
 - **New: a notification bell.** When something happens in a chat you aren't looking at — Claude finished, has a question for you, is waiting for your permission, or the reply failed — a small note slides in at the top right and the bell keeps it for you. Each one says which chat and which project; click it to go straight there, even if that means switching project. Opening the chat clears its notification, so the list is only ever what you haven't seen yet.
 - The notes that slide in can be switched off in Settings → General → **In-app notifications**; the bell keeps collecting either way.
