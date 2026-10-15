@@ -39,7 +39,8 @@
 
       /* ---- sidebar / nav ---- */
       'nav.projectLabel': 'project',
-      'nav.switchTitle': 'Switch project',
+      'nav.switchTitle': 'Switch project (Ctrl+W)',
+      'nav.newChatHint': 'Start a new chat (Ctrl+N)',
       'nav.newChat': '▸ new chat',
       'nav.newChatTitle': 'New chat',
 
@@ -602,6 +603,21 @@
       'settings.tab.usage': 'Usage',
       'settings.tab.activity': 'Activity',
       'settings.tab.remote': 'Remote',
+      'settings.tab.keys': 'Shortcuts',
+
+      /* ---- keyboard shortcuts (hotkeys.js) ---- */
+      'keys.back.name': 'Previous chat',
+      'keys.back.desc': 'Go back through the chats you opened, even across projects. The mouse’s back button does the same.',
+      'keys.forward.name': 'Next chat',
+      'keys.forward.desc': 'Go forward again after stepping back. The mouse’s forward button does the same.',
+      'keys.recent.name': 'Switch to the last chat',
+      'keys.recent.desc': 'Jump to the chat you were in just before this one; press again to come back.',
+      'keys.projects.name': 'Project list',
+      'keys.projects.desc': 'Leave this project and pick another one.',
+      'keys.newChat.name': 'New chat',
+      'keys.newChat.desc': 'Start a new chat in the open project.',
+      'keys.help.name': 'Show shortcuts',
+      'keys.help.desc': 'Open this list.',
 
       /* ---- remote access: hosting this Krystal on the network ---- */
       'remote.label': 'Remote',
@@ -880,7 +896,8 @@
 
       /* ---- sidebar / nav ---- */
       'nav.projectLabel': 'projekt',
-      'nav.switchTitle': 'Promijeni projekt',
+      'nav.switchTitle': 'Promijeni projekt (Ctrl+W)',
+      'nav.newChatHint': 'Započni novi razgovor (Ctrl+N)',
       'nav.newChat': '▸ novi razgovor',
       'nav.newChatTitle': 'Novi razgovor',
 
@@ -1439,6 +1456,21 @@
       'settings.tab.usage': 'Potrošnja',
       'settings.tab.activity': 'Aktivnost',
       'settings.tab.remote': 'Daljinski',
+      'settings.tab.keys': 'Prečaci',
+
+      /* ---- keyboard shortcuts (hotkeys.js) ---- */
+      'keys.back.name': 'Prethodni razgovor',
+      'keys.back.desc': 'Vrati se kroz prethodno otvorene razgovore, i preko granica projekata. Isto radi i tipka „natrag” na mišu.',
+      'keys.forward.name': 'Sljedeći razgovor',
+      'keys.forward.desc': 'Ponovno idi naprijed nakon povratka. Isto radi i tipka „naprijed” na mišu.',
+      'keys.recent.name': 'Prebaci na zadnji razgovor',
+      'keys.recent.desc': 'Skoči na razgovor otvoren prije ovoga; ponovni pritisak vraća natrag.',
+      'keys.projects.name': 'Popis projekata',
+      'keys.projects.desc': 'Napusti ovaj projekt i odaberi drugi.',
+      'keys.newChat.name': 'Novi razgovor',
+      'keys.newChat.desc': 'Započni novi razgovor u otvorenom projektu.',
+      'keys.help.name': 'Prikaži prečace',
+      'keys.help.desc': 'Otvori ovaj popis.',
 
       /* ---- remote access: hosting this Krystal on the network ---- */
       'remote.label': 'Daljinski',

@@ -117,6 +117,8 @@ const SETTINGS_TABS = [
   { id: 'usage', custom: 'usage' },
   // Custom-rendered tab: live background chat processes + a stop-all (renderRunsPanel).
   { id: 'activity', custom: 'runs' },
+  // Custom-rendered tab: the keyboard shortcuts (renderShortcutsPanel in hotkeys.js).
+  { id: 'keys', custom: 'keys' },
 ];
 let settingsTab = 'general';
 
@@ -450,6 +452,7 @@ function fillSettingsTab(panel, tabId) {
   if (active.custom === 'usage') { renderUsagePanel(panel); return; }   // usage.js
   if (active.custom === 'remote') { renderRemotePanel(panel); return; }   // remote.js
   if (active.custom === 'runs') { renderRunsPanel(panel); return; }
+  if (active.custom === 'keys') { renderShortcutsPanel(panel); return; }   // hotkeys.js
   for (const row of active.rows) panel.appendChild(buildSettingRow(row));
 }
 

@@ -1428,6 +1428,13 @@ async fn chat_turn(
 ///
 /// Either way the stream ends on its own; any text already produced is still
 /// persisted by the `chat` handler.
+///
+/// Stopping a chat stops the **sub-agents** it sent out, too. An interrupt only
+/// ends the turn: a background agent lives on in the warm process and keeps
+/// working after the chat says it stopped. So a chat with an agent still alive
+/// goes straight to the kill — the agents live inside the process, so that ends
+/// them, and the chat resumes its session on the next message (see
+/// `Session::has_agents` for why stopping them one by one isn't enough).
 #[tauri::command]
 pub async fn stop_chat(
     state: State<'_, AppState>,
@@ -1436,12 +1443,13 @@ pub async fn stop_chat(
 ) -> Result<Value, String> {
     let sess = state.sessions.get(&thread_id).await;
     if !force.unwrap_or(false) {
-        if let Some(sess) = &sess {
+        if let Some(sess) = sess.as_ref().filter(|s| !s.has_agents()) {
             if sess.interrupt().await.is_ok() {
                 return Ok(json!({ "ok": true, "killed": false }));
             }
         }
-        // Stdin is gone — the process is past asking; fall through and kill it.
+        // Stdin is gone — the process is past asking — or an agent is still out
+        // that an interrupt wouldn't reach; fall through and kill it.
     }
     // Retire first: the process is about to die, and the chat must not be handed a
     // corpse on its next message (it starts a fresh session instead).

@@ -11,7 +11,7 @@
  *   core → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
  *   localization → settings → remote → tasks → git → links → logo →
- *   notifications → boot
+ *   notifications → hotkeys → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the

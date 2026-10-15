@@ -344,14 +344,14 @@ function showToast(n) {
   card.addEventListener('mouseleave', () => {
     if (closed) return;
     card.classList.remove('held');
-    replayClass(bar, 'run');
+    replayClass(bar, 'draining');
     arm();
   });
   x.onclick = close;   // hides the toast only — the bell still has it
 
   toastClosers.set(n.id, close);
   host.prepend(card);
-  requestAnimationFrame(() => { card.classList.add('show'); bar.classList.add('run'); });
+  requestAnimationFrame(() => { card.classList.add('show'); bar.classList.add('draining'); });
   arm();
 }
 

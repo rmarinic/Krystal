@@ -1875,11 +1875,16 @@ struct BackgroundAgents {
     unreported: bool,
 }
 
+/// Is this task (a `task_started` event, or an entry of `background_tasks_changed`)
+/// a sub-agent? Background *shells* are tasks too — and a dev server never ends.
+pub fn is_agent_task(task: &Value) -> bool {
+    task.get("task_type").and_then(|v| v.as_str()).map_or(true, |t| t == "local_agent")
+}
+
 impl BackgroundAgents {
-    /// Background *shells* are tasks too, and a dev server never finishes — only
-    /// agents hold a turn open.
+    /// Only agents hold a turn open; a background shell may never finish.
     fn is_agent(task: &Value) -> bool {
-        task.get("task_type").and_then(|v| v.as_str()).map_or(true, |t| t == "local_agent")
+        is_agent_task(task)
     }
 
     fn started(&mut self, ev: &Value) {

@@ -128,6 +128,11 @@ pub struct Session {
     /// stream must still *close* when the process dies, and a second strong
     /// sender held here would keep it open forever.
     loopback: mpsc::WeakUnboundedSender<Value>,
+    /// Sub-agents alive in this process: task id -> launched in the background.
+    /// Watched by the stdout reader rather than by the turn, because a background
+    /// agent outlives the turn that launched it — an interrupt ends the turn and
+    /// leaves the agent working (see `has_agents`).
+    agents: Arc<StdMutex<HashMap<String, bool>>>,
 }
 
 impl Session {
@@ -171,6 +176,8 @@ impl Session {
         // draining stdout between turns, so nothing is lost in the gap and a
         // process that dies while idle is noticed before the next message.
         let exited_r = exited.clone();
+        let agents = Arc::new(StdMutex::new(HashMap::new()));
+        let agents_r = agents.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -179,6 +186,9 @@ impl Session {
                     continue;
                 }
                 if let Ok(v) = serde_json::from_str::<Value>(line) {
+                    if let Ok(mut map) = agents_r.lock() {
+                        track_agents(&mut map, &v);
+                    }
                     if tx.send(v).is_err() {
                         break; // nobody left to receive
                     }
@@ -213,6 +223,7 @@ impl Session {
             last_used: Arc::new(StdMutex::new(Instant::now())),
             permissions: Arc::new(StdMutex::new(HashMap::new())),
             loopback,
+            agents,
         })
     }
 
@@ -313,6 +324,17 @@ impl Session {
     /// `commands::stop_chat` does, on the second press.
     pub async fn interrupt(&self) -> Result<(), String> {
         self.write_line(&interrupt_request()).await
+    }
+
+    /// Is a sub-agent still alive in this process? If so an interrupt is not
+    /// enough to stop the chat: it ends the *turn*, and a background agent isn't
+    /// part of the turn any more — it carries on working (editing files, spending
+    /// tokens) in a session that looks stopped. Stopping it on its own
+    /// (`stop_task`) doesn't help either: the CLI then wakes Claude to answer
+    /// about the stopped agent, with nobody reading, and that stray answer would
+    /// end the chat's next turn early. So `commands::stop_chat` ends the process.
+    pub fn has_agents(&self) -> bool {
+        self.agents.lock().map(|m| !m.is_empty()).unwrap_or(false)
     }
 
     /// Park a permission prompt until somebody answers it. `request` is the
@@ -462,6 +484,61 @@ fn interrupt_request() -> Value {
     })
 }
 
+/// Keep `agents` (task id -> backgrounded) in step with one event off stdout.
+///
+/// A foreground agent is part of its turn, so it is gone once the turn's
+/// `result` goes by. A background one ends with its own `task_notification`
+/// (or a terminal `task_updated`), and `background_tasks_changed` lists every
+/// one still out — which also catches a foreground agent moved to the
+/// background, and settles any whose ending we never saw.
+fn track_agents(agents: &mut HashMap<String, bool>, ev: &Value) {
+    let str_of = |v: &Value, k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
+    match ev.get("type").and_then(|v| v.as_str()) {
+        Some("result") => agents.retain(|_, bg| *bg),
+        Some("system") => match ev.get("subtype").and_then(|v| v.as_str()) {
+            Some("task_started") if claude::is_agent_task(ev) => {
+                if let Some(id) = str_of(ev, "task_id").filter(|s| !s.is_empty()) {
+                    let bg = ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false);
+                    agents.insert(id, bg);
+                }
+            }
+            Some("task_notification") => {
+                if let Some(id) = str_of(ev, "task_id") {
+                    agents.remove(&id);
+                }
+            }
+            Some("task_updated") => {
+                let Some(id) = str_of(ev, "task_id") else { return };
+                let patch = ev.get("patch");
+                let status = patch.and_then(|p| p.get("status")).and_then(|v| v.as_str());
+                if matches!(status, Some("completed" | "failed" | "killed")) {
+                    agents.remove(&id);
+                } else if patch.and_then(|p| p.get("is_backgrounded")).and_then(|v| v.as_bool()) == Some(true) {
+                    if let Some(bg) = agents.get_mut(&id) {
+                        *bg = true;
+                    }
+                }
+            }
+            Some("background_tasks_changed") => {
+                let Some(tasks) = ev.get("tasks").and_then(|v| v.as_array()) else {
+                    return;
+                };
+                let live: std::collections::HashSet<String> = tasks
+                    .iter()
+                    .filter(|t| claude::is_agent_task(t))
+                    .filter_map(|t| str_of(t, "task_id"))
+                    .collect();
+                agents.retain(|id, bg| !*bg || live.contains(id));
+                for id in live {
+                    agents.insert(id, true);
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
 /// The warm sessions, one per chat. Held behind an async lock so the map can be
 /// consulted from a command handler without blocking the window's message loop.
 #[derive(Default)]
@@ -604,6 +681,62 @@ mod tests {
         assert_eq!(pool.take_note("t2"), None);
         assert_eq!(pool.take_note("t1").as_deref(), Some("files were rewound"));
         assert_eq!(pool.take_note("t1"), None);
+    }
+
+    fn sys(subtype: &str, extra: Value) -> Value {
+        let mut ev = json!({ "type": "system", "subtype": subtype });
+        for (k, v) in extra.as_object().unwrap() {
+            ev[k] = v.clone();
+        }
+        ev
+    }
+
+    #[test]
+    fn a_background_agent_is_tracked_past_the_end_of_its_turn() {
+        let mut agents = HashMap::new();
+        track_agents(&mut agents, &sys("task_started", json!({
+            "task_id": "bg", "is_backgrounded": true, "task_type": "local_agent" })));
+        track_agents(&mut agents, &sys("task_started", json!({
+            "task_id": "fg", "is_backgrounded": false, "task_type": "local_agent" })));
+        // A dev server is a task too, but not ours to stop.
+        track_agents(&mut agents, &sys("task_started", json!({
+            "task_id": "sh", "is_backgrounded": true, "task_type": "local_bash" })));
+        assert_eq!(agents.len(), 2);
+
+        // The turn ends (an interrupt, say): the foreground agent went with it,
+        // the background one is still out — which is what a stop must reach.
+        track_agents(&mut agents, &json!({ "type": "result", "is_error": true }));
+        assert_eq!(agents.keys().collect::<Vec<_>>(), vec!["bg"]);
+
+        track_agents(&mut agents, &sys("task_notification", json!({ "task_id": "bg", "status": "stopped" })));
+        assert!(agents.is_empty());
+    }
+
+    #[test]
+    fn an_agent_moved_to_the_background_outlives_the_turn() {
+        let mut agents = HashMap::new();
+        track_agents(&mut agents, &sys("task_started", json!({ "task_id": "a", "is_backgrounded": false })));
+        track_agents(&mut agents, &sys("task_updated", json!({ "task_id": "a", "patch": { "is_backgrounded": true } })));
+        track_agents(&mut agents, &json!({ "type": "result" }));
+        assert!(agents.contains_key("a"));
+        track_agents(&mut agents, &sys("task_updated", json!({ "task_id": "a", "patch": { "status": "killed" } })));
+        assert!(agents.is_empty());
+    }
+
+    #[test]
+    fn the_background_list_settles_agents_whose_end_we_missed() {
+        let mut agents = HashMap::new();
+        for id in ["a", "b"] {
+            track_agents(&mut agents, &sys("task_started", json!({ "task_id": id, "is_backgrounded": true })));
+        }
+        track_agents(&mut agents, &sys("background_tasks_changed", json!({ "tasks": [
+            { "task_id": "b", "task_type": "local_agent" },
+            { "task_id": "c", "task_type": "local_agent" },
+            { "task_id": "dev", "task_type": "local_bash" },
+        ] })));
+        let mut ids: Vec<_> = agents.keys().cloned().collect();
+        ids.sort();
+        assert_eq!(ids, vec!["b", "c"]);
     }
 
     #[test]
