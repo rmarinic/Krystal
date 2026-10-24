@@ -45,10 +45,6 @@ const SETTINGS_DEFAULTS = {
   notify: true,
   // A toast inside the app when something happens in a chat that isn't on screen.
   toasts: true,
-  // Claude-usage calibration caps (weighted tokens). null = not calibrated yet.
-  usageCap5h: null, usageCap7d: null,
-  // Weekly reset anchor read off Claude's /usage (local weekday 0=Sun..6=Sat + "HH:MM").
-  usageWeekResetDay: null, usageWeekResetTime: null,
 };
 
 let settings = (function loadSettings() {
@@ -113,7 +109,7 @@ const SETTINGS_TABS = [
   // Custom-rendered tab: start/stop remote access and show the pairing card
   // (renderRemotePanel in remote.js).
   { id: 'remote', custom: 'remote' },
-  // Custom-rendered tab (Claude usage + calibration); see renderUsagePanel in usage.js.
+  // Custom-rendered tab (Claude usage limits); see renderUsagePanel in usage.js.
   { id: 'usage', custom: 'usage' },
   // Custom-rendered tab: live background chat processes + a stop-all (renderRunsPanel).
   { id: 'activity', custom: 'runs' },

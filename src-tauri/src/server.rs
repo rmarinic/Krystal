@@ -999,9 +999,7 @@ async fn dispatch<R: Runtime>(
         "ci_run" => as_json(commands::ci_run(arg_str(a, "cwd"), arg_i64(a, "id")).await),
 
         /* ---- usage ---- */
-        "claude_usage" => as_json(commands::claude_usage(
-            a.get("weeklyReset").and_then(|v| v.as_f64()),
-        )),
+        "claude_usage" => as_json(commands::claude_usage().await),
 
         // Not exposed. `chat` and `run_app` stream, so they go through
         // `/api/stream`; everything else here is deliberately local-only.

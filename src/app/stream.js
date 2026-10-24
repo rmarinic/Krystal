@@ -208,6 +208,8 @@ function handleLiveEvent(live, msg) {
     // Saving bumped the chat's last-activity time — reload the list so it slides
     // up to the top now, as you send, rather than when the answer lands.
     if (state.view === 'threads') loadThreads();
+  } else if (event === 'rate_limit') {
+    if (typeof usageFromTurn === 'function') usageFromTurn(msg.windows);   // usage.js
   } else if (event === 'token') {
     live.events.push({ type: 'token', text: msg.text });
     if (live.typer) live.typer.push(msg.text);

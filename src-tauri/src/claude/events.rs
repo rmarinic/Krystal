@@ -62,6 +62,7 @@ impl TurnState {
             "stream_event" => self.on_stream_event(ev),
             "user" => self.on_tool_results(ev),
             "result" => self.on_result(ev),
+            "rate_limit_event" => self.on_rate_limit(ev),
             _ => {}
         }
     }
@@ -146,6 +147,16 @@ impl TurnState {
             if !t.is_empty() {
                 let _ = self.channel.send(json!({ "type": "suggestion", "text": t }));
             }
+        }
+    }
+
+    /// Where the plan's limits stand, straight from the server — the CLI sends
+    /// one with each API call. Forwarded for the usage chip (src/app/usage.js),
+    /// which would otherwise only know what the usage endpoint last said.
+    fn on_rate_limit(&mut self, ev: &Value) {
+        let windows = limits::event_windows(ev);
+        if !windows.is_empty() {
+            let _ = self.channel.send(json!({ "type": "rate_limit", "windows": windows }));
         }
     }
 

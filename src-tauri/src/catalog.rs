@@ -42,22 +42,9 @@ fn resolve_auth() -> Option<(&'static str, String, bool)> {
             return Some(("x-api-key", key, false));
         }
     }
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
-    let creds =
-        std::fs::read_to_string(Path::new(&home).join(".claude").join(".credentials.json")).ok()?;
-    let v: Value = serde_json::from_str(&creds).ok()?;
-    let oauth = v.get("claudeAiOauth")?;
-    let token = oauth.get("accessToken")?.as_str()?.to_string();
-    if token.is_empty() {
-        return None;
-    }
-    // Skip an obviously-expired token — the call would 401. The cache / static
+    // An expired token is skipped — the call would 401. The cache / static
     // list covers us until the CLI refreshes it on the next chat turn.
-    if let Some(exp) = oauth.get("expiresAt").and_then(|e| e.as_i64()) {
-        if exp <= chrono::Utc::now().timestamp_millis() {
-            return None;
-        }
-    }
+    let token = crate::claude::oauth_token().ok()?;
     Some(("authorization", format!("Bearer {token}"), true))
 }
 

@@ -429,7 +429,7 @@ const api = {
   rewindFiles(threadId, ckpt, dryRun) { return invoke('rewind_files', { threadId, ckpt, dryRun }); },
   openWebview(url) { return invoke('open_webview', { url }); },
   claudeMdExists(cwd) { return invoke('claude_md_exists', { cwd }); },
-  claudeUsage(weeklyReset) { return invoke('claude_usage', { weeklyReset }); },
+  claudeUsage() { return invoke('claude_usage'); },
   preflight() { return invoke('preflight'); },
   appVersion() { return invoke('app_version'); },
   readImage(path) { return invoke('read_image', { path }); },
