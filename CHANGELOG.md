@@ -4,6 +4,13 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.33.0
+- **Krystal has a face.** The big K in the logo is now a little crystal that reacts to what's going on. It watches you type, hops when you send, looks up while Claude thinks, nods each time a step finishes and moves its mouth as the reply is written. It smiles when the reply lands. It turns amber and holds still while Claude waits for your OK, turns red if something failed, glances at the bell when another chat has news, and dozes off if you leave it alone for a few minutes. Now and then it blinks or changes its smile, like a face does. Hover over it, or click it. With Extra effects off, it shows its mood without moving.
+- **Your real usage limits.** The usage meter now shows the same numbers as Claude's own usage settings: the 5-hour session, the week, and each model's weekly share. It stays current as you chat. The estimate, and the form for calibrating it, are gone.
+- **Branch from any message.** Every message now has a "Branch from here" button. From one of Claude's replies, the new chat keeps the conversation up to that reply. From one of your own messages, it stops just before it and puts that message back in the box, so you can reword it.
+- **Clearer steps.** A step where Claude loads extra tools now says which tools it loaded, instead of "No output captured."
+- **Small polish.** The soft sweep over a reply that just arrived no longer shows straight edges, and the sidebar's thin outline is no longer cut off at the top.
+
 ## v0.32.0
 - **Copy any message.** Every message, yours or Claude's, has a copy button next to delete when you hover over it. A reply copies just what Claude wrote, without the steps in between, and a task in the Tasks list can be copied too.
 - **A calmer sidebar.** The sidebar is now a panel of its own, floating beside the chat. Activity, Tasks, Artifacts and Remote at the bottom are quiet rows like the chat list above them, with plain counts, and nothing in them pulses anymore. The Insight button is gone.
