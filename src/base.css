@@ -104,7 +104,9 @@ aside.sidebar {
   /* The whole column is fixed-height; only the chat list inside scrolls, so the
      header, search and foot buttons (Insight/Activity/Tasks) stay pinned. */
   overflow: hidden;
-  background: var(--bg-elev);   /* a tone apart from the chat — no rule needed between them */
+  /* A tone apart from the chat, painted by the window's canvas (chat.css
+     body.app), which eases it into the chat's tone instead of stopping. */
+  background: transparent;
   padding: 22px 14px 24px;
   display: flex;
   flex-direction: column;

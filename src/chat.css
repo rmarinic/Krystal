@@ -8,6 +8,35 @@ body.app {
   grid-template-columns: var(--sidebar-w) 1fr;
   height: 100vh;
   overflow: hidden;
+  /* One canvas under the sidebar and the chat. The sidebar is a shade lighter,
+     and the two tones meet in a soft seam (--seam-w, eased like light falling
+     off) instead of a hard step, so there is no line for the eye to find. It
+     is anchored to the window (`fixed`), so every layer that has to be opaque
+     (the chat header, the composer's fade) paints the same seam in the same
+     place and the two halves read as one surface. */
+  --seam-w: 72px;
+  --seam-at: calc(var(--sidebar-w) - 16px);
+  --canvas: linear-gradient(90deg,
+    var(--bg-elev) var(--seam-at),
+    color-mix(in oklab, var(--bg-elev) 94%, var(--bg)) calc(var(--seam-at) + var(--seam-w) * .15),
+    color-mix(in oklab, var(--bg-elev) 72%, var(--bg)) calc(var(--seam-at) + var(--seam-w) * .35),
+    color-mix(in oklab, var(--bg-elev) 42%, var(--bg)) calc(var(--seam-at) + var(--seam-w) * .55),
+    color-mix(in oklab, var(--bg-elev) 16%, var(--bg)) calc(var(--seam-at) + var(--seam-w) * .75),
+    var(--bg) calc(var(--seam-at) + var(--seam-w)));
+  background: var(--canvas) fixed, var(--bg);
+}
+/* The fine, still grain covers the whole window, sidebar included: it breaks
+   up the banding a dark gradient (the seam, the living light) shows on most
+   screens, and one texture across both halves keeps them one material. Under
+   the overlays (z 100+), which bring their own dim. Extra effects only. */
+body.app::after {
+  content: ''; position: fixed; inset: 0; z-index: 90; pointer-events: none;
+  opacity: 0; transition: opacity .6s ease; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+body.app.fx-on::after { opacity: .045; }
+@media (prefers-reduced-motion: reduce) {
+  body.app::after { transition: none; }
 }
 
 /* ---- Krystal logo (ASCII K + sci-fi wordmark) ---- */
@@ -228,13 +257,14 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 .chat-header {
   flex: 0 0 auto; position: relative; z-index: 3;
   padding: 16px 28px 12px;
-  background: var(--bg);
+  background: var(--canvas) fixed, var(--bg);
 }
 /* The header sits on the same canvas as the feed; what scrolls up under it
  * fades out rather than meeting a hairline. */
 .chat-header::after {
   content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 22px;
-  background: linear-gradient(var(--bg), transparent); pointer-events: none;
+  background: var(--canvas) fixed, var(--bg); pointer-events: none;
+  -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent);
 }
 
 /* Language toggle — wears the .head-btn box so it matches the model picker and
@@ -810,7 +840,14 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .composer {
   flex: 0 0 auto; position: relative; z-index: 3;
   margin-top: -30px; padding: 30px 28px 14px;
-  background: linear-gradient(to top, var(--bg) 70%, transparent);
+}
+/* The canvas (with its seam) fading up behind the dock; a pseudo so the mask
+   doesn't take the dock with it. */
+.composer::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--canvas) fixed, var(--bg);
+  -webkit-mask-image: linear-gradient(to top, #000 70%, transparent);
+  mask-image: linear-gradient(to top, #000 70%, transparent);
 }
 /* ---- Composer dock: the input, with this chat's tools under it — one card ---- */
 .composer-dock {
@@ -1276,12 +1313,8 @@ body.fx-on .chat-light { opacity: 1; }
   left: 50%; width: 1250px; height: 150px; opacity: 0;
   background: radial-gradient(closest-side, rgba(108,199,142,0.15), rgba(108,199,142,0.04) 60%, transparent);
 }
-/* A fine, still grain: it breaks up the banding a dark green gradient shows on
-   most screens, and gives the light a little texture, like haze. */
-.cl-grain {
-  inset: 0; opacity: .045; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-}
+/* The grain the light needs lives on the whole window now (body.app::after),
+   so it doesn't stop at the sidebar's edge. */
 @media (prefers-reduced-motion: reduce) {
   .chat-light { transition: none; }
 }
@@ -2627,7 +2660,7 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 }
 
 @media (max-width: 720px) {
-  body.app { grid-template-columns: 1fr; }
+  body.app { grid-template-columns: 1fr; --canvas: linear-gradient(var(--bg), var(--bg)); }
   aside.sidebar { display: none; }
   .chat-header { padding: 14px 18px; }
   .composer { padding: 10px 18px 14px; }
