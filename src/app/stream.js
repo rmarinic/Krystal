@@ -115,6 +115,7 @@ function detachLiveTyper(live) {
   live.typer = null;
   live.bubble = null;
   lightRest();
+  mascotRest();
 }
 
 /* Single completion path for a live turn (done / error / exception). Idempotent.
@@ -136,6 +137,7 @@ function finishLive(live) {
     if (!stickToBottom && !atBottom() && !live.stopped) replyUnseen = true;
     syncReplyPill();
     lightRest();    // the lamp cools down (light.js)
+    mascotTurnEnded(live);   // the face lands it, or droops if it failed (mascot.js)
     syncComposer();
     refreshActivityPanel();
     refreshGit();   // Claude may have changed files this turn
@@ -225,6 +227,7 @@ function handleLiveEvent(live, msg) {
     trackTool(live.activity, msg, active, live);    // updates the Activity panel
     // A step handed its result back: one soft breath of light at its chip.
     if (live.bubble && msg.id) lightBeat(live.bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`));
+    if (live.bubble) mascotNod();                   // …and the face nods
     agentResultSeen(msg);                           // a sub-agent handed its report back
     if (live.typer) live.typer.setToolResult(msg);  // and folds output into the chip
   } else if (event === 'done') {
@@ -419,6 +422,7 @@ async function startTurn(threadId, msg, opts = {}) {
   // (attachLiveTyper shows the "thinking" indicator while events is empty)
   if (onScreen) {
     lightTurnBegan(opts.from);   // the lamp rises from where the message left
+    mascotTurnBegan();           // the face hops and looks up after it
     attachLiveTyper(live);
     if (opts.follow) glideFeed(); else maybeFollow();
   }

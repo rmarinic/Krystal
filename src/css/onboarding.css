@@ -28,7 +28,6 @@
 @keyframes update-pop { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 
 .update-logo { transform: scale(.7); margin-bottom: -6px; opacity: .95; }
-.update-logo .logo-k { color: var(--accent-3); }
 
 .update-spark { position: relative; isolation: isolate; font-size: 26px; line-height: 1; color: var(--accent-3); }
 
@@ -110,7 +109,6 @@
 }
 
 .onb-logo { transform: scale(.66); margin: -6px 0 -10px; opacity: .95; }
-.onb-logo .logo-k { color: var(--accent-3); }
 .onb-spark { font-size: 26px; line-height: 1; filter: drop-shadow(0 0 10px rgba(143,224,170,0.5)); }
 
 .onb-title {

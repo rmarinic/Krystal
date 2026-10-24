@@ -78,6 +78,7 @@ async function openThread(id, focusMid) {
   detachLiveTyper(state.live.get(state.activeId));
 
   state.activeId = id;
+  if (id !== prevId) mascotBlink();   // a new scene (mascot.js)
   if (typeof noteChatVisit === 'function') noteChatVisit(id);   // Ctrl+Q / Ctrl+E (hotkeys.js)
   // Looking at a chat settles whatever the bell was holding for it.
   if (typeof dropNotifications === 'function') dropNotifications(id);

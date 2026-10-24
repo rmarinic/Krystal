@@ -1,9 +1,10 @@
-/* logo.js       — RYSTAL wordmark split, logo intro + idle 'living logo' glow
-   Part of the chat frontend; shares one global scope (see core.js). */
-/* Split each "RYSTAL" wordmark into per-letter spans so the hover glow can
+/* logo.js       — KRYSTAL wordmark split, logo intro + idle 'living logo' glow
+   Part of the chat frontend; shares one global scope (see core.js). The crystal
+   face beside the wordmark is app/mascot.js. */
+/* Split each "KRYSTAL" wordmark into per-letter spans so the hover glow can
  * ripple across them (staggered animation-delay). Done once at startup. */
 function enhanceLogos() {
-  document.querySelectorAll('.logo-rest').forEach((el) => {
+  document.querySelectorAll('.logo-name').forEach((el) => {
     if (el.dataset.split) return;
     const text = el.textContent;
     el.textContent = '';
@@ -18,30 +19,20 @@ function enhanceLogos() {
   });
 }
 
-/* The block-art K only tiles into a clean letter in JetBrains Mono; until that
- * (remote) font loads, the box-drawing glyphs fall back to a system monospace
- * with different metrics and the K renders torn — most visible on the very first
- * paint (the project picker). So we keep `.logo-k` hidden via CSS until the mono
- * font is ready, then add `fonts-ready` to fade it in crisp. The timeout means we
- * never hang if the font can't load (e.g. offline). */
-function whenFontsReady(cb) {
-  const done = () => { document.body.classList.add('fonts-ready'); if (cb) cb(); };
-  if (!document.fonts || !document.fonts.load) { done(); return; }
-  let settled = false;
-  const finish = () => { if (settled) return; settled = true; done(); };
-  document.fonts.load('12px "JetBrains Mono"').then(finish, finish);
-  setTimeout(finish, 1500);
+/* One glow wave across a logo's wordmark. The `boot` class is stripped
+ * afterwards so the hover animation works normally. */
+function logoWave(logo) {
+  if (!logo) return;
+  logo.classList.remove('boot');
+  void logo.offsetWidth;            // reflow so the animation can restart
+  logo.classList.add('boot');
+  setTimeout(() => logo.classList.remove('boot'), 3400);
 }
 
-/* Play the logo intro (K pulse + RYSTAL glow wave) once. The `boot` class is
- * stripped afterwards so the hover animations work normally. */
+/* Play the logo intro once: the face wakes up (mascot.js) and the wordmark glows. */
 function playLogoIntro(root) {
-  (root || document).querySelectorAll('.logo').forEach((logo) => {
-    logo.classList.remove('boot');
-    void logo.offsetWidth;            // reflow so the animation can restart
-    logo.classList.add('boot');
-    setTimeout(() => logo.classList.remove('boot'), 3400);
-  });
+  (root || document).querySelectorAll('.logo').forEach(logoWave);
+  mascotGreet();
 }
 
 /* "Living logo": now and then, on an irregular cadence, replay the glow on the
@@ -51,12 +42,7 @@ let logoLifeTimer = null;
 function triggerLogoGlow() {
   if (document.hidden) return;        // don't animate a hidden window
   const sel = state.project ? 'aside.sidebar .logo' : '.project-logo';
-  const logo = document.querySelector(sel);
-  if (!logo) return;
-  logo.classList.remove('boot');
-  void logo.offsetWidth;
-  logo.classList.add('boot');
-  setTimeout(() => logo.classList.remove('boot'), 3400);
+  logoWave(document.querySelector(sel));
 }
 function scheduleLogoLife() {
   clearTimeout(logoLifeTimer);
@@ -66,9 +52,10 @@ function scheduleLogoLife() {
 }
 
 /* The umbrella "Extra effects" switch (stored under the legacy `logoLife` key)
- * gates every ambient touch — the living logo AND the living light behind the chat (and
- * whatever subtle effects we add next). A single body class drives the CSS. */
+ * gates every ambient touch — the living logo, the living light behind the chat,
+ * the face's movement (and whatever subtle effects we add next). A single body
+ * class drives the CSS. */
 function applyExtraEffects() {
   document.body.classList.toggle('fx-on', settingOn('logoLife'));
+  mascotWake();   // the face settles into (or out of) its still version
 }
-

@@ -24,31 +24,13 @@ body.app.fx-on::after { opacity: .045; }
   body.app::after { transition: none; }
 }
 
-/* ---- Krystal logo (ASCII K + sci-fi wordmark) ---- */
+/* ---- Krystal logo (the crystal face + sci-fi wordmark) ----
+ * The face is css/mascot.css + app/mascot.js; this is the wordmark beside it. */
 
 .logo { display: flex; align-items: center; gap: 12px; }
 
-.logo-k {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.02;
-  letter-spacing: -1px;
-  color: var(--accent-2);
-  background: linear-gradient(160deg, var(--accent-3), var(--accent-2) 55%, #3f8c63);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 10px rgba(108,199,142,0.45));
-  user-select: none;
-  /* Stay hidden until JetBrains Mono is loaded, so the box-art K is never painted
-   * with a fallback monospace (which renders it torn). JS adds `fonts-ready`. */
-  opacity: 0;
-}
-body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
-
 .logo-word { display: flex; flex-direction: column; gap: 4px; }
-.logo-rest {
+.logo-name {
   font-family: "Orbitron", var(--sans);
   font-weight: 900;
   font-size: 19px;
@@ -66,38 +48,20 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 }
 
 /* ---- Logo hover delight ----
- * The ASCII K pulses with a green glow; RYSTAL lights up letter-by-letter in a
- * travelling wave (each .ltr span carries a staggered animation-delay set in JS). */
-.logo-k {
-  cursor: pointer;
-  transition: filter .4s ease, transform .4s ease;
-}
-.logo-k:hover { animation: k-pulse 1.5s ease-in-out infinite; }
-@keyframes k-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 8px rgba(108,199,142,0.45));
-    transform: scale(1);
-  }
-  50% {
-    filter: drop-shadow(0 0 16px rgba(108,199,142,0.95)) drop-shadow(0 0 30px rgba(108,199,142,0.45));
-    transform: scale(1.045);
-  }
-}
-
-.logo-rest { cursor: pointer; }
-.logo-rest .ltr {
+ * KRYSTAL lights up letter-by-letter in a travelling wave (each .ltr span
+ * carries a staggered animation-delay set in JS). */
+.logo-name { cursor: pointer; }
+.logo-name .ltr {
   display: inline-block;
   transition: color .25s ease, text-shadow .25s ease, transform .25s ease;
 }
 /* Two travelling waves per cycle (the keyframe pulses twice); with the
- * per-letter stagger this reads as a glow rolling across RYSTAL, then again. */
-.logo-rest:hover .ltr { animation: ltr-glow 1.7s ease-in-out infinite; }
+ * per-letter stagger this reads as a glow rolling across KRYSTAL, then again. */
+.logo-name:hover .ltr { animation: ltr-glow 1.7s ease-in-out infinite; }
 
-/* Boot intro: the same effects play out once on launch (and again when the
- * sidebar first appears). The `boot` class is removed by JS afterwards so the
- * hover animations take over cleanly. */
-.logo.boot .logo-k { animation: k-pulse 1.5s ease-in-out 2; }
-.logo.boot .logo-rest .ltr { animation: ltr-glow 1.7s ease-in-out 1; }
+/* One wave: the boot intro, a reply landing, the living logo (app/logo.js adds
+ * `boot` and takes it off again so the hover animation works normally). */
+.logo.boot .logo-name .ltr { animation: ltr-glow 1.7s ease-in-out 1; }
 
 @keyframes ltr-glow {
   0%, 100%, 40%, 80% {
@@ -113,10 +77,8 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logo-k:hover { animation: none; filter: drop-shadow(0 0 16px rgba(108,199,142,0.85)); }
-  .logo-rest:hover .ltr { animation: none; color: var(--accent-3); text-shadow: 0 0 16px rgba(108,199,142,0.8); }
-  .logo.boot .logo-k, .logo.boot .logo-rest .ltr { animation: none; }
-  body.fonts-ready .logo-k { transition: none; }   /* show crisp, no fade */
+  .logo-name:hover .ltr { animation: none; color: var(--accent-3); text-shadow: 0 0 16px rgba(108,199,142,0.8); }
+  .logo.boot .logo-name .ltr { animation: none; }
 }
 
 /* ---- The icon set (app/icons.js) ----

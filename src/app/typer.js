@@ -93,6 +93,7 @@ function makeTyper(bubble) {
       pending = pending.slice(n);
       paintText();
       lightWords(n);   // the words being revealed feed the lamp (light.js)
+      mascotWords(chunk);   // …and move the face's mouth (mascot.js)
     }
     if ((finished || errMsg) && !pending) {
       closeTextBlock();
@@ -132,11 +133,13 @@ function makeTyper(bubble) {
   return {
     thinking() {
       lightMode('thinking');
+      mascotMode('thinking');
       if (!thinkEl && !textEl && !chipEl) { thinkEl = renderThinkingChip(); bubble.appendChild(thinkEl); }
       maybeFollow();
     },
     push(t, instant) {
       lightMode('streaming');
+      mascotMode('streaming');
       clearThinking();
       if (!textEl) openTextBlock();   // text after a chip starts a fresh block
       if (instant) {                  // replay path: reveal buffered backlog without re-typing
@@ -150,6 +153,7 @@ function makeTyper(bubble) {
     },
     setTool(seg) {
       lightMode('working');
+      mascotMode('working');
       clearThinking();
       const name = seg.name || '';
       // Rich tools (AskUserQuestion, ExitPlanMode) arrive with their payload on

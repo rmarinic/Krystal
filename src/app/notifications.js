@@ -104,6 +104,7 @@ function turnEndKind(live) {
 async function notifyChat(live, kind, text, title) {
   const threadId = live.threadId;
   if (threadId === state.activeId) return;
+  if (typeof mascotGlance === 'function') mascotGlance(kind);   // the face glances at the bell
   let cwd = live.cwd;
   let name = title || live.title;
   if (!cwd) {

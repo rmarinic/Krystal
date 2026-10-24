@@ -47,6 +47,7 @@ function autosize() {
 els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
   lightKey();                                   // the floor warms as you type (light.js)
+  mascotKey();                                  // the face watches the caret (mascot.js)
   saveDraft(state.activeId, els.input.value);   // keep this chat's draft current
   if (typeof syncQueueBtn === 'function') syncQueueBtn();         // something to queue mid-turn?
   if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete

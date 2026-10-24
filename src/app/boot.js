@@ -4,7 +4,8 @@
 /* Every launch starts on the project picker — you choose a project to enter. */
 
 enhanceLogos();
-whenFontsReady(() => playLogoIntro());   // reveal + intro once the mono font is loaded (crisp K)
+applyExtraEffects();   // reflect the Extra effects setting first: the intro's movement depends on it
+playLogoIntro();   // the face wakes up, the wordmark glows once
 updateLangBtn();
 // Tell the backend the current UI language so it can pick the reply-language
 // tie-break for messages too short to identify (never an override).
@@ -12,7 +13,6 @@ api.setUiLanguage(window.I18N.getLang()).catch(() => {});
 api.setSuggestions(settingOn('promptSuggestions')).catch(() => {});
 updateSettingsBtn();
 scheduleLogoLife();
-applyExtraEffects();   // reflect the Extra effects setting onto the chat light at boot
 api.discordSetShareName(settingOn('discordShareName')).catch(() => {});
 if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();
