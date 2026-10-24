@@ -95,8 +95,9 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   over your own Wi-Fi. It's off until you turn it on, a new six-digit code is issued each time,
   and Krystal checks the Windows Firewall and offers to fix it.
 - **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
-  search through every message). Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S
-  lists every shortcut.
+  search through every message). Ctrl+F finds words in the open chat, accents or not, and steps
+  through every match. Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S lists every
+  shortcut.
 - **Usage at a glance.** A context ring shows how full the chat is, and beside it your plan's
   limits: the 5-hour session, the week, and each model's weekly share.
 

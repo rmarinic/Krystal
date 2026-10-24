@@ -12,7 +12,7 @@
  *   describe → activity → agents → search → messages → review → artifacts → livemd →
  *   composer → feed → typer → stream → permissions → mentions → skills → attachments → queue →
  *   wizard → localization → settings → header → tasks → git → run → links → logo → usage →
- *   orchestrator → pins → remote → notifications → palette → hotkeys → boot
+ *   orchestrator → pins → remote → notifications → palette → find → hotkeys → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles and
  * the wire (`invoke`, local or remote), the `$` query helper, `tr` (i18n

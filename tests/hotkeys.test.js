@@ -29,7 +29,7 @@ function memoryStorage() {
 
 function load(storage) {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'hotkeys.js'), 'utf8');
-  const calls = { entered: [], opened: [], picker: 0, newChat: 0, settings: [], palette: 0 };
+  const calls = { entered: [], opened: [], picker: 0, newChat: 0, settings: [], palette: 0, find: 0 };
   const gone = new Set();
   const ctx = {
     els: { feed: {} },
@@ -45,6 +45,7 @@ function load(storage) {
     startNewChat: () => { calls.newChat++; },
     openSettings: (tab) => { calls.settings.push(tab); },
     togglePalette: () => { calls.palette++; },
+    openFind: () => { calls.find++; },
     console,
   };
   const H = vm.runInNewContext(
@@ -202,6 +203,7 @@ check('each combination maps to its shortcut, and nothing else does', () => {
   eq(H.shortcutFor(k('KeyN', ctrl)), 'newChat');
   eq(H.shortcutFor(k('KeyS', ctrl)), 'help');
   eq(H.shortcutFor(k('KeyK', ctrl)), 'palette');
+  eq(H.shortcutFor(k('KeyF', ctrl)), 'find');
   eq(H.shortcutFor(k('KeyQ')), null, 'typing a q');
   eq(H.shortcutFor(k('KeyA', ctrl)), null, 'select all in the composer');
   eq(H.shortcutFor(k('KeyQ', { ctrlKey: true, altKey: true })), null, 'Ctrl+Alt is AltGr on Croatian keyboards');
@@ -218,6 +220,8 @@ check('project-only shortcuts do nothing on the project list', () => {
   eq(calls.settings.join(), 'keys', 'the list opens anywhere');
   H.runShortcut('palette');
   eq(calls.palette, 1, 'so does the palette');
+  H.runShortcut('find');
+  eq(calls.find, 1, 'Ctrl+F asks find.js (which stays shut with no chat open)');
 });
 
 (async () => {

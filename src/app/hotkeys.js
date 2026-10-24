@@ -130,6 +130,7 @@ async function toggleRecentChat() {
  * as-is; the wording lives in i18n (`keys.*`). */
 const SHORTCUTS = [
   { id: 'palette',  code: 'KeyK', keys: ['Ctrl', 'K'] },
+  { id: 'find',     code: 'KeyF', keys: ['Ctrl', 'F'] },
   { id: 'back',     code: 'KeyQ', keys: ['Ctrl', 'Q'] },
   { id: 'forward',  code: 'KeyE', keys: ['Ctrl', 'E'] },
   { id: 'recent',   code: 'Tab',  keys: ['Ctrl', 'Tab'] },
@@ -147,6 +148,7 @@ function shortcutsBlocked() {
 
 function runShortcut(id) {
   if (id === 'palette') togglePalette();   // palette.js (it closes itself on a second Ctrl+K)
+  else if (id === 'find') openFind();     // find.js (a second Ctrl+F selects what's typed)
   else if (id === 'back') stepChatHistory(-1);
   else if (id === 'forward') stepChatHistory(1);
   else if (id === 'recent') toggleRecentChat();

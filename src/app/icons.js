@@ -65,6 +65,9 @@ const ICON_PATHS = {
   command: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
   arrowRight: '<path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>',
   arrowDown: '<path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/>',
+  chevronUp: '<path d="M18 15l-6-6-6 6"/>',
+  chevronDown: '<path d="M6 9l6 6 6-6"/>',
+  close: '<path d="M18 6L6 18"/><path d="M6 6l12 12"/>',
   swap: '<path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/>',
   play: '<path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"/>',
 };

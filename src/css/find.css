@@ -1,0 +1,60 @@
+/* ---- Find in chat (app/find.js) ----
+   A small bar floating over the top of the transcript, at the right edge of the
+   reading column. Matches are painted with ::highlight() — nothing is spliced
+   into the text — the current one brighter; a jump to it lands with one soft,
+   edgeless light behind the words (.find-flash) that fades on its own. */
+.find-bar {
+  position: absolute; z-index: 5;
+  right: max(28px, calc((100% - var(--read-w)) / 2));
+  width: min(360px, calc(100% - 56px));
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 5px 4px 12px; border-radius: 12px;
+  color: var(--fg-dim);
+  background: var(--bg-elev);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+.find-bar[hidden] { display: none; }
+.find-bar.in { animation: find-in .18s ease; }
+.find-bar.out { opacity: 0; transition: opacity .14s ease; }
+@keyframes find-in { from { opacity: 0; transform: translateY(-6px); } }
+.find-bar > .ui-ico { width: 15px; height: 15px; flex: none; margin-right: 4px; }
+.find-q {
+  flex: 1; min-width: 0; padding: 6px 2px;
+  border: none; outline: none; background: transparent;
+  font: inherit; font-size: 13.5px; color: var(--fg);
+}
+.find-q::placeholder { color: var(--fg-dim); }
+.find-count {
+  flex: none; padding: 0 6px; white-space: nowrap;
+  font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+}
+.find-bar.none .find-count { color: var(--fg-muted); }
+.find-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 7px;
+  background: transparent; color: var(--fg-muted); cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.find-btn:hover:not(:disabled) { background: rgba(255,255,255,0.07); color: var(--fg); }
+.find-btn:disabled { opacity: 0.35; cursor: default; }
+.find-btn .ui-ico { width: 15px; height: 15px; }
+
+::highlight(find-hit) { background-color: rgba(108,199,142,0.22); color: inherit; }
+::highlight(find-now) { background-color: rgba(143,224,170,0.62); color: #06100a; }
+
+/* Behind the text (z-index -1 inside the feed's own stacking context), in the
+   feed's coordinates so it scrolls with the words. Opacity only: catch fast,
+   release slow. */
+.find-flash {
+  position: absolute; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(143,224,170,0.30), rgba(143,224,170,0));
+  opacity: 0;
+  animation: find-flash .9s cubic-bezier(.2,.7,.3,1);
+}
+@keyframes find-flash { 14% { opacity: 1; } 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .find-bar.in { animation: none; }
+  .find-flash { display: none; }
+}

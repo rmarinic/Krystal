@@ -751,6 +751,14 @@
       'keys.palette.desc': 'Jump to any chat or project, or run an action, by typing a few letters.',
       'keys.help.name': 'Show shortcuts',
       'keys.help.desc': 'Open this list.',
+      'keys.find.name': 'Find in chat',
+      'keys.find.desc': 'Search the open conversation. Enter and Shift+Enter (or F3) step through the matches, Esc closes.',
+      'find.placeholder': 'Find in this chat',
+      'find.count': '{n} of {total}',
+      'find.none': 'No matches',
+      'find.prev': 'Previous match (Shift+Enter)',
+      'find.next': 'Next match (Enter)',
+      'find.close': 'Close (Esc)',
 
       /* ---- remote access: hosting this Krystal on the network ---- */
       'remote.label': 'Remote',
@@ -1734,6 +1742,14 @@
       'keys.palette.desc': 'Skoči na bilo koji razgovor ili projekt, ili pokreni radnju, upisivanjem nekoliko slova.',
       'keys.help.name': 'Prikaži prečace',
       'keys.help.desc': 'Otvori ovaj popis.',
+      'keys.find.name': 'Traži u razgovoru',
+      'keys.find.desc': 'Pretraži otvoreni razgovor. Enter i Shift+Enter (ili F3) prelaze s rezultata na rezultat, Esc zatvara.',
+      'find.placeholder': 'Traži u ovom razgovoru',
+      'find.count': '{n} od {total}',
+      'find.none': 'Nema rezultata',
+      'find.prev': 'Prethodni rezultat (Shift+Enter)',
+      'find.next': 'Sljedeći rezultat (Enter)',
+      'find.close': 'Zatvori (Esc)',
 
       /* ---- remote access: hosting this Krystal on the network ---- */
       'remote.label': 'Daljinski',
