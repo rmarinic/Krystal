@@ -1,0 +1,605 @@
+/* transcript.css — the chat column: messages, action chips and their details, the `$` run,
+ * star / delete / copy, the empty state.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ---- Chat column ---- */
+
+.chat { display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+
+.chat-header {
+  flex: 0 0 auto; position: relative; z-index: 3;
+  padding: 16px 28px 12px;
+  background: var(--bg);
+}
+/* The header sits on the same canvas as the feed; what scrolls up under it
+ * fades out rather than meeting a hairline. */
+.chat-header::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 22px;
+  background: linear-gradient(var(--bg), transparent); pointer-events: none;
+}
+
+/* Language toggle — wears the .head-btn box so it matches the model picker and
+ * Edit-instructions exactly; this only lays out the flag + language code. */
+.lang-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.lang-toggle .flag {
+  width: 19px; height: 13px; border-radius: 2px; display: block; flex: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.28);
+}
+.lang-toggle .lang-code {
+  font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+}
+/* On the project picker (no header) it floats in the top-right of the screen. */
+.project-lang {
+  position: absolute; top: 18px; right: 20px; z-index: 5;
+  background: var(--bg-card);
+}
+
+/* Settings (gear) toggle — same .head-btn box, just centres the glyph. */
+.settings-toggle { display: inline-flex; align-items: center; justify-content: center; }
+.settings-toggle svg { display: block; }
+/* On the project picker it floats just left of the language toggle. */
+.project-settings {
+  position: absolute; top: 18px; right: 92px; z-index: 5;
+  background: var(--bg-card);
+}
+.chat-title {
+  font-size: 15px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-cwd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.feed {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 30px 0 36px;   /* the bottom slack scrolls under the floating dock */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* The reading column. Text lines stay a comfortable length (--read-w), and
+ * the composer dock below lines up with them. */
+.msg { width: 100%; max-width: calc(var(--read-w) + 56px); padding: 0 28px; margin-bottom: 26px; }
+
+/* Your message: a compact bubble on the right — who said what reads at a
+ * glance, with no label. Its row (the "You" label, the delete button) moves
+ * under the bubble and shows only the button, on hover. */
+.msg.user { display: flex; flex-direction: column; align-items: flex-end; }
+.msg.user .bubble {
+  max-width: 82%;
+  background: #17221c;
+  border-radius: 18px 18px 6px 18px;
+  padding: 10px 16px;
+  font-size: 14.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 8px 20px -14px rgba(0,0,0,0.9);
+}
+.msg.user .role { order: 2; font-size: 0; min-height: 16px; margin: 3px 4px 0; }
+.msg .role {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.10em; color: var(--fg-dim); margin-bottom: 7px;
+  display: flex; align-items: center; gap: 8px;
+}
+/* Claude's reply sits on the page like a document: no card, a small mark and
+ * its name above it. */
+.msg.assistant .role {
+  color: var(--fg); font-size: 13px; text-transform: none; letter-spacing: 0;
+  margin-bottom: 9px;
+}
+.msg.assistant .role::before {
+  content: 'K'; flex: none; width: 20px; height: 20px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 800; color: #0a0f0b;
+  background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+}
+.msg.assistant.shell .role::before { content: '$'; background: #56c7d6; }
+
+/* A turn the app never finished (closed mid-answer). What had been written is
+   kept and quietly labelled, so coming back you can see where it stopped. */
+.msg-cut {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 3px 9px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--warn); background: var(--warn-bg);
+  border: 1px solid var(--warn-bd); border-radius: 999px;
+  animation: cut-in .22s ease both;
+}
+.msg-cut::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; opacity: .8;
+}
+@keyframes cut-in { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .msg-cut { animation: none; }
+}
+
+/* assistant message → full htmlcast answer card (reuse .response-body rules) */
+.msg.assistant .bubble {
+  padding: 0 0 0 29px;   /* text starts under the name, past the mark */
+  font-size: 15px;
+  line-height: 1.68;
+}
+.msg.assistant .bubble :first-child { margin-top: 0; }
+.msg.assistant .bubble :last-child { margin-bottom: 0; }
+
+/* the assistant bubble inherits htmlcast prose styling */
+.msg.assistant .bubble h1, .msg.assistant .bubble h2,
+.msg.assistant .bubble h3, .msg.assistant .bubble h4 {
+  margin: 20px 0 8px; font-weight: 600; line-height: 1.3; color: var(--fg);
+}
+.msg.assistant .bubble h1 { font-size: 20px; }
+.msg.assistant .bubble h2 { font-size: 17px; }
+.msg.assistant .bubble h3 { font-size: 15px; color: var(--accent-3); }
+.msg.assistant .bubble p { margin: 10px 0; }
+.msg.assistant .bubble ul, .msg.assistant .bubble ol { margin: 10px 0; padding-left: 24px; }
+.msg.assistant .bubble li { margin: 4px 0; }
+.msg.assistant .bubble a { color: var(--accent-2); text-decoration: none; border-bottom: 1px dashed rgba(108,199,142,0.4); }
+.msg.assistant .bubble a:hover { border-bottom-style: solid; }
+.msg.assistant .bubble strong { color: var(--fg); font-weight: 600; }
+.msg.assistant .bubble code {
+  font-family: var(--mono); font-size: 13px; background: rgba(255,255,255,0.06);
+  border-radius: 4px; padding: 1px 6px; color: var(--fg);
+}
+.msg.assistant .bubble pre {
+  position: relative;
+  margin: 14px 0; background: var(--code-bg);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.045);
+  border-radius: 10px; overflow-x: auto;
+}
+.msg.assistant .bubble pre code { display: block; padding: 14px 16px; background: transparent; border: none; }
+
+/* Hover "copy" button on a code block. Sits top-right, fades in on hover so it
+   stays out of the way while reading; flips to a check on a successful copy. */
+.code-copy {
+  position: absolute; top: 7px; right: 7px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  color: var(--fg-dim); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity .15s ease, transform .15s ease, color .15s ease, border-color .15s ease;
+}
+pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
+.code-copy:hover { color: var(--fg); border-color: var(--border-2); }
+.code-copy.copied { color: var(--accent-3); border-color: rgba(108,199,142,0.4); opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .code-copy { transition: opacity .15s ease; transform: none; }
+}
+.msg.assistant .bubble table { border-collapse: collapse; margin: 14px 0; width: 100%; }
+.msg.assistant .bubble th, .msg.assistant .bubble td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.msg.assistant .bubble th { background: var(--bg-elev); font-weight: 600; }
+
+/* file chips on a user message */
+.msg .file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.file-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--accent-3); background: rgba(108,199,142,0.08);
+  border: 1px solid rgba(108,199,142,0.30); border-radius: 999px;
+  padding: 3px 10px; max-width: 320px;
+}
+.file-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip .x { cursor: pointer; color: var(--fg-dim); font-weight: 700; }
+.file-chip .x:hover { color: var(--warn); }
+/* Image attachments carry a small thumbnail that fades in once decoded. */
+.file-chip.img { padding-left: 3px; }
+.file-chip.img img {
+  width: 24px; height: 24px; border-radius: 6px; object-fit: cover;
+  display: block; opacity: 0; transition: opacity .2s ease;
+}
+.file-chip.img.loaded img { opacity: 1; cursor: zoom-in; }
+@media (prefers-reduced-motion: reduce) { .file-chip.img img { transition: none; } }
+
+/* ---- Image lightbox: view any thumbnail full-size ---- */
+.lightbox-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px; background: rgba(6, 8, 12, 0.82);
+  opacity: 0; transition: opacity .19s ease;
+}
+/* `display: flex` above overrides the UA `[hidden]` rule, so the overlay would
+   stay rendered full-screen and swallow every click while "closed". Keep it
+   truly gone until opened. */
+.lightbox-overlay[hidden] { display: none; }
+.lightbox-overlay.on { opacity: 1; }
+.lightbox-overlay.closing { opacity: 0; }
+.lightbox-figure {
+  margin: 0; max-width: 100%; max-height: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  transform: scale(.97); transition: transform .19s cubic-bezier(.2,.9,.3,1.1);
+}
+.lightbox-overlay.on .lightbox-figure { transform: scale(1); }
+.lightbox-figure img {
+  max-width: 100%; max-height: calc(100vh - 130px);
+  object-fit: contain; border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55); cursor: default;
+}
+.lightbox-cap {
+  font-size: 12px; color: rgba(255, 255, 255, 0.72);
+  font-family: var(--mono); max-width: 80ch; text-align: center; word-break: break-all;
+}
+.lightbox-x {
+  position: absolute; top: 16px; right: 20px;
+  width: 38px; height: 38px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
+  transition: background .14s, transform .14s;
+}
+.lightbox-x:hover { background: rgba(255, 255, 255, 0.18); transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-overlay, .lightbox-figure, .lightbox-x { transition: opacity .01s; }
+  .lightbox-figure { transform: none; }
+}
+
+/* ---- Assistant transcript: text blocks + action chips ---- */
+
+/* Each text block is its own line/paragraph group, so narration like
+   "Let me do X" and "Let me do Y" never fuse onto one line. */
+.msg.assistant .bubble .seg-text { margin: 0; }
+.msg.assistant .bubble .seg-text + .seg-text { margin-top: 10px; }
+.msg.assistant .bubble .seg-text :first-child { margin-top: 0; }
+.msg.assistant .bubble .seg-text :last-child { margin-bottom: 0; }
+
+/* An action chip: a persisted, on-its-own-line record of one tool action. */
+.action-chip {
+  width: fit-content; max-width: 100%;
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted);
+  background: rgba(255,255,255,0.04); border: 1px solid transparent;
+  border-radius: 999px; margin: 9px 0; overflow: hidden;
+}
+.action-chip .chip-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px; cursor: help;
+}
+.action-chip.expandable .chip-row { cursor: pointer; }
+.action-chip.expandable { transition: border-color .15s, translate .2s var(--ease-out); }   /* stays a small pill when closed; radius snaps (no morph) */
+.action-chip.expandable.open { width: 100%; border-radius: 13px; }
+.action-chip.expandable:hover { border-color: rgba(108,199,142,0.35); background: rgba(255,255,255,0.06); }
+.action-chip.expandable:not(.open):hover { translate: 0 -1px; }
+.action-chip .chip-ico { font-size: 12px; line-height: 1; flex: 0 0 auto; }
+.action-chip .chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-chip .chip-caret {
+  flex: 0 0 auto; margin-left: auto; padding-left: 6px;
+  font-size: 9px; color: var(--fg-dim);
+  transition: color .15s, transform .2s ease;
+}
+.action-chip.expandable:hover .chip-caret { color: var(--accent-3); }
+.action-chip.open .chip-caret { transform: rotate(90deg); }   /* ▸ tips down to ▾ */
+
+/* Status glyph: a spinning ring while the action is live, a check once it's done
+ * (drawn on the spot when it finishes live — see motion.css). */
+.action-chip .chip-status { flex: 0 0 auto; }
+.action-chip .chip-tick { display: none; }
+.action-chip.working .chip-status {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid rgba(108,199,142,0.30); border-top-color: var(--accent-2);
+  animation: hint-spin .7s linear infinite;
+}
+.action-chip.done .chip-status { display: inline-flex; width: 12px; height: 12px; }
+.action-chip.done .chip-tick {
+  display: block; width: 12px; height: 12px; fill: none;
+  stroke: var(--accent-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 11;
+}
+/* A tool that failed earns no check: it settles to a warm dot instead. */
+.action-chip.done.error .chip-tick { display: none; }
+.action-chip.done.error .chip-status {
+  width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--warn);
+}
+
+/* The live action glows gently so it's obvious work is happening, not frozen. */
+.action-chip.working {
+  color: var(--accent-3); border-color: rgba(108,199,142,0.45);
+  background: rgba(108,199,142,0.07);
+  animation: chip-pulse 1.6s ease-in-out infinite;
+}
+.action-chip.working .chip-label { animation: chip-fade 1.6s ease-in-out infinite; }
+@keyframes chip-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); }
+  50%     { box-shadow: 0 0 16px 0 rgba(108,199,142,0.22); }
+}
+@keyframes chip-fade { 0%,100% { opacity: 1; } 50% { opacity: 0.62; } }
+
+.action-chip.error { color: var(--warn); border-color: var(--warn-bd); background: transparent; }
+
+/* ---- Expandable chip details: diff / written content / tool output ---- */
+/* Closed, the panel is `hidden` (display:none) so the chip stays a clean small
+ * pill and never measures the hidden content's width. toggleChip animates
+ * max-height 0 ↔ the content's height for a subtle, gentle open/close. */
+.action-chip .chip-details {
+  border-top: 1px solid var(--border); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  overflow: hidden; max-height: 0; opacity: 0;
+  transition: max-height .2s ease, opacity .16s ease;
+}
+.action-chip.open .chip-details { opacity: 1; }
+.action-chip .chip-details[hidden] { display: none; }
+.action-chip .chip-detail-line {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted);
+  word-break: break-all; line-height: 1.5;
+}
+.action-chip .chip-pre {
+  margin: 0; max-height: 280px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: var(--fg-muted); white-space: pre-wrap; word-break: break-word;
+}
+.action-chip .chip-pre.out { color: var(--fg-dim); }
+.action-chip .chip-pre.err { color: var(--warn); border-color: var(--warn-bd); }
+.action-chip .chip-out-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-dim); font-weight: 600;
+}
+.action-chip .chip-pending { font-size: 11.5px; color: var(--fg-dim); font-style: italic; }
+
+/* A file the tool touched: its path, then Show in folder / Open. */
+.action-chip .chip-file { display: flex; flex-direction: column; gap: 6px; }
+.action-chip .chip-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.action-chip .chip-act {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 0; border-radius: 999px; cursor: pointer;
+  font-family: var(--sans); font-size: 11.5px; color: var(--fg-muted);
+  background: rgba(255,255,255,0.05);
+  transition: color .15s ease, background-color .15s ease;
+}
+.action-chip .chip-act .ui-ico { width: 13px; height: 13px; }
+.action-chip .chip-act:hover { color: var(--accent-3); background: rgba(108,199,142,0.10); }
+
+/* A page the tool fetched, or the pages a search came back with. */
+.action-chip .chip-link {
+  color: var(--accent-3); text-decoration: none; word-break: break-all;
+  transition: color .15s ease;
+}
+.action-chip .chip-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Doubled up to outrank the reply's own list rules (.msg.assistant .bubble ol). */
+.action-chip .chip-links, .msg.assistant .bubble .action-chip .chip-links {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 5px;
+  font-family: var(--sans); font-size: 12px; line-height: 1.45;
+}
+.action-chip .chip-links li, .msg.assistant .bubble .action-chip .chip-links li { margin: 0; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.action-chip .chip-links .chip-link {
+  word-break: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.action-chip .chip-link-host {
+  flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-act, .action-chip .chip-link { transition: none; }
+}
+
+/* A sub-agent's chip: it doesn't expand inline (a whole run doesn't fit in a
+ * pill) — it opens the agent inspector, and carries a live tally meanwhile. */
+.action-chip.agent-chip .chip-tally {
+  margin-left: auto; padding-left: 8px; flex: none;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+}
+.action-chip.agent-chip .chip-tally:empty { display: none; }
+
+/* How long a slow action has been going (messages.js, "how long it took"). Mono
+ * with even digits, so a ticking number never nudges the pill's width about. */
+.action-chip .chip-time {
+  flex: none; padding-left: 8px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.action-chip .chip-time:empty { display: none; }
+.action-chip.agent-chip .chip-open {
+  flex: none; margin-left: 8px; font-size: 11px; color: var(--fg-dim);
+  transition: color .15s ease;
+}
+.action-chip.agent-chip { transition: border-color .15s ease; }
+.action-chip.agent-chip:hover { border-color: rgba(108,199,142,0.45); }
+.action-chip.agent-chip:hover .chip-open { color: var(--accent-3); }
+.action-chip.agent-chip .chip-row { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) {
+  .action-chip.agent-chip, .action-chip.agent-chip .chip-open { transition: none; }
+}
+
+/* Unified-style diff: removed lines (red), added lines (green). */
+.action-chip .chip-diff {
+  max-height: 320px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+}
+.action-chip .diff-line {
+  padding: 0 11px; white-space: pre-wrap; word-break: break-word;
+}
+.action-chip .diff-line.del { color: #e0857a; background: rgba(224,122,90,0.08); }
+.action-chip .diff-line.add { color: var(--accent-3); background: rgba(108,199,142,0.08); }
+
+/* Inline image preview when a tool read/wrote an image file. */
+.action-chip .chip-img {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; min-height: 40px;
+  font-size: 11.5px; color: var(--fg-dim);
+}
+.action-chip .chip-img img {
+  max-width: 100%; max-height: 340px; border-radius: 5px; display: block;
+  opacity: 0; transition: opacity .2s ease;
+}
+.action-chip .chip-img.loaded img { opacity: 1; cursor: zoom-in; }
+.action-chip .chip-img.failed { font-style: italic; }
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-img img { transition: none; }
+}
+
+/* ---- Direct shell run (the composer's `$` escape hatch) ---- */
+.msg.assistant.shell .role { color: #56c7d6; }
+.shell-card {
+  width: fit-content; max-width: 100%;
+  border: 1px solid var(--border-2); border-left: 3px solid #56c7d6;
+  border-radius: var(--radius-sm); background: var(--code-bg); overflow: hidden;
+}
+.shell-card.err { border-left-color: #e07a5a; }
+.shell-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+}
+.shell-head .shell-ico { color: #56c7d6; font-weight: 700; flex: 0 0 auto; }
+.shell-card.err .shell-head .shell-ico { color: #e07a5a; }
+.shell-cmd { white-space: pre-wrap; word-break: break-all; }
+.shell-out {
+  position: relative; margin: 0; max-height: 360px; overflow: auto;
+  padding: 10px 12px; background: transparent;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: var(--fg-muted); white-space: pre-wrap; word-break: break-word;
+}
+.shell-out.err { color: #e0a99e; }
+.shell-card.running .shell-out { color: var(--fg-dim); font-style: italic; }
+.shell-code {
+  padding: 6px 12px; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10.5px; color: #e07a5a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-details,
+  .action-chip .chip-caret,
+  .action-chip.expandable { transition: none; }
+}
+
+/* streaming caret */
+.caret { display: inline-block; width: 7px; height: 15px; background: var(--accent-2);
+  vertical-align: text-bottom; margin-left: 1px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+
+/* ---- Message star (favorite an assistant reply) ---- */
+.msg .role { position: relative; }
+.msg.assistant .role .star {
+  position: relative;
+  margin-left: auto; cursor: pointer; background: none; border: none;
+  color: var(--fg-dim); font-size: 15px; line-height: 1; padding: 0 2px;
+  opacity: 0;
+  transition: color .12s, transform .12s, opacity .15s;
+}
+.msg.assistant:hover .role .star, .msg.assistant .role .star.on,
+.msg.assistant .role .star:focus-visible { opacity: 1; }
+.msg.assistant .role { display: flex; align-items: center; }
+.msg.assistant .role .star:hover { color: var(--accent-3); transform: scale(1.15); }
+.msg.assistant .role .star.on { color: #e0c35a; }
+.msg.assistant .role .star[disabled] { opacity: 0; pointer-events: none; }
+/* Pop + sparkle burst when a reply is freshly saved (class added briefly in JS). */
+.msg.assistant .role .star.pop { animation: star-pop .5s cubic-bezier(.2,.9,.3,1.6); }
+.msg.assistant .role .star.pop::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 2px solid #e0c35a; pointer-events: none;
+  animation: star-burst .55s ease-out forwards;
+}
+@keyframes star-pop {
+  0% { transform: scale(1); } 30% { transform: scale(1.5) rotate(14deg); }
+  60% { transform: scale(.88) rotate(-6deg); } 100% { transform: scale(1); }
+}
+@keyframes star-burst {
+  from { opacity: .85; transform: scale(.5); } to { opacity: 0; transform: scale(2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant .role .star.pop { animation: none; }
+  .msg.assistant .role .star.pop::after { animation: none; opacity: 0; }
+}
+
+/* ---- Message delete (tidy a message out of the transcript) ---- */
+.msg .role .msg-del {
+  cursor: pointer; background: none; border: none; padding: 0 2px;
+  color: var(--fg-dim); line-height: 0; display: inline-flex;
+  opacity: 0; transform: scale(.9);
+  transition: opacity .14s, transform .14s, color .12s;
+}
+/* User rows have no star to push things right — copy + delete sit at the far end. */
+.msg.user .role .msg-copy { margin-left: auto; }
+.msg.assistant .role .msg-del { margin-left: 2px; }
+.msg:hover .role .msg-del,
+.msg .role .msg-del:focus-visible { opacity: .55; transform: scale(1); }
+.msg .role .msg-del:hover { opacity: 1; color: var(--danger, #e0645a); transform: scale(1.12); }
+
+/* ---- Message copy (the whole message to the clipboard) ---- */
+/* Same quiet hover affordance as delete; a copy that landed holds green for the
+ * moment its check is shown, then rests again. */
+.msg .role .msg-copy {
+  cursor: pointer; background: none; border: none; padding: 0 2px;
+  color: var(--fg-dim); line-height: 0; display: inline-flex;
+  opacity: 0; transform: scale(.9);
+  transition: opacity .14s, transform .14s, color .12s;
+}
+.msg.assistant .role .msg-copy { margin-left: 2px; }
+/* A shell run has no star either. */
+.msg.assistant.shell .role .msg-copy { margin-left: auto; }
+.msg:hover .role .msg-copy,
+.msg .role .msg-copy:focus-visible { opacity: .55; transform: scale(1); }
+.msg .role .msg-copy:hover { opacity: 1; color: var(--fg); transform: scale(1.12); }
+.msg .role .msg-copy.copied { opacity: 1; color: var(--accent-3); transform: scale(1); }
+
+/* Collapse + fade a message out as it's removed. */
+.msg.removing {
+  height: 0 !important; opacity: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0;
+  overflow: hidden; transform: translateX(-6px);
+  transition: height .24s ease, opacity .2s ease, margin .24s ease,
+    padding .24s ease, transform .24s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg .role .msg-del, .msg .role .msg-copy { transition: opacity .01s; transform: none; }
+  .msg.removing { transition: none; }
+}
+
+/* brief glow when you jump to a message from search / saved */
+.msg.flash .bubble {
+  animation: msg-flash 1.6s ease;
+}
+@keyframes msg-flash {
+  0% { box-shadow: 0 0 0 2px var(--accent-2); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+
+/* ---- Empty state ---- */
+.empty-state { margin: auto; text-align: center; max-width: 460px; color: var(--fg-muted); }
+.empty-mark {
+  width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+  color: #fff; font-family: var(--mono); font-weight: 700; font-size: 28px;
+  display: flex; align-items: center; justify-content: center;
+  /* A soft glow that pulses gently — visibly "alive" without any movement
+   * (the earlier scale/bob is what felt distracting). */
+  animation: empty-glow 5s ease-in-out infinite;
+}
+@keyframes empty-glow {
+  0%, 100% { box-shadow: 0 0 6px 0 rgba(108,199,142,0.12); }
+  50%      { box-shadow: 0 0 22px 2px rgba(108,199,142,0.38); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-mark { animation: none; }
+}
+.empty-state h2 { color: var(--fg); margin: 0 0 8px; font-size: 18px; }
+.empty-state p { font-size: 14px; line-height: 1.6; }
+
+/* Welcome-screen actions */
+.empty-actions { display: flex; gap: 10px; justify-content: center; margin-top: 22px; }
+.empty-btn {
+  font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 9px 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-2); background: var(--bg-card); color: var(--fg-muted);
+  transition: border-color .15s ease, background .15s ease, color .15s ease, transform .12s ease, box-shadow .18s ease;
+}
+.empty-btn:hover { color: var(--fg); border-color: var(--accent-2); transform: translateY(-1px); }
+.empty-btn:active { transform: translateY(0) scale(.97); }
+.empty-btn.primary {
+  color: #0a0f0b; border-color: transparent;
+  background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+}
+.empty-btn.primary:hover { filter: brightness(1.06); box-shadow: 0 6px 18px rgba(108,199,142,0.28); }
+
+/* Gentle entrance when the welcome screen appears (replayed in JS). */
+.empty-state.enter { animation: empty-enter .35s ease; }
+@keyframes empty-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .empty-btn:hover { transform: none; }
+  .empty-state.enter { animation: none; }
+}

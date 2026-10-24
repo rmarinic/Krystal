@@ -1,0 +1,59 @@
+/* sidebar-foot.css — the sidebar foot: the project's places as quiet rows.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ============================================================
+ * Sidebar foot — the project's places, pinned at the bottom-left
+ * of the sidebar, under the conversation list.
+ * ============================================================ */
+
+/* A small section pinned to the bottom of the sidebar: the project's places —
+ * Activity, Tasks, Artifacts, Remote — as quiet rows of the same family as the
+ * chat rows above. No cards: an icon, a label, the count or state at the far
+ * end, and a tint on hover. margin-top:auto pushes it below the thread list;
+ * the divider only appears when a row is actually visible (no empty box on
+ * the empty state). */
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 1px; }
+.sidebar-foot:has(.foot-item:not([hidden])) {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-foot .foot-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0;
+  padding: 7px 10px; border: 0; border-radius: 8px; background: transparent;
+  font-family: var(--sans); font-size: 13px; font-weight: 500; text-align: left;
+  color: var(--fg-muted); cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.sidebar-foot .foot-item > svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+/* The label takes the room, so whatever follows it sits at the row's end. */
+.sidebar-foot .foot-item > span:not([class]), .sidebar-foot .remote-label-text {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sidebar-foot .foot-item:hover:not(:disabled) { color: var(--fg); background: rgba(255,255,255,0.045); }
+.sidebar-foot .foot-item:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+/* The count at the end of a row is a plain number, not a badge: it informs,
+ * it doesn't call for attention. */
+.foot-item .tasks-count, .foot-item .act-count {
+  flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.foot-item .tasks-count:empty { display: none; }
+/* Claude changed the task list (or made an artifact) from chat: the row warms
+ * once and cools again, so the change is noticed without anything looping. */
+.foot-item.tasks-bump, .foot-item.just-made { animation: foot-warm .9s ease-out; }
+@keyframes foot-warm { 12% { background: rgba(108,199,142,0.13); color: var(--fg); } }
+@media (prefers-reduced-motion: reduce) {
+  .foot-item.tasks-bump, .foot-item.just-made { animation: none; }
+}
+
+/* The shared little spinner (chips, the Claude Code update button…). */
+@keyframes hint-spin { to { transform: rotate(360deg); } }
+
+/* Activity — disabled until a command or sub-agent has run in this chat. While
+ * one runs, the row says so the way a working chat row does: green words, held
+ * steady (no pulse), and it settles back when the step ends. The count is how
+ * many ran in this chat. */
+.activity-btn:disabled { opacity: .45; cursor: default; }
+.activity-btn.live { color: var(--accent-3); }
+.activity-btn.live > svg { opacity: 1; }

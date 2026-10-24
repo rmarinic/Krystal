@@ -1,7 +1,7 @@
 /* titlebar.js   — Krystal's own window frame: minimize / maximize / close, and
                    dragging the window by its headers.
    Part of the chat frontend; shares one global scope (see core.js). Styles live
-   in chat.css ("Window controls").
+   in css/titlebar.css.
 
    The window has no Windows title bar (`decorations: false` in tauri.conf.json):
    the app's own headers are the title bar. The three controls sit at the end of

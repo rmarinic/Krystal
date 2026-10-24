@@ -157,7 +157,9 @@ check('the remote-access strings landed in both', () => {
 console.log('\nmodal stacking');
 
 check('a modal opened from the project picker sits above it', () => {
-  const css = read('src', 'chat.css');
+  // Every stylesheet, in the order index.html links them (that order is the cascade).
+  const css = [...read('src', 'index.html').matchAll(/href="(css\/[^"]+\.css)"/g)]
+    .map((m) => read('src', ...m[1].split('/'))).join('\n');
   const zOf = (re) => {
     const m = css.match(re);
     if (!m) throw new Error(`could not find ${re}`);

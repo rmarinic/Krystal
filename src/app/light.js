@@ -1,7 +1,7 @@
 /* light.js      — the living light behind the chat: it answers what Claude is
                    doing instead of pulsing on a timer.
    Part of the chat frontend; shares one global scope (see core.js). Styles live
-   in chat.css ("Living light"); the layers themselves are in index.html.
+   in css/composer.css ("Living light"); the layers themselves are in index.html.
 
    A loop that runs whatever happens is a screensaver: the eye learns it within a
    minute and from then on it is wallpaper, or an irritant. Light that *answers*

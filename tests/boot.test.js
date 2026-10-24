@@ -4,6 +4,10 @@
  * top-level statement reaching for something that isn't declared yet — a
  * ReferenceError at boot, which no per-module test would see.
  *
+ * It also checks the wiring around that: every file in src/app/ and src/css/
+ * is linked exactly once, and the stylesheets start with base.css and end with
+ * motion.css (their link order is the cascade).
+ *
  * The DOM, Tauri and storage are a catch-all stub: any property is another
  * stub, any call returns one, and none of them ever resolves. That's enough
  * for the load-time code to run; it says nothing about behaviour.
@@ -35,11 +39,29 @@ function stub(name = 'stub') {
   });
 }
 
-const scripts = [...fs.readFileSync(path.join(root, 'index.html'), 'utf8')
-  .matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const scripts = [...html.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
 const ours = scripts.filter((s) => !s.startsWith('vendor/'));
+const sheets = [...html.matchAll(/<link rel="stylesheet" href="(css\/[^"]+)"/g)].map((m) => m[1]);
 
 const errors = [];
+
+// A file nobody links does nothing, silently; one linked twice runs twice.
+function linkedOnce(dir, linked) {
+  const onDisk = fs.readdirSync(path.join(root, dir)).filter((f) => /\.(js|css)$/.test(f)).map((f) => dir + '/' + f);
+  const missing = onDisk.filter((f) => !linked.includes(f));
+  const twice = linked.filter((f, i) => linked.indexOf(f) !== i);
+  const gone = linked.filter((f) => f.startsWith(dir + '/') && !onDisk.includes(f));
+  if (missing.length) errors.push(`link: not linked in index.html: ${missing.join(', ')}`);
+  if (twice.length) errors.push(`link: linked twice in index.html: ${twice.join(', ')}`);
+  if (gone.length) errors.push(`link: index.html links a missing file: ${gone.join(', ')}`);
+}
+linkedOnce('app', ours);
+linkedOnce('css', sheets);
+// base.css sets the variables everything reads; motion.css layers over it all.
+if (sheets[0] !== 'css/base.css' || sheets[sheets.length - 1] !== 'css/motion.css') {
+  errors.push('link: css/base.css must be linked first and css/motion.css last');
+}
 const sandbox = {
   console: { log() {}, warn() {}, error() {}, info() {}, debug() {} },
   setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
@@ -86,10 +108,10 @@ for (const s of ours) {
 setImmediate(() => {
   // Only a missing or not-yet-declared name is a load-order bug; anything else
   // is the stub not being a real DOM.
-  const real = errors.filter((e) => /ReferenceError|is not defined|before initialization/.test(e));
+  const real = errors.filter((e) => /^link:|ReferenceError|is not defined|before initialization/.test(e));
   if (real.length) {
     console.log('FAIL the frontend does not load cleanly:\n  ' + real.join('\n  '));
     process.exit(1);
   }
-  console.log(`boot.test.js: ok (${ours.length} scripts load in index.html order)`);
+  console.log(`boot.test.js: ok (${ours.length} scripts load in index.html order, ${sheets.length} stylesheets linked)`);
 });

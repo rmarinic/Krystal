@@ -1,0 +1,178 @@
+/* questions.css — question cards: the AskUserQuestion choice card and the Initialize
+ * wizard.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ----------------------- AskUserQuestion choice card --------------------- */
+/* Rendered inside an assistant bubble when Claude asks the user to choose.
+ * Picking an option (or submitting a multi-select) sends the answer as the
+ * next message — the app's one-shot turns can't answer in place. */
+.qa-card {
+  margin: 8px 0; border: 1px solid var(--accent-2); border-radius: 12px;
+  background: rgba(108,199,142,0.06); overflow: hidden;
+}
+.qa-intro {
+  display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--accent-3);
+  border-bottom: 1px solid var(--border); background: rgba(108,199,142,0.08);
+}
+.qa-q { padding: 12px 14px; }
+.qa-q + .qa-q { border-top: 1px solid var(--border); }
+.qa-head {
+  font-family: var(--sans); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--fg-dim); margin-bottom: 4px;
+}
+.qa-text { font-size: 14px; color: var(--fg); margin-bottom: 6px; line-height: 1.45; }
+/* Tells you at a glance whether this is pick-one or pick-any. */
+.qa-hint {
+  font-size: 11px; color: var(--fg-dim); margin-bottom: 10px;
+  font-family: var(--sans); letter-spacing: 0.02em;
+}
+.qa-q.multi .qa-hint { color: var(--accent-3); }
+.qa-opts { display: flex; flex-direction: column; gap: 8px; }
+.qa-opt {
+  display: flex; flex-direction: row; align-items: flex-start; gap: 10px; text-align: left;
+  padding: 9px 12px; border: 1px solid var(--border-2); border-radius: 9px;
+  background: var(--bg-card); color: var(--fg); cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.qa-opt:hover:not(:disabled) { border-color: var(--accent-2); }
+.qa-opt.sel { border-color: var(--accent-2); background: rgba(108,199,142,0.14); }
+.qa-opt:disabled { opacity: 0.55; cursor: default; }
+.qa-opt-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qa-opt-label { font-weight: 600; font-size: 13.5px; }
+.qa-opt-desc { font-size: 12px; color: var(--fg-muted); line-height: 1.4; }
+/* Selection marker: a circle (radio) for pick-one, a square (checkbox) for
+ * pick-any — so the two kinds of question are unmistakable. */
+.qa-mark {
+  position: relative; flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px;
+  border: 2px solid var(--border-2); background: transparent;
+  transition: border-color .15s, background .15s;
+}
+.qa-q.single .qa-mark { border-radius: 50%; }
+.qa-q.multi .qa-mark { border-radius: 5px; }
+.qa-opt.sel .qa-mark { border-color: var(--accent-2); background: var(--accent-2); }
+.qa-q.single .qa-opt.sel .qa-mark::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%; background: #0a0f0b;
+}
+.qa-q.multi .qa-opt.sel .qa-mark::after {
+  content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+  border: solid #0a0f0b; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.qa-custom {
+  width: 100%; margin-top: 8px; box-sizing: border-box;
+  padding: 9px 12px; border: 1px solid var(--border-2); border-radius: 9px;
+  background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  transition: border-color .15s;
+}
+.qa-custom::placeholder { color: var(--fg-dim); }
+.qa-custom:focus { outline: none; border-color: var(--accent-2); }
+.qa-custom:disabled { opacity: 0.55; cursor: default; }
+.qa-foot { display: flex; justify-content: flex-end; padding: 0 14px 12px; }
+.qa-send {
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
+  color: #0a0f0b; background: var(--accent-2); border: none;
+  border-radius: var(--radius-sm); padding: 8px 16px; cursor: pointer;
+}
+.qa-send:hover:not(:disabled) { background: var(--accent-3); }
+.qa-send:disabled { opacity: 0.55; cursor: default; }
+.qa-card.answered { border-color: var(--border); background: var(--bg-card); opacity: 0.85; }
+
+/* ExitPlanMode — Claude's proposed plan, rendered as readable markdown. */
+.plan-card {
+  margin: 8px 0; border: 1px solid var(--border-2); border-radius: 12px;
+  background: var(--bg-card); overflow: hidden;
+}
+.plan-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  border-bottom: 1px solid var(--border); background: var(--bg-elev);
+}
+.plan-body { padding: 4px 16px 14px; font-size: 14px; line-height: 1.55; }
+.plan-body > :first-child { margin-top: 8px; }
+
+/* ----------------------- Initialize wizard ----------------------------- */
+
+/* "Edit instructions" — deliberately understated; it's rarely clicked now that
+ * the setup wizard launches automatically when a new project is initialized. */
+.head-btn.subtle { color: var(--fg-dim); font-weight: 500; }
+.head-btn.subtle:hover { color: var(--fg-muted); border-color: var(--border-2); }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(4,7,5,0.66); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  animation: fade-in .18s ease;
+}
+.modal-overlay[hidden] { display: none; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* The project picker is an entry SCREEN, not an overlay, so it sits high enough
+   (z-index 100) to cover the whole app behind it. A modal opened deliberately on
+   top of it — Settings, or Remote — has to clear that, and a modal's usual
+   z-index 50 does not: it opens *underneath* the picker, where it is invisible
+   but still there, only appearing once the picker is dismissed. Lift modals only
+   while the picker is actually on screen, so stacking inside the app is
+   untouched. */
+body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
+
+.init-modal {
+  width: min(760px, 100%); max-height: min(86vh, 900px);
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  overflow: hidden;
+}
+.init-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(108,199,142,0.08), transparent);
+}
+.init-title { font-weight: 600; font-size: 16px; }
+.init-steps { display: flex; gap: 6px; margin-left: auto; }
+.init-steps .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border); transition: background .2s;
+}
+.init-steps .dot.on { background: var(--accent-2); }
+.init-steps .dot.done { background: var(--accent); }
+.init-x {
+  background: none; border: none; color: var(--fg-dim);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px;
+}
+.init-x:hover { color: var(--fg); }
+
+.init-body { padding: 20px 22px; overflow-y: auto; }
+.init-foot {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding: 14px 18px; border-top: 1px solid var(--border);
+}
+
+/* centered loading state */
+.init-loading { text-align: center; padding: 38px 10px; color: var(--fg-muted); }
+.init-loading .spin {
+  width: 30px; height: 30px; margin: 0 auto 16px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent-2);
+  animation: hint-spin .8s linear infinite;
+}
+.init-loading h3 { margin: 0 0 6px; color: var(--fg); font-size: 15px; }
+.init-loading p { margin: 0; font-size: 13px; }
+
+/* findings summary */
+.init-summary {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 15px; margin-bottom: 18px;
+  font-size: 13.5px; color: var(--fg-muted); line-height: 1.55;
+}
+.init-summary strong { color: var(--fg); }
+.init-intro { font-size: 13px; color: var(--fg-dim); margin: 0 0 16px; }
+
+/* brief step (project description before analysis) */
+.init-brief {
+  width: 100%; resize: vertical; min-height: 96px;
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 11px 13px; font: inherit; font-size: 14px; line-height: 1.55;
+}
+.init-brief:focus { outline: none; border-color: var(--accent-2); }
+.init-brief::placeholder { color: var(--fg-dim); }

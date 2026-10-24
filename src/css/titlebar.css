@@ -1,0 +1,56 @@
+/* titlebar.css — window controls (app/titlebar.js).
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ---- Window controls (app/titlebar.js) ----
+   The Windows title bar is off; the app's headers are the title bar. The three
+   controls float at the end of the header row, built like the header's own
+   buttons (tonal, no border) and centred on the same line. Their hit areas run
+   up to the window's top edge — and the close button's into the corner — so
+   flinging the mouse there still lands, as it does on a native frame.
+   `--wc-w` is the room they take; headers and top-right buttons step aside by it
+   only when the frame is ours (body.framed). */
+:root { --wc-w: 0px; }
+body.framed { --wc-w: 118px; }
+.win-controls {
+  position: fixed; top: 22px; right: 12px; z-index: 1000;
+  display: flex; gap: 2px;
+  transition: opacity .2s ease;
+}
+.win-controls[hidden] { display: none; }
+body.win-inactive .win-controls { opacity: .5; }
+.wc-btn {
+  position: relative; width: 34px; height: 28px; padding: 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--fg-dim); cursor: default;
+  transition: color .15s ease, background-color .15s ease;
+}
+.wc-btn::after { content: ''; position: absolute; inset: -22px 0 -6px 0; }
+.wc-close::after { inset: -22px -12px -6px 0; }
+.wc-btn:hover { color: var(--fg); background: rgba(255,255,255,0.07); }
+.wc-close:hover { color: #fff; background: rgba(206,66,60,0.92); }
+.wc-btn svg {
+  width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.15;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Maximized ↔ restored: the icon that appears settles in. */
+.wc-ico-restore, body.win-max .wc-ico-max { display: none; }
+.wc-ico-max, body.win-max .wc-ico-restore { display: block; animation: wc-swap .22s ease; }
+@keyframes wc-swap { from { opacity: 0; transform: scale(.8); } }
+
+/* Make room for them. */
+body.framed .chat-header { padding-right: calc(28px + var(--wc-w)); }
+body.framed .project-lang { top: 22px; right: calc(20px + var(--wc-w)); }
+body.framed .project-settings { top: 22px; right: calc(92px + var(--wc-w)); }
+body.framed .project-bell { top: 22px; right: calc(141px + var(--wc-w)); }
+body.framed .link-view-bar { padding-right: calc(14px + var(--wc-w)); }
+body.framed .lightbox-x { right: calc(20px + var(--wc-w)); }
+body.framed .remote-bar { padding-right: calc(14px + var(--wc-w)); }
+body.framed.is-remote .win-controls { top: 3px; }
+/* A tall dialog in a short window must not slide under them. */
+body.framed .modal-overlay { padding-top: 56px; }
+@media (prefers-reduced-motion: reduce) {
+  .win-controls, .wc-btn { transition: none; }
+  .wc-ico-max, body.win-max .wc-ico-restore { animation: none; }
+}

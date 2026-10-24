@@ -1,6 +1,6 @@
 /* starters.js   — starting points for a chat: Write / Research / Data / Code.
    Part of the chat frontend; shares one global scope (see core.js). Styles live
-   in chat.css ("Starter cards").
+   in css/starters.css.
 
    An empty box is the hardest place to begin, more so for anyone who doesn't
    think of Krystal as a coding tool. So the welcome screen and every brand-new

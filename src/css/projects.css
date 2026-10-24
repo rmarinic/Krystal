@@ -1,0 +1,226 @@
+/* projects.css — the project switcher, the Run panel, and the project picker.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ============================================================
+ * Project switcher (sidebar) — current project + back to picker
+ * ============================================================ */
+/* Row: the (now more compact) project chip + the RUN button beside it. */
+.cp-row { display: flex; align-items: stretch; gap: 8px; }
+
+.to-projects {
+  display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0;
+  background: rgba(255,255,255,0.04); border: 1px solid transparent;
+  border-radius: 8px; padding: 5px 9px; cursor: pointer; transition: background .15s;
+}
+.to-projects:hover { background: rgba(255,255,255,0.075); }
+.to-projects .cp-label {
+  font-family: var(--sans); font-size: 8px; text-transform: uppercase;
+  letter-spacing: 0.10em; color: var(--fg-dim);
+}
+.to-projects .cp-name {
+  flex: 1; min-width: 0; text-align: left;
+  font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--accent-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.to-projects .cp-switch { margin-left: auto; color: var(--fg-muted); font-size: 12px; }
+.to-projects:hover .cp-switch { color: var(--accent-2); }
+
+/* RUN button — start the project locally for testing. Toggles play → stop. */
+.run-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 5px 11px;
+  font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  color: var(--accent-3);
+  background: rgba(108,199,142,0.12);
+  border: 1px solid transparent;
+  border-radius: 8px; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, transform .1s;
+}
+.run-btn:hover { background: rgba(108,199,142,0.2); }
+.run-btn:active { transform: translateY(1px); }
+.run-btn svg { flex: none; }
+/* While running the button turns into a "live" indicator — clicking it reopens
+   the output panel (Stop lives there), so it stays useful after you start. */
+.run-ico-live {
+  display: none; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; flex: none;
+}
+.run-btn.running {
+  color: var(--accent-3);
+  background: rgba(108,199,142,0.16);
+  border-color: rgba(108,199,142,0.5);
+  animation: run-pulse 1.9s ease-in-out infinite;
+}
+.run-btn.running .run-ico-play { display: none; }
+.run-btn.running .run-ico-live { display: inline-block; animation: run-blink 1.2s ease-in-out infinite; }
+.run-btn.running:hover { background: rgba(108,199,142,0.24); border-color: var(--accent-2); }
+@keyframes run-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0); }
+  50%      { box-shadow: 0 0 0 3px rgba(108,199,142,0.15); }
+}
+
+/* ---- Run panel (setup + live output) ---- */
+.run-modal { width: min(760px, 92vw); }
+.run-intro { color: var(--fg-muted); font-size: 13px; line-height: 1.5; margin: 0 0 14px; }
+.run-field-label {
+  font-family: var(--sans); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--fg-dim); margin-bottom: 6px;
+}
+.run-cmd-input {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 48px;
+  font-family: var(--mono); font-size: 13px; color: var(--fg); line-height: 1.5;
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.run-cmd-input:focus { outline: none; border-color: var(--accent-2); }
+.run-detect-row { display: flex; align-items: center; gap: 10px; margin-top: 11px; flex-wrap: wrap; }
+.run-detect {
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--accent-3);
+  background: rgba(108,199,142,0.08); border: 1px solid rgba(108,199,142,0.32);
+  border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.run-detect:hover { background: rgba(108,199,142,0.16); border-color: var(--accent-2); }
+.run-detect[disabled] { opacity: 0.55; cursor: default; }
+.run-detect-status { font-size: 12px; color: var(--fg-muted); }
+.run-detect-status.err { color: #ff9b9b; }
+.run-path-hint {
+  font-family: var(--mono); font-size: 10px; color: var(--fg-dim); margin-top: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.run-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); flex: none; }
+.run-dot.live { background: var(--accent-2); animation: run-blink 1.2s ease-in-out infinite; }
+.run-dot.err { background: #ff9b9b; }
+.run-status-label {
+  font-family: var(--sans); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--fg-muted);
+}
+@keyframes run-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.run-output {
+  margin: 0; max-height: 52vh; min-height: 220px; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55;
+  background: rgba(5,8,6,0.6); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.run-line { display: block; color: var(--fg); }
+.run-line.cmd { color: var(--accent-3); font-weight: 600; }
+.run-line.err { color: #ff9b9b; }
+.run-line.ok  { color: var(--accent-2); }
+.run-line.sys { color: var(--fg-dim); font-style: italic; }
+
+.run-act {
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 7px 13px; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.run-act:hover { border-color: var(--accent-2); color: var(--fg); }
+.run-act.primary {
+  color: var(--accent-3); background: rgba(108,199,142,0.10); border-color: rgba(108,199,142,0.4);
+}
+.run-act.primary:hover { background: rgba(108,199,142,0.2); border-color: var(--accent-2); color: var(--accent-3); }
+.run-act.danger { color: #ffb4b4; background: rgba(230,120,120,0.1); border-color: rgba(230,120,120,0.4); }
+.run-act.danger:hover { background: rgba(230,120,120,0.2); border-color: rgba(230,120,120,0.7); color: #ffb4b4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .run-btn { transition: none; }
+  .run-btn.running,
+  .run-btn.running .run-ico-live { animation: none; }
+  .run-dot.live { animation: none; }
+}
+
+/* ============================================================
+ * Project picker — the entry screen
+ * ============================================================ */
+.project-screen {
+  position: fixed; inset: 0; z-index: 100;
+  background:
+    radial-gradient(1100px 460px at 50% -8%, rgba(108,199,142,0.12), transparent 70%),
+    var(--bg);
+  overflow-y: auto;
+  display: flex; justify-content: center;
+  padding: 7vh 24px 48px;
+}
+.project-screen[hidden] { display: none; }
+.project-wrap { width: 100%; max-width: 880px; }
+
+.project-head { text-align: center; margin-bottom: 6px; }
+.project-logo { justify-content: center; margin-bottom: 20px; }
+.project-title {
+  margin: 0 0 6px; font-family: var(--sans); font-size: 22px; font-weight: 600;
+  letter-spacing: 0.01em; color: var(--fg);
+}
+.project-title::before { content: "$ "; color: var(--accent-2); text-shadow: 0 0 8px rgba(108,199,142,0.5); }
+.project-sub { margin: 0 auto 22px; max-width: 540px; font-size: 14px; line-height: 1.6; color: var(--fg-muted); }
+
+.project-init-btn {
+  font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer;
+  color: #0a0f0b; background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+  border: none; border-radius: var(--radius-sm); padding: 11px 22px;
+  box-shadow: 0 6px 20px rgba(108,199,142,0.22);
+}
+.project-init-btn:hover { filter: brightness(1.07); }
+
+.project-list {
+  list-style: none; margin: 30px 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px;
+}
+.project-empty {
+  grid-column: 1 / -1; text-align: center; color: var(--fg-dim);
+  font-size: 14px; padding: 28px 0;
+}
+
+.project-card { position: relative; }
+.project-card .project-open {
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-card); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px; padding: 15px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: border-color .16s ease, background .16s ease, transform .16s cubic-bezier(.2,.9,.3,1.2), box-shadow .2s ease;
+}
+.project-card .project-open:hover {
+  border-color: var(--accent-2); background: var(--bg-card-2);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.32), 0 0 0 1px rgba(108,199,142,0.18);
+}
+.project-card .project-open:active { transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) {
+  .project-card .project-open:hover { transform: none; }
+}
+.proj-name {
+  font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--accent-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proj-name::before { content: "▸ "; color: var(--accent-2); }
+.proj-path {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proj-meta { font-size: 11.5px; color: var(--fg-muted); }
+.project-card .proj-del,
+.project-card .proj-move {
+  position: absolute; top: 9px; right: 9px;
+  width: 22px; height: 22px; border: none; background: transparent;
+  color: var(--fg-dim); cursor: pointer; border-radius: 5px; font-size: 15px; line-height: 1;
+  display: none;
+}
+.project-card .proj-move { right: 33px; font-size: 12px; }
+.project-card:hover .proj-del,
+.project-card:hover .proj-move { display: block; }
+.project-card .proj-del:hover { background: var(--bg-elev); color: var(--warn); }
+.project-card .proj-move:hover { background: var(--bg-elev); }
+
+/* The folder a project points at just changed — one quiet ring settles on it. */
+.project-card.moved .project-open { animation: proj-moved .55s ease; }
+@keyframes proj-moved {
+  from { box-shadow: 0 0 0 1px var(--accent-2) inset; }
+  to   { box-shadow: 0 0 0 1px transparent inset; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-card.moved .project-open { animation: none; }
+}

@@ -1,0 +1,162 @@
+/* settings.css — the Settings panel, the Claude Code update row, and the open-link
+ * dialog + in-app viewer.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ---- Settings panel ---- */
+.settings-modal { width: min(560px, 100%); }
+/* No step dots/filters here, so push the close button to the far right. */
+.settings-modal .init-x { margin-left: auto; }
+.settings-intro { font-size: 13px; color: var(--fg-dim); margin: 0 0 16px; }
+.settings-tabs {
+  position: relative;
+  display: flex; gap: 4px; margin: 0 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tab {
+  background: none; border: none;
+  color: var(--fg-dim); font-family: var(--sans); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.03em; padding: 8px 12px; cursor: pointer;
+  transition: color .18s ease;
+}
+.settings-tab:hover { color: var(--fg-muted); }
+.settings-tab.on { color: var(--accent-3); }
+/* One underline that slides between tabs (positioned in JS). */
+.settings-tab-underline {
+  position: absolute; bottom: -1px; left: 0; width: 0; height: 2px;
+  background: var(--accent-2); border-radius: 2px;
+  transition: left .26s cubic-bezier(.4,.8,.3,1.1), width .26s cubic-bezier(.4,.8,.3,1.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-tab-underline { transition: none; }
+}
+.settings-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 0; border-top: 1px solid var(--border);
+}
+.settings-row:first-of-type { border-top: none; padding-top: 4px; }
+/* Nested sub-setting (e.g. Discord's name-sharing option). */
+.settings-row.sub {
+  border-top: none; padding-top: 8px; margin-left: 10px; padding-left: 14px;
+  border-left: 2px solid var(--border);
+}
+.settings-text { flex: 1 1 auto; min-width: 0; }
+.settings-name { font-size: 14px; font-weight: 600; color: var(--fg); }
+.settings-desc { font-size: 12.5px; color: var(--fg-dim); line-height: 1.5; margin-top: 3px; }
+/* iOS-style switch */
+.settings-switch {
+  flex: 0 0 auto; position: relative; width: 42px; height: 24px;
+  border-radius: 999px; border: 1px solid var(--border-2);
+  background: var(--bg-card); cursor: pointer; padding: 0; transition: background .18s, border-color .18s;
+}
+.settings-switch .switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--fg-dim);
+  /* spring: the knob overshoots slightly then settles when flipped */
+  transition: transform .34s cubic-bezier(.5,1.65,.45,1), background .18s, width .18s ease;
+}
+.settings-switch:active .switch-knob { width: 22px; }   /* tiny squash on press */
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch .switch-knob { transition: transform .15s ease, background .18s; }
+  .settings-switch:active .switch-knob { width: 18px; }
+}
+.settings-switch.on { background: var(--accent-2); border-color: var(--accent-2); }
+.settings-switch.on .switch-knob { transform: translateX(18px); background: #0a0f0b; }
+
+/* A choice row stacks its control under the label (segmented control). */
+.settings-row.col { flex-direction: column; align-items: stretch; gap: 10px; }
+.seg-control {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px;
+  background: var(--bg-card); border: 1px solid var(--border-2); border-radius: 10px;
+}
+.seg-control .seg {
+  font-family: var(--sans); font-size: 12px; font-weight: 600;
+  color: var(--fg-dim); background: transparent; border: none; cursor: pointer;
+  padding: 6px 14px; border-radius: 7px;
+  transition: color .15s ease, background .15s ease;
+}
+.seg-control .seg:hover { color: var(--fg-muted); }
+.seg-control .seg.on { color: #0a0f0b; background: var(--accent-2); }
+
+/* ---- Claude Code self-update row (Settings → General) ---- */
+.claude-update .cu-status {
+  font-family: var(--mono); font-size: 12px; color: var(--fg-dim); min-height: 16px;
+}
+.claude-update .cu-log {
+  margin: 0; max-height: 150px; overflow: auto;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: var(--fg-muted); background: var(--bg); white-space: pre-wrap; word-break: break-word;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+}
+/* The log fades/slides in when an update starts (snap-free reveal). */
+.claude-update .cu-log.cu-log-in { animation: cu-log-in .22s ease both; }
+@keyframes cu-log-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.claude-update .cu-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cu-btn {
+  font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer;
+  color: #07140c; background: var(--accent-2); border: 1px solid var(--accent-2);
+  padding: 7px 16px; border-radius: 8px;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease, opacity .15s ease;
+}
+.cu-btn:hover { background: var(--accent-3); border-color: var(--accent-3); }
+.cu-btn:active { transform: translateY(1px); }
+.cu-btn.busy, .cu-btn:disabled { opacity: .6; cursor: default; transform: none; }
+/* The npm fallback is the quieter, secondary way out — only shown once the CLI's
+ * own registry check has given up. */
+.cu-btn.cu-npm { color: var(--fg-muted); background: transparent; border-color: var(--border); }
+.cu-btn.cu-npm:hover { color: var(--fg); background: var(--bg-card-2); border-color: var(--border); }
+.cu-btn.cu-npm.cu-npm-in { animation: cu-npm-in .22s ease both; }
+@keyframes cu-npm-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .claude-update .cu-log.cu-log-in { animation: none; }
+  .cu-btn.cu-npm.cu-npm-in { animation: none; }
+  .cu-btn { transition: background .15s ease, border-color .15s ease; }
+  .cu-btn:active { transform: none; }
+}
+
+/* ---- Open-link: ask dialog + in-app viewer ---- */
+.link-ask-modal { width: min(460px, 100%); }
+.link-url {
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent-3);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; word-break: break-all; line-height: 1.5;
+}
+.link-remember {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  font-size: 13px; color: var(--fg-muted); cursor: pointer;
+}
+.link-remember input { accent-color: var(--accent-2); width: 15px; height: 15px; cursor: pointer; }
+
+.link-view {
+  position: fixed; inset: 0; z-index: 130; display: flex; flex-direction: column;
+  background: var(--bg);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .2s ease, transform .22s cubic-bezier(.2,.9,.3,1.2);
+}
+.link-view.show { opacity: 1; transform: none; }
+.link-view-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+}
+.link-back {
+  flex: 0 0 auto; font-family: var(--sans); font-size: 13px; font-weight: 600;
+  color: #0a0f0b; background: var(--accent-2); border: none; border-radius: var(--radius-sm);
+  padding: 8px 16px; cursor: pointer; transition: background .15s ease, transform .12s ease;
+}
+.link-back:hover { background: var(--accent-3); transform: translateX(-2px); }
+.link-view-url {
+  flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 12px;
+  color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.link-view-ext {
+  flex: 0 0 auto; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  color: var(--fg-muted); background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer;
+}
+.link-view-ext:hover { color: var(--fg); border-color: var(--accent-2); }
+.link-view-body { flex: 1 1 auto; min-height: 0; }
+.link-frame { width: 100%; height: 100%; border: none; background: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .link-view { transition: opacity .15s ease; transform: none; }
+  .link-back:hover { transform: none; }
+}

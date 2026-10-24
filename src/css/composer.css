@@ -1,0 +1,546 @@
+/* composer.css — the composer dock and everything around it: tools row, orchestrator,
+ * git line, shell mode, # references, suggestion, queue, permission prompt,
+ * attachments, the living light, the drop hint.
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* ---- Composer ---- */
+/* No bar: the feed runs on underneath, fading out behind the dock. */
+.composer {
+  flex: 0 0 auto; position: relative; z-index: 3;
+  margin-top: -30px; padding: 30px 28px 14px;
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+}
+/* ---- Composer dock: the input, with this chat's tools under it — one card ---- */
+.composer-dock {
+  max-width: var(--read-w); margin: 0 auto;
+  padding: 8px 8px 7px; border-radius: 16px;
+  background: var(--bg-card);
+  box-shadow: 0 16px 36px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.055);
+  transition: box-shadow .28s ease;
+}
+.composer-dock:focus-within {
+  box-shadow: 0 16px 36px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(108,199,142,0.42),
+    0 0 30px -6px rgba(108,199,142,0.2);
+}
+/* ---- Composer tools row (mode picker + compact/clear), under the input ---- */
+.composer-tools {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 6px 0 0; padding: 6px 2px 0; border-top: 1px solid rgba(255,255,255,0.04);
+}
+.composer-tools-spacer { flex: 1 1 auto; }
+.composer-tools .head-btn { padding: 4px 9px; font-size: 11.5px; }
+.composer-tools .picker-btn { padding: 4px 9px; }
+
+/* ---- Orchestrator button + popover (supervisor model + worker sub-agent) ---- */
+.orch-wrap { position: relative; display: inline-block; }
+/* Lit accent state when orchestrator mode is on — a calm glow, no motion. */
+#orch-btn.on {
+  color: var(--accent-3); border-color: var(--accent-2);
+  background: rgba(108,199,142,0.10);
+  box-shadow: 0 0 0 1px rgba(108,199,142,0.16), 0 0 16px -5px rgba(108,199,142,0.55);
+}
+.orch-pop {
+  position: absolute; z-index: 70; bottom: calc(100% + 8px); right: 0;
+  width: 290px; padding: 14px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+  opacity: 0; transform: translateY(6px) scale(.98); transform-origin: bottom right;
+  transition: opacity .16s ease, transform .2s cubic-bezier(.2,.9,.3,1.25);
+}
+.orch-pop.open { opacity: 1; transform: none; }
+.orch-pop[hidden] { display: none; }
+.orch-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.orch-title { display: flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 13px; font-weight: 700; color: var(--fg); }
+.orch-desc { margin: 8px 0 12px; font-size: 11.5px; line-height: 1.5; color: var(--fg-muted); }
+/* On/off pill switch */
+.orch-switch {
+  position: relative; flex: none; width: 40px; height: 22px; padding: 0;
+  border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg-card);
+  cursor: pointer; transition: background .2s ease, border-color .2s ease;
+}
+.orch-switch .orch-knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--fg-dim);
+  transition: transform .22s cubic-bezier(.2,.9,.3,1.25), background .2s ease;
+}
+.orch-switch.on { background: var(--accent); border-color: var(--accent-2); }
+.orch-switch.on .orch-knob { transform: translateX(18px); background: var(--accent-3); }
+/* Fields dim + go inert when orchestrator mode is off. */
+.orch-fields { display: flex; flex-direction: column; gap: 10px; transition: opacity .2s ease; }
+.orch-fields.off { opacity: .4; pointer-events: none; }
+.orch-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.orch-field-label { font-size: 12px; color: var(--fg-muted); }
+.orch-hint { margin: 2px 0 0; font-size: 11px; line-height: 1.45; color: var(--fg-dim); }
+@media (prefers-reduced-motion: reduce) {
+  .orch-pop { transition: opacity .12s ease; transform: none; }
+  .orch-pop.open { transform: none; }
+  .orch-switch .orch-knob { transition: background .2s ease; }
+  #orch-btn.on { box-shadow: 0 0 0 1px rgba(108,199,142,0.16); }
+}
+
+.composer-row {
+  display: flex; align-items: flex-end; gap: 10px;
+  padding: 0 0 0 4px;
+}
+.composer-row textarea {
+  flex: 1 1 auto;
+  resize: none; max-height: 200px;
+  background: transparent; border: none; outline: none;
+  color: var(--fg); font-family: var(--sans); font-size: 14.5px; line-height: 1.5;
+  padding: 6px 2px;
+}
+.composer-row textarea::placeholder { color: var(--fg-dim); }
+
+.icon-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid var(--border-2);
+  color: var(--fg-muted); border-radius: var(--radius-sm);
+  padding: 7px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+  align-self: flex-end;
+}
+.icon-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+
+.send-btn {
+  position: relative; flex: 0 0 auto; align-self: flex-end;
+  width: 38px; height: 38px; border-radius: 11px;
+  background: var(--accent-2); border: none; color: #0a0f0b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .18s ease, transform .12s ease, box-shadow .2s ease;
+}
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-3); transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(108,199,142,0.38);
+}
+.send-btn:active:not(:disabled) { transform: translateY(0) scale(.9); box-shadow: none; }
+.send-btn:disabled { background: var(--border-2); color: var(--fg-dim); cursor: not-allowed; }
+/* While streaming, the button becomes a stop control: a soft red square. */
+.send-btn.is-stop { background: #d8584e; color: #fff; }
+.send-btn.is-stop:hover:not(:disabled) { background: #e06a60; box-shadow: 0 4px 14px rgba(216,88,78,0.42); }
+
+/* Send ⇄ stop: both icons live in the button and cross-morph (rotate + scale)
+ * as `.is-stop` toggles, so the arrow ships cleanly into the square and back. */
+.send-btn .ic {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  transition: opacity .2s ease, transform .26s cubic-bezier(.3,.9,.3,1.35);
+}
+.send-btn .ic-send { opacity: 1; transform: none; }
+.send-btn .ic-stop { opacity: 0; transform: scale(.4) rotate(-90deg); }
+.send-btn.is-stop .ic-send { opacity: 0; transform: scale(.4) rotate(90deg); }
+.send-btn.is-stop .ic-stop { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .send-btn .ic { transition: opacity .15s ease; }
+  .send-btn .ic-send, .send-btn .ic-stop,
+  .send-btn.is-stop .ic-send, .send-btn.is-stop .ic-stop { transform: none; }
+}
+
+/* ---- Tiny git status line under the composer ---- */
+.git-status {
+  max-width: var(--read-w); margin: 8px auto 0; padding: 0 10px;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.02em;
+  color: var(--fg-dim); user-select: none;
+}
+.git-status .git-branch { color: var(--fg-muted); cursor: pointer; transition: color .15s; }
+.git-status .git-branch:hover { color: var(--accent-3); }
+.git-status .git-branch::before {
+  content: "⎇ "; color: var(--accent-2); text-shadow: 0 0 6px rgba(108,199,142,0.4);
+}
+.git-status .git-add { color: var(--accent-3); }
+.git-status .git-del { color: #d88; }
+.git-status .git-clean { color: var(--fg-dim); }
+
+/* GitHub Actions build chip (end of the git line) + its dots, shared with the
+ * recent-runs popover. Only a run in flight moves: its dot breathes. */
+.git-status .git-ci {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  color: var(--fg-muted); cursor: pointer; transition: color .15s;
+}
+.git-status .git-ci:hover { color: var(--fg); }
+.ci-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-dim); }
+.ci-ok .ci-dot { background: var(--accent-3); }
+.ci-fail .ci-dot { background: #d88; }
+.ci-run .ci-dot { background: var(--warn); animation: ap-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ci-run .ci-dot { animation: none; }
+}
+
+/* ============================================================
+ * Terminal-modern touches: prompt glyph, mono input, header line
+ * ============================================================ */
+
+/* Green ▸ prompt glyph in front of the composer input */
+.composer-row::before {
+  content: "▸";
+  align-self: flex-end;
+  color: var(--accent-2);
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px 9px 2px;
+  text-shadow: 0 0 8px rgba(108,199,142,0.5);
+}
+.composer-row textarea {
+  font-family: var(--sans);
+  font-size: 14.5px;
+}
+
+/* ---- Shell mode: a leading `$` switches the composer to run a shell command.
+   We light the whole input up in a distinct cyan so the switch is obvious. ---- */
+.composer-row { position: relative; }
+.shell-badge {
+  position: absolute; top: -11px; left: 14px; z-index: 2;
+  display: none; align-items: center;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: #062227; background: #56c7d6;
+  border-radius: 999px; padding: 3px 10px;
+  box-shadow: 0 2px 12px rgba(86,199,214,0.4);
+}
+.composer.shell-mode .shell-badge {
+  display: inline-flex;
+  animation: shell-badge-in .22s cubic-bezier(.2,.9,.3,1.25);
+}
+.composer.shell-mode .composer-dock {
+  box-shadow: 0 16px 36px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(86,199,214,0.55),
+    0 0 30px -6px rgba(86,199,214,0.22);
+}
+.composer.shell-mode .composer-row::before {
+  content: "$"; color: #56c7d6; text-shadow: 0 0 8px rgba(86,199,214,0.55);
+}
+.composer.shell-mode .send-btn:not(.is-stop) { background: #56c7d6; color: #062227; }
+.composer.shell-mode .send-btn:not(.is-stop):hover:not(:disabled) {
+  background: #6ed4e1; box-shadow: 0 4px 14px rgba(86,199,214,0.42);
+}
+@keyframes shell-badge-in {
+  from { opacity: 0; transform: translateY(4px) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer.shell-mode .shell-badge { animation: none; }
+}
+
+/* ---- Chat references (#mention): pills above the input + the autocomplete ---- */
+.composer-refs {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-width: var(--read-w); margin: 0 auto 8px;
+}
+.composer-ref {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 3px 5px 3px 10px;
+  animation: ref-in .2s cubic-bezier(.2,.9,.3,1.2);
+}
+.composer-ref .ref-ico { font-size: 11px; }
+.composer-ref .ref-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-ref .ref-x {
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.composer-ref .ref-x:hover { color: #ff8a8a; }
+@keyframes ref-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ---- Suggested next message: the CLI's predicted follow-up, offered under the
+   composer after a turn. One calm rise-in; click to drop it in the box. ---- */
+.composer-suggest {
+  display: flex; align-items: center; gap: 6px;
+  max-width: var(--read-w); margin: 0 auto 8px;
+}
+.composer-suggest.in .suggest-chip { animation: suggest-in .22s ease; }
+.suggest-chip {
+  display: inline-flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-size: 12px; color: var(--fg-muted); text-align: left;
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  transition: color .15s, border-color .15s, translate .2s var(--ease-out);
+}
+.suggest-chip:hover { color: var(--fg); border-color: var(--border-1); translate: 0 -1px; }
+.suggest-label { font-weight: 700; opacity: .7; flex: none; }
+.suggest-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-x {
+  border: none; background: transparent; color: var(--fg-dim); flex: none;
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.suggest-x:hover { color: #ff8a8a; }
+@keyframes suggest-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .composer-suggest.in .suggest-chip { animation: none; }
+}
+
+/* ---- Queued messages: what was sent while a turn was still running, waiting
+   above the input to go out when it finishes. Dashed, because they are not sent
+   yet. A new one rises in — the same calm rise as the strips around it; the
+   others don't move. Amber when the queue is on hold, like every other "this
+   needs you". ---- */
+.composer-queue {
+  display: flex; flex-direction: column; gap: 5px;
+  max-width: var(--read-w); margin: 0 auto 8px;
+}
+.composer-queue[hidden] { display: none; }
+.queue-head {
+  display: flex; align-items: center; gap: 10px; padding: 0 3px; min-height: 22px;
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0.02em; color: var(--fg-dim);
+}
+.composer-queue.held .queue-label { color: var(--warn); }
+.queue-go {
+  margin-left: auto; flex: none; cursor: pointer;
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  padding: 3px 11px; border-radius: var(--radius-sm);
+  color: #0a0f0b; background: var(--accent-2); border: 1px solid var(--accent-2);
+  transition: background .15s, border-color .15s;
+}
+.queue-go:hover { background: var(--accent-3); border-color: var(--accent-3); }
+/* Capped and scrollable: a long queue must never push the input off the window. */
+.queue-list { display: flex; flex-direction: column; gap: 4px; max-height: 124px; overflow-y: auto; }
+.queue-item {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  font-size: 12.5px; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px dashed var(--border-2);
+  border-radius: 10px; padding: 3px 5px 3px 10px;
+}
+.queue-item.in { animation: suggest-in .22s ease; }
+.queue-num { flex: none; font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--accent-2); }
+.queue-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-files { flex: none; font-size: 11px; color: var(--fg-dim); }
+.queue-act {
+  flex: none; border: none; background: transparent; color: var(--fg-dim);
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 3px 5px;
+  border-radius: 6px; transition: color .15s;
+}
+.queue-act.x { font-size: 16px; }
+.queue-act:hover { color: var(--fg); }
+.queue-act.x:hover { color: #ff8a8a; }
+
+/* The queue button: only there mid-turn, once something is typed — it sits
+   beside Stop and fades in. A quiet outline, so Stop stays the loud one. */
+.queue-btn {
+  flex: 0 0 auto; align-self: flex-end;
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border-2);
+  color: var(--accent-3); cursor: pointer;
+  transition: border-color .15s, background .15s;
+  animation: queue-btn-in .18s ease;
+}
+.queue-btn[hidden] { display: none; }
+.queue-btn:hover { border-color: var(--accent-2); background: rgba(108,199,142,0.10); }
+@keyframes queue-btn-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .queue-item.in, .queue-btn { animation: none; }
+  .queue-go, .queue-act, .queue-btn { transition: none; }
+}
+
+/* ---- Ask mode: the permission prompt. A turn is stopped on this, so it docks
+   above the input where it can't scroll out of sight — amber, like every other
+   "this needs you" in the app. One calm rise-in, the same one the strip above
+   uses. ---- */
+.composer-perm { max-width: var(--read-w); margin: 0 auto 8px; }
+.composer-perm.in .perm-card { animation: suggest-in .22s ease; }
+.perm-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--warn-bd); background: var(--bg-card);
+}
+.perm-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--fg);
+}
+.perm-ico { flex: none; font-size: 13px; }
+.perm-title { min-width: 0; }
+.perm-more {
+  margin-left: auto; flex: none;
+  font-family: var(--sans); font-size: 10.5px; font-weight: 500; color: var(--warn);
+}
+.perm-why { font-size: 12px; color: var(--fg-muted); line-height: 1.45; }
+.perm-path {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted);
+  word-break: break-all; line-height: 1.5;
+}
+/* What is being agreed to — the command, the diff, the file's content. Capped
+   and scrollable: the card must never push the input off the window. */
+.perm-what, .perm-card .chip-diff {
+  margin: 0; max-height: 168px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  font-family: var(--mono); font-size: 11.5px;
+}
+.perm-what {
+  padding: 8px 11px; line-height: 1.5; color: var(--fg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.perm-card .chip-diff { padding: 6px 0; line-height: 1.55; }
+.perm-card .diff-line { padding: 0 11px; white-space: pre-wrap; word-break: break-word; }
+.perm-card .diff-line.del { color: #e0857a; background: rgba(224,122,90,0.08); }
+.perm-card .diff-line.add { color: var(--accent-3); background: rgba(108,199,142,0.08); }
+.perm-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.perm-btn {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--sans); font-size: 12px; font-weight: 600;
+  padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-2); background: transparent; color: var(--fg-muted);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.perm-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--fg-dim); }
+.perm-btn.allow { color: #0a0f0b; background: var(--accent-2); border-color: var(--accent-2); }
+.perm-btn.allow:hover:not(:disabled) {
+  color: #0a0f0b; background: var(--accent-3); border-color: var(--accent-3);
+}
+.perm-btn.deny { margin-left: auto; }
+.perm-btn.deny:hover:not(:disabled) { color: #ff8a8a; border-color: rgba(255,138,138,0.45); }
+.perm-btn:disabled { opacity: .55; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .composer-perm.in .perm-card { animation: none; }
+  .perm-btn { transition: none; }
+}
+
+/* ---- Attachments tray: pasted screenshots / dropped files above the input.
+   Mirrors the #-reference pills, with an optional thumbnail for images. ---- */
+.composer-atts {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-width: var(--read-w); margin: 0 auto 8px;
+}
+.composer-att {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; color: var(--fg-muted);
+  background: var(--bg-card); border: 1px solid var(--border-2);
+  border-radius: 999px; padding: 3px 5px 3px 8px;
+  animation: att-in .22s cubic-bezier(.2,.9,.3,1.2);
+}
+.composer-att.img { padding-left: 4px; }
+.composer-att .att-thumb {
+  width: 26px; height: 26px; border-radius: 999px; object-fit: cover;
+  border: 1px solid var(--border-2); cursor: zoom-in;
+}
+.composer-att .att-ico { font-size: 14px; line-height: 1; }
+.composer-att .att-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-att.failed { border-color: rgba(255,120,120,0.5); color: #ff9a9a; }
+.composer-att.failed .att-name { text-decoration: line-through; }
+.composer-att .att-x {
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px;
+  border-radius: 50%; transition: color .15s;
+}
+.composer-att .att-x:hover { color: #ff8a8a; }
+@keyframes att-in { from { opacity: 0; transform: translateY(3px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* overflow-x: clip keeps the living light within the chat pane (so it never
+   bleeds onto the sidebar); overflow-y stays visible so header pickers / the
+   mention popup can still overflow vertically. */
+.chat { position: relative; overflow-x: clip; }
+
+/* ---- Living light behind the chat (app/light.js) ----
+   No backlight panel: light comes from where the work is. A faint, still room
+   tone; a lamp that sits behind the line Claude is writing (light.js moves it and
+   sets its brightness — green, or amber while a turn waits on you); the floor
+   under the composer, warmed by typing; and the soft beats a finished step lets
+   out. Everything is an edgeless radial falloff, so there is never a line for the
+   eye to find. Gated by Extra effects (body.fx-on). */
+.chat > .feed, .chat > .composer {
+  position: relative; z-index: 1;
+}
+/* Header sits above the feed so its downward dropdowns (model picker) aren't
+   painted under the later-in-DOM .feed sibling — otherwise only the top menu
+   item, still within the header's box, stays clickable. */
+.chat > .chat-header {
+  position: relative; z-index: 3;
+}
+.chat-light {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  opacity: 0; transition: opacity .6s ease;
+}
+body.fx-on .chat-light { opacity: 1; }
+.chat-light i, .cl-lamp { position: absolute; display: block; pointer-events: none; }
+.cl-room {
+  left: 50%; top: 46%; width: 1400px; height: 900px; transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgba(108,199,142,0.03), transparent);
+}
+.cl-lamp { left: 50%; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; }
+.cl-lamp i { border-radius: 50%; transform: translate(-50%, -50%); }
+.cl-core { width: min(950px, 92vw); height: 300px;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.17), rgba(108,199,142,0.06) 55%, transparent); }
+.cl-spill { width: 1900px; height: 560px;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.055), transparent); }
+.cl-core.a { opacity: 0;
+  background: radial-gradient(closest-side, rgba(226,155,80,0.15), rgba(226,155,80,0.05) 55%, transparent); }
+.cl-spill.a { opacity: 0;
+  background: radial-gradient(closest-side, rgba(226,155,80,0.05), transparent); }
+.cl-floor {
+  left: 50%; bottom: -150px; width: min(1140px, 100%); height: 340px; transform: translateX(-50%); opacity: 0;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.16), rgba(108,199,142,0.05) 55%, transparent);
+}
+.cl-beat {
+  left: 50%; width: 1250px; height: 150px; opacity: 0;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.15), rgba(108,199,142,0.04) 60%, transparent);
+}
+/* The grain the light needs lives on the whole window now (body.app::after),
+   so it doesn't stop at the sidebar's edge. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-light { transition: none; }
+}
+
+/* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
+   hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
+.drop-hint {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4,7,5,0.55); backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity .18s ease; pointer-events: none;
+}
+.drop-hint.on { opacity: 1; }
+.drop-hint-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px 40px;
+  border: 2px dashed var(--accent-2); border-radius: 18px;
+  background: rgba(108,199,142,0.08);
+  transform: translateY(8px) scale(.98); transition: transform .2s cubic-bezier(.2,.9,.3,1.2);
+}
+.drop-hint.on .drop-hint-card { transform: none; }
+.drop-hint-ico { font-size: 34px; line-height: 1; filter: drop-shadow(0 0 12px rgba(108,199,142,0.45)); }
+.drop-hint-text {
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.04em; color: var(--accent-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-att { animation: none; }
+  .drop-hint, .drop-hint-card { transition: none; }
+}
+
+/* The # autocomplete floats just above the input row. */
+.mention-pop {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 6;
+  max-height: 260px; overflow-y: auto;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.5);
+}
+.mention-pop.mention-in { animation: mention-in .16s ease; }
+@keyframes mention-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.mention-empty { color: var(--fg-muted); font-size: 13px; padding: 12px 12px; text-align: center; }
+.mention-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  padding: 9px 11px; cursor: pointer; text-align: left; color: var(--fg);
+}
+.mention-item.sel, .mention-item:hover { background: var(--bg-card); }
+.mention-hash { font-family: var(--mono); font-weight: 700; color: var(--accent-2); flex: none; }
+.mention-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-when { flex: none; font-size: 11px; color: var(--fg-dim); font-family: var(--sans); }
+@media (prefers-reduced-motion: reduce) {
+  .composer-ref { animation: none; }
+  .mention-pop.mention-in { animation: none; }
+}
+
+/* Section labels read like terminal headers */
+.sidebar-section h2 { font-family: var(--sans); }
+
+/* Header: blinking green cursor + monospace path, like a shell prompt */
+.chat-title { font-family: var(--sans); letter-spacing: 0.01em; }
+.chat-title::before {
+  content: "$ ";
+  color: var(--accent-2);
+  text-shadow: 0 0 8px rgba(108,199,142,0.5);
+}
+.chat-cwd::before { content: "› "; color: var(--accent-2); }
