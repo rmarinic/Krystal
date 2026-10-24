@@ -100,7 +100,7 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - Keep the logic of a living effect in a pure, testable step (like `lightStep`) and test its states, including "comes to rest".
 
 **Process for anything that's about feel**
-- **Prototype first, as an artifact, before touching the app.** Simulate the *real flow* (e.g. "Play a turn": typing → send → thinking → tools → streaming → done → rest) with toggles per idea and a strength slider. A static mock can't show whether something responds, so judge it in motion.
+- **Build it straight into the app by default.** Make an artifact/mockup only when the maintainer asks for one. When one is asked for, simulate the *real flow* (e.g. "Play a turn": typing → send → thinking → tools → streaming → done → rest) with toggles per idea and a strength slider, because a static mock can't show whether something responds.
 - Start quieter than you think. If a direction is rejected twice, stop iterating on it: step back, research how great products do it, and propose from principles.
 - Name the *why* in comments next to the effect (what it answers and why it rests), as `light.js` and `motion.js` do.
 
