@@ -19,14 +19,15 @@ function loadMessages() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'messages.js'), 'utf8');
   const ctx = {
     tr: (k) => k, escapeHtml: (s) => String(s), icon: () => '',
+    fmtDur: (ms) => Math.round(ms / 1000) + 's',
     document: { createElement: () => ({}) }, window: {},
-    Set, Map, JSON, String, Array, console,
+    Set, Map, JSON, String, Array, Math, Date, console,
   };
-  const exported = ['webSearchLinks', 'chipOpenKind'];
+  const exported = ['webSearchLinks', 'chipOpenKind', 'chipTimeLabel', 'CHIP_TIME_AFTER_MS'];
   return vm.runInNewContext(`${src}\n;({ ${exported.join(', ')} })`, ctx, { filename: 'messages.js' });
 }
 
-const { webSearchLinks, chipOpenKind } = loadMessages();
+const { webSearchLinks, chipOpenKind, chipTimeLabel, CHIP_TIME_AFTER_MS } = loadMessages();
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log('  ok  ' + name); }
 
@@ -97,6 +98,25 @@ test('matches the backend rule (commands.rs open_kind) extension for extension',
   };
   for (const ext of list('AS_TEXT')) assert.strictEqual(chipOpenKind('C:\\x\\f.' + ext), 'text', ext);
   for (const ext of list('NEVER')) assert.strictEqual(chipOpenKind('C:\\x\\f.' + ext), 'never', ext);
+});
+
+/* ------------------------------- the chip clock ------------------------------ */
+
+test('a quick action shows no time at all', () => {
+  assert.strictEqual(chipTimeLabel({ start: 1000, end: null }, 1000 + CHIP_TIME_AFTER_MS - 1), '');
+  assert.strictEqual(chipTimeLabel({ start: 1000, end: 2500 }, 99999), '');
+  assert.strictEqual(chipTimeLabel(undefined, 5000), '');
+});
+
+test('a slow one counts while it runs', () => {
+  assert.strictEqual(chipTimeLabel({ start: 0, end: null }, 4000), '4s');
+  assert.strictEqual(chipTimeLabel({ start: 0, end: null }, 12000), '12s');
+});
+
+test('once it is over the clock stays where it stopped', () => {
+  const t = { start: 0, end: 7000 };
+  assert.strictEqual(chipTimeLabel(t, 7000), '7s');
+  assert.strictEqual(chipTimeLabel(t, 60000), '7s');
 });
 
 console.log(`\nchips: ${passed} passed`);

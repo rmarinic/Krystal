@@ -416,6 +416,7 @@
       'tool.Write': 'Writing a file',
       'tool.Edit': 'Editing a file',
       'tool.Bash': 'Running a command',
+      'tool.PowerShell': 'Running a command',
       'tool.Glob': 'Finding files',
       'tool.Grep': 'Searching',
       'tool.WebSearch': 'Searching the web',
@@ -857,6 +858,8 @@
       'settings.runs.stale': 'Stale',
       'settings.runs.unknown': 'Untitled chat',
       'sidebar.streamingTitle': 'A reply is streaming in this chat',
+      'sidebar.working': 'Working',
+      'sidebar.needsYou': 'Needs you',
       'sidebar.draftTitle': 'An unsent draft is waiting in this chat',
       'sidebar.permissionTitle': 'This chat is waiting for your permission',
 
@@ -1333,6 +1336,7 @@
       'tool.Write': 'Pišem datoteku',
       'tool.Edit': 'Uređujem datoteku',
       'tool.Bash': 'Izvodim naredbu',
+      'tool.PowerShell': 'Izvodim naredbu',
       'tool.Glob': 'Tražim datoteke',
       'tool.Grep': 'Pretražujem',
       'tool.WebSearch': 'Pretražujem web',
@@ -1773,6 +1777,8 @@
       'settings.runs.stale': 'Zastarjelo',
       'settings.runs.unknown': 'Razgovor bez naslova',
       'sidebar.streamingTitle': 'U ovom razgovoru pristiže odgovor',
+      'sidebar.working': 'U tijeku',
+      'sidebar.needsYou': 'Čeka odgovor',
       'sidebar.draftTitle': 'U ovom razgovoru čeka neposlana skica',
       'sidebar.permissionTitle': 'Ovaj razgovor čeka dopuštenje',
 

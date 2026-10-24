@@ -78,6 +78,7 @@ function permissionsTurnEnded(live) {
 
 const PERMISSION_TITLES = {
   Bash: 'perm.title.run',
+  PowerShell: 'perm.title.run',
   Edit: 'perm.title.edit', MultiEdit: 'perm.title.edit', NotebookEdit: 'perm.title.edit',
   Write: 'perm.title.write',
   Read: 'perm.title.read',
@@ -183,7 +184,7 @@ function renderPermission(force) {
   if (p.detail) {
     const what = document.createElement(hasChange ? 'div' : 'pre');
     what.className = hasChange ? 'perm-path' : 'perm-what';
-    what.textContent = (p.tool === 'Bash' ? '$ ' : '') + p.detail;
+    what.textContent = shellPrompt(p.tool) + p.detail;
     card.appendChild(what);
   }
   if (Array.isArray(p.edits) && p.edits.length) {

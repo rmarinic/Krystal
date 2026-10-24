@@ -59,12 +59,16 @@ function trimAgentRuns() {
  * tool is called. The chip is upgraded in place and tracked from here on.
  *
  * No chip for the id → a worker a worker spawned itself. Those are nested inside
- * their parent's run and get no inspector of their own. */
+ * their parent's run and get no inspector of their own.
+ *
+ * A shell chip is never adopted: the CLI reports every shell command as a task of
+ * its own now, and taking that for delegation turned each command's chip into an
+ * empty agent window. (The backend no longer forwards those; this keeps it so.) */
 function adoptAgentRun(id) {
   const known = agentRun(id);
   if (known) return known;
   const chip = els.feed.querySelector(`.action-chip[data-id="${cssEsc(id)}"]`);
-  if (!chip) return null;
+  if (!chip || isShellTool((chip._seg && chip._seg.name) || chip.dataset.tool)) return null;
   const r = ensureAgentRun(id, state.activeId);
   const seg = chip._seg || {};
   r.description = seg.detail || seg.target || '';
@@ -91,6 +95,11 @@ function upgradeChipToAgent(chip, r) {
     const tally = document.createElement('span');
     tally.className = 'chip-tally';
     row.appendChild(tally);
+  }
+  if (!row.querySelector('.chip-time')) {
+    const time = document.createElement('span');
+    time.className = 'chip-time';
+    row.appendChild(time);
   }
   if (!row.querySelector('.chip-open')) {
     const open = document.createElement('span');
@@ -119,7 +128,10 @@ function agentProgressSeen(msg) {
   const r = adoptAgentRun(msg.id);
   if (!r) return;
   if (msg.subagent) r.subagent = msg.subagent;
-  if (msg.description) r.description = msg.description;
+  // The CLI's description moves with the work ("Reading README.txt"); the run's
+  // is the brief it was given, which the timeline below it is the story of. Only
+  // fill it if we never got the brief.
+  if (msg.description && !r.description) r.description = msg.description;
   if (msg.lastTool) r.lastTool = msg.lastTool;
   if (msg.toolUses != null) r.toolUses = msg.toolUses;
   if (msg.tokens != null) r.tokens = msg.tokens;
@@ -269,6 +281,7 @@ function renderAgentChip(seg, working) {
     `<span class="chip-ico" aria-hidden="true">${icon('agent')}</span>` +
     `<span class="chip-label">${escapeHtml(toolLabel(seg.name || 'Agent') + (seg.target ? ' · ' + seg.target : ''))}</span>` +
     '<span class="chip-tally"></span>' +
+    '<span class="chip-time"></span>' +
     '<span class="chip-open" aria-hidden="true">⤢</span>';
   el.appendChild(row);
   row.onclick = () => openAgentPanel(seg.id);
@@ -276,16 +289,25 @@ function renderAgentChip(seg, working) {
   return el;
 }
 
-/* Keep a chip's tally + status in step with its run. */
+/* Keep a chip's tally + status in step with its run. Its clock is the run's own
+ * (the same reading the inspector's elapsed tile gives), on the shared chip
+ * clock (messages.js) so it ticks while the worker does. */
 function syncAgentChip(el, r) {
   const tally = el.querySelector('.chip-tally');
   if (tally) tally.textContent = agentTally(r);
+  if (r.startedAt) {
+    const t = chipTime(r.id);
+    t.start = r.endedAt ? r.endedAt - agentElapsed(r) : Date.now() - agentElapsed(r);
+    t.end = r.endedAt || null;
+  }
   const st = agentState(r);
   const finishing = st !== 'running' && el.classList.contains('working');
   el.classList.toggle('working', st === 'running');
   el.classList.toggle('done', st !== 'running');
   el.classList.toggle('error', st === 'error');
   if (finishing && st !== 'error') replayClass(el, 'just-done', 500);   // draws its check (motion.css)
+  paintChipTime(el);
+  if (st === 'running') startChipClock();
 }
 
 /* Refresh every agent chip on screen from the store (used after a thread switch

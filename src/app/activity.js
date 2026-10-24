@@ -1,7 +1,7 @@
 /* activity.js   — Activity panel: live shells & sub-agents
    Part of the chat frontend; shares one global scope (see core.js). */
 /* --------------------- Activity: shells & sub-agents --------------------- */
-/* The Activity button stays disabled until Claude runs a shell (Bash) or
+/* The Activity button stays disabled until Claude runs a shell (Bash/PowerShell) or
  * launches a sub-agent (Task). Each such action is tracked here with its
  * command/description and — once the CLI reports it back — its output, so the
  * panel doubles as a live log of what Claude is doing under the hood (e.g. an
@@ -9,9 +9,9 @@
 
 const ACTIVITY_SVG =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
-const ACT_ICON = { Bash: 'terminal', Agent: 'agent', Task: 'agent' };
+const ACT_ICON = { Bash: 'terminal', PowerShell: 'terminal', Agent: 'agent', Task: 'agent' };
 // Shells & sub-agents — the two kinds of thing worth logging here.
-const isActivityTool = (name) => name === 'Bash' || isAgentTool(name);
+const isActivityTool = (name) => isShellTool(name) || isAgentTool(name);
 
 // Rebuild the activity list from a thread's saved messages (tool segments).
 function activityFromSegments(messages) {
@@ -237,7 +237,7 @@ function renderActivityBody(body) {
     if (a.detail) {
       const c = document.createElement('div');
       c.className = 'activity-cmd';
-      c.textContent = (a.name === 'Bash' ? '$ ' : '') + a.detail;
+      c.textContent = shellPrompt(a.name) + a.detail;
       item.appendChild(c);
     }
     // Finished → show captured output. Still running with live sub-agent progress

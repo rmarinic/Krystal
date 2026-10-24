@@ -561,6 +561,12 @@ function decorateCode(scope) {
 const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 function isImagePath(p) { return !!p && IMG_EXT_RE.test(p.trim()); }
 
+/* The tools that run a shell command. On Windows Claude reaches for PowerShell
+ * as often as Bash, so anywhere the UI means "a shell" it means both. */
+function isShellTool(name) { return name === 'Bash' || name === 'PowerShell'; }
+// The prompt a shown command line is written after: `$ ls` / `PS> Get-ChildItem`.
+function shellPrompt(name) { return name === 'PowerShell' ? 'PS> ' : name === 'Bash' ? '$ ' : ''; }
+
 /* ------------------------------ image lightbox --------------------------- *
  * Any image the app shows as a small thumbnail — a composer attachment pill, a
  * sent message's file-chip, or a tool chip's inline preview — is click-to-view.

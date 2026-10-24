@@ -52,6 +52,8 @@ function loadAgents() {
     fmtTokens: (n) => String(n),
     fmtDur: (ms) => Math.round(ms / 1000) + 's',
     toolLabel: (n) => n,
+    isShellTool: (n) => n === 'Bash' || n === 'PowerShell',
+    chipTime: () => ({ start: 0, end: null }), paintChipTime() {}, startChipClock() {},
     TOOL_ICON: { Agent: '🧩', Task: '🧩' },
     api: { stopChat: async () => {} },
     stopActiveTurn: async () => {},
@@ -242,6 +244,32 @@ check('an unfamiliar delegation tool is adopted from its progress events', () =>
   eq(chip.classList.contains('agent-chip'), true, 'chip upgraded');
   eq(chip.classList.contains('expandable'), false, 'no longer expands inline');
   eq(typeof row.onclick, 'function', 'clicking it opens the inspector');
+});
+
+check('a shell command reported as a task is not taken for a sub-agent', () => {
+  const A = loadAgents();
+  // The CLI raises a task for every shell run, under the shell chip's own id.
+  for (const name of ['Bash', 'PowerShell']) {
+    const id = 'tu_' + name;
+    const chip = {
+      _seg: { name, id, detail: 'npm test' }, dataset: { id, tool: name },
+      classList: { add() { throw new Error('a shell chip must not be upgraded'); }, remove() {}, contains: () => false, toggle() {} },
+      querySelector: () => null,
+    };
+    A.els.feed.querySelector = () => chip;
+    A.agentProgressSeen({ id, phase: 'started', description: 'Run the tests' });
+    A.agentActivitySeen({ id, kind: 'text', text: 'hm' });
+    eq(A.hasAgentRun(id), false, name + ' stays a shell chip');
+  }
+});
+
+check('progress does not overwrite the brief the agent was given', () => {
+  const A = loadAgents();
+  A.agentTaskSeen('thread-1', { id: 'tu_b', name: 'Agent', detail: 'Find the config loader' });
+  A.agentProgressSeen({ id: 'tu_b', description: 'Reading README.txt', lastTool: 'Read' });
+  const r = A.agentRun('tu_b');
+  eq(r.description, 'Find the config loader', 'brief kept');
+  eq(r.lastTool, 'Read', 'progress still applied');
 });
 
 check('reopening a chat rebuilds finished runs from the transcript', () => {

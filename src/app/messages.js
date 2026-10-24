@@ -9,7 +9,7 @@ function toolLabel(name) { return tr('tool.' + name, null, name); }
 // Which icon (icons.js) each tool's chip wears; anything unlisted gets `tool`.
 const TOOL_ICON = {
   Read: 'read', Write: 'write', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
-  Bash: 'terminal', Glob: 'search', Grep: 'search', WebSearch: 'globe', WebFetch: 'globe',
+  Bash: 'terminal', PowerShell: 'terminal', Glob: 'search', Grep: 'search', WebSearch: 'globe', WebFetch: 'globe',
   Agent: 'agent', Task: 'agent', TodoWrite: 'todo', AskUserQuestion: 'ask', ExitPlanMode: 'plan',
   mcp__krystal__artifact: 'artifact',
 };
@@ -227,6 +227,58 @@ const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).rep
 const CHIP_TICK_SVG =
   '<svg class="chip-tick" viewBox="0 0 12 12"><path d="M2.6 6.4l2.2 2.2 4.6-4.9"/></svg>';
 
+/* ------------------------------ how long it took --------------------------- *
+ * An action that takes a while shows how long it has been going. We count it
+ * here because the CLI says nothing while a command runs — its output only
+ * arrives once it's over — and a spinner alone can't tell "busy" from "stuck".
+ * It answers real time on real work: the number appears only once an action has
+ * run CHIP_TIME_AFTER_MS (a quick read never flashes one), and the moment no
+ * chip is working the ticker stops. The last reading stays, so a slow step still
+ * reads as slow afterwards. Times are kept by tool_use id, outside the DOM, so a
+ * chip rebuilt by a re-render or a thread switch carries on counting. */
+const CHIP_TIME_AFTER_MS = 3000;
+const CHIP_TIMES_MAX = 500;
+const chipTimes = new Map();    // tool_use id -> { start, end }
+let chipClock = null;
+
+function chipTime(id) {
+  let t = chipTimes.get(id);
+  if (!t) {
+    t = { start: Date.now(), end: null };
+    chipTimes.set(id, t);
+    if (chipTimes.size > CHIP_TIMES_MAX) chipTimes.delete(chipTimes.keys().next().value);
+  }
+  return t;
+}
+
+// What the chip's clock reads: nothing for a quick action, else e.g. "12s".
+function chipTimeLabel(t, now) {
+  if (!t || t.start == null) return '';
+  const ms = (t.end || now) - t.start;
+  return ms >= CHIP_TIME_AFTER_MS ? fmtDur(ms) : '';
+}
+
+function paintChipTime(chip) {
+  const el = chip && chip.querySelector('.chip-time');
+  if (!el) return;
+  const label = chipTimeLabel(chip.dataset.id && chipTimes.get(chip.dataset.id), Date.now());
+  if (el.textContent !== label) el.textContent = label;
+}
+
+function tickChipClock() {
+  const running = document.querySelectorAll('.action-chip.working[data-id]');
+  running.forEach(paintChipTime);
+  if (!running.length) { clearInterval(chipClock); chipClock = null; }
+}
+function startChipClock() { if (!chipClock) chipClock = setInterval(tickChipClock, 1000); }
+
+// The action is over: its clock stops where it is.
+function stopChipTime(chip) {
+  const t = chip && chip.dataset.id && chipTimes.get(chip.dataset.id);
+  if (t && !t.end) t.end = Date.now();
+  paintChipTime(chip);
+}
+
 /* Build one "action chip" — the persisted, on-its-own-line record of a tool
  * action. `working` shows a live spinner + glow; otherwise a settled check.
  * The chip is expandable: clicking it reveals what the tool did — a diff for
@@ -251,8 +303,11 @@ function renderActionChip(seg, working) {
     `<span class="chip-status" aria-hidden="true">${CHIP_TICK_SVG}</span>` +
     `<span class="chip-ico" aria-hidden="true">${toolIcon(name)}</span>` +
     `<span class="chip-label">${escapeHtml(label)}</span>` +
+    '<span class="chip-time"></span>' +
     '<span class="chip-caret" aria-hidden="true">▸</span>';
   el.appendChild(row);
+  if (working && seg.id) { chipTime(seg.id); paintChipTime(el); startChipClock(); }
+  else if (seg.id && chipTimes.has(seg.id)) paintChipTime(el);
 
   const details = document.createElement('div');
   details.className = 'chip-details';
@@ -447,7 +502,7 @@ function fillChipDetails(details, seg) {
   } else if (seg.detail) {
     const d = document.createElement('div');
     d.className = 'chip-detail-line';
-    d.textContent = (seg.name === 'Bash' ? '$ ' : '') + seg.detail;
+    d.textContent = shellPrompt(seg.name) + seg.detail;
     details.appendChild(d);
     any = true;
   }

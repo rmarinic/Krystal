@@ -53,7 +53,8 @@
       tool: {
         Read: 'Reading a file', Write: 'Writing a file', Edit: 'Editing a file',
         MultiEdit: 'Editing a file', NotebookEdit: 'Editing a file',
-        Bash: 'Running a command', Glob: 'Finding files', Grep: 'Searching',
+        Bash: 'Running a command', PowerShell: 'Running a command',
+        Glob: 'Finding files', Grep: 'Searching',
         WebSearch: 'Searching the web', WebFetch: 'Fetching a page',
         Agent: 'Delegating to a subagent', Task: 'Delegating to a subagent',
         TodoWrite: 'Planning', AskUserQuestion: 'Asking you a question',
@@ -95,7 +96,8 @@
       tool: {
         Read: 'Čitam datoteku', Write: 'Pišem datoteku', Edit: 'Uređujem datoteku',
         MultiEdit: 'Uređujem datoteku', NotebookEdit: 'Uređujem datoteku',
-        Bash: 'Izvodim naredbu', Glob: 'Tražim datoteke', Grep: 'Pretražujem',
+        Bash: 'Izvodim naredbu', PowerShell: 'Izvodim naredbu',
+        Glob: 'Tražim datoteke', Grep: 'Pretražujem',
         WebSearch: 'Pretražujem web', WebFetch: 'Dohvaćam stranicu',
         Agent: 'Delegiram pod-agentu', Task: 'Delegiram pod-agentu',
         TodoWrite: 'Planiram', AskUserQuestion: 'Postavlja ti pitanje',
@@ -551,7 +553,7 @@
    * somebody to walk over to the desktop. Same three answers as the window. */
 
   const PERM_TITLES = {
-    Bash: 'permRun', Edit: 'permEdit', MultiEdit: 'permEdit', NotebookEdit: 'permEdit',
+    Bash: 'permRun', PowerShell: 'permRun', Edit: 'permEdit', MultiEdit: 'permEdit', NotebookEdit: 'permEdit',
     Write: 'permWrite', Read: 'permRead', WebFetch: 'permFetch', WebSearch: 'permSearch',
   };
 
@@ -590,7 +592,7 @@
     if (msg.detail) {
       const what = document.createElement(body ? 'div' : 'pre');
       what.className = body ? 'perm-path' : 'perm-what';
-      what.textContent = (msg.tool === 'Bash' ? '$ ' : '') + msg.detail;
+      what.textContent = (msg.tool === 'PowerShell' ? 'PS> ' : msg.tool === 'Bash' ? '$ ' : '') + msg.detail;
       card.appendChild(what);
     }
     if (body) {

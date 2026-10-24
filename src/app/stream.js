@@ -294,11 +294,22 @@ function makeTyper(bubble) {
   let raf = null, last = 0;
 
   function clearThinking() { if (thinkEl) { thinkEl.remove(); thinkEl = null; } }
+  /* A chip is done when its own result is back, not when the next thing starts:
+   * Claude often runs several tools at once, and each should keep spinning until
+   * it returns. So moving on only lets go of the chip; `setToolResult` (or the
+   * end of the turn) settles it. A chip with no id can never be matched to a
+   * result and settles the old way. A sub-agent's chip follows its run instead
+   * (agents.js). */
+  function chipDone(chip, quiet) {
+    if (!chip || !chip.classList.contains('working') || chip.classList.contains('agent-chip')) return;
+    chip.classList.remove('working');
+    chip.classList.add('done');
+    stopChipTime(chip);
+    if (!quiet) replayClass(chip, 'just-done', 500);   // its check draws itself (motion.css)
+  }
   function settleChip() {
     if (!chipEl) return;
-    chipEl.classList.remove('working');
-    chipEl.classList.add('done');
-    replayClass(chipEl, 'just-done', 500);   // its check draws itself (motion.css)
+    if (!chipEl.dataset.id) chipDone(chipEl);
     chipEl = null;
   }
 
@@ -363,6 +374,8 @@ function makeTyper(bubble) {
       closeTextBlock();
       settleChip();
       clearThinking();
+      // Nothing more is coming: a chip still waiting on its result never gets one.
+      bubble.querySelectorAll('.action-chip.working[data-id]').forEach((c) => chipDone(c, quietEnd));
       // No streamed text at all (answer came only via the final result)? Show it.
       if (bubble.childElementCount === 0 && finalText && finalText.trim()) {
         const d = document.createElement('div');
@@ -446,11 +459,14 @@ function makeTyper(bubble) {
     // `quiet`: the turn was stopped, so it ends without the "landed" sweep.
     finish(text, quiet) { finalText = text; finished = true; quietEnd = !!quiet; run(); },
     error(msg) { errMsg = msg; run(); },
-    // A tool's output arrived — fold it into its chip so expanding shows it.
-    setToolResult(msg) {
+    // A tool's output arrived — fold it into its chip so expanding shows it, and
+    // that action is over. `quiet`: a replay, not a finish happening now.
+    setToolResult(msg, quiet) {
       if (!msg || !msg.id) return;
       const chip = bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`);
-      if (chip) setChipOutput(chip, msg.output, msg.isError);
+      if (!chip) return;
+      setChipOutput(chip, msg.output, msg.isError);
+      chipDone(chip, quiet);
     },
     // Detach from the render loop without finalizing — the bubble is about to be
     // removed (thread switch); the underlying live turn keeps accumulating.
@@ -514,7 +530,7 @@ function attachLiveTyper(live) {
   live.bubble.querySelectorAll('.just-done').forEach((c) => c.classList.remove('just-done'));
   // Re-apply any tool outputs received so far so expanded chips show them again.
   if (live.outputs) for (const id in live.outputs) {
-    typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError });
+    typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError }, true);
   }
   refreshAgentChips();   // rebuilt sub-agent chips pick their tally back up
   if (!live.events.length) typer.thinking();

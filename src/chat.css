@@ -601,6 +601,15 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
 }
 .action-chip.agent-chip .chip-tally:empty { display: none; }
+
+/* How long a slow action has been going (messages.js, "how long it took"). Mono
+ * with even digits, so a ticking number never nudges the pill's width about. */
+.action-chip .chip-time {
+  flex: none; padding-left: 8px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.action-chip .chip-time:empty { display: none; }
 .action-chip.agent-chip .chip-open {
   flex: none; margin-left: 8px; font-size: 11px; color: var(--fg-dim);
   transition: color .15s ease;

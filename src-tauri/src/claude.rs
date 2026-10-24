@@ -829,7 +829,7 @@ fn permission_prompt(request_id: &str, request: &Value) -> Value {
         msg["target"] = json!(t);
     }
     // A shell command's own one-line explanation of itself, when it gave one.
-    if tool == "Bash" {
+    if is_shell_tool(tool) {
         if let Some(why) = input.get("description").and_then(|v| v.as_str()) {
             msg["why"] = json!(take_chars(why, 300));
         }
@@ -1258,6 +1258,12 @@ fn base_name(p: &str) -> String {
     p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(p).to_string()
 }
 
+/// The tools that run a shell command. On Windows Claude reaches for PowerShell
+/// as often as Bash, so anything said about "the shell" means both.
+pub fn is_shell_tool(name: &str) -> bool {
+    name == "Bash" || name == "PowerShell"
+}
+
 /// Turn a tool's input into a short on-chip target + a full hover detail.
 /// Mirrors `toolDetail` in server.js. Returns (detail, target).
 fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<String>) {
@@ -1268,9 +1274,17 @@ fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<String>) {
     if let Some(path) = str_of("file_path").or_else(|| str_of("path")).or_else(|| str_of("notebook_path")) {
         return (Some(path.to_string()), Some(base_name(path)));
     }
-    if name == "Bash" {
+    // A shell run is labelled by what it is *for* — Claude's own one-line
+    // description of it, when it gave one — and the command itself is the
+    // detail. "Run the tests" reads at a glance; `npx vitest run --reporter…`
+    // doesn't. Bash and PowerShell are the same thing for this.
+    if is_shell_tool(name) {
         if let Some(cmd) = str_of("command") {
-            return (Some(cmd.to_string()), Some(take_chars(cmd, 36)));
+            let target = match str_of("description").map(str::trim).filter(|d| !d.is_empty()) {
+                Some(d) => take_chars(d, 60),
+                None => take_chars(cmd, 36),
+            };
+            return (Some(cmd.to_string()), Some(target));
         }
     }
     if name == "Grep" || name == "Glob" {
@@ -2013,18 +2027,30 @@ fn emit_agent_activity(
         Some(m) => m,
         None => return,
     };
-    // `--include-partial-messages` emits the consolidated assistant message more
-    // than once; the message id makes those repeats free to drop.
-    if let Some(id) = msg.get("id").and_then(|v| v.as_str()) {
-        if !seen.insert(format!("{parent}:{id}")) {
-            return;
-        }
-    }
+    // The CLI sends a message one content block per event, every one of them
+    // under the message's id — so the id alone can't tell a repeat from the next
+    // block (keying on it dropped every step a worker took after thinking first).
+    // A block is a repeat only if that same block was seen: a tool call by its
+    // own id, a line of text by what it says.
+    let msg_id = msg.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let blocks = match msg.get("content").and_then(|c| c.as_array()) {
         Some(a) => a,
         None => return,
     };
     for block in blocks {
+        let key = match block.get("type").and_then(|v| v.as_str()) {
+            Some("tool_use") => block.get("id").and_then(|v| v.as_str()).map(|id| format!("{parent}:t:{id}")),
+            Some("text") => block
+                .get("text")
+                .and_then(|v| v.as_str())
+                .map(|t| format!("{parent}:x:{msg_id}:{}", t.trim())),
+            _ => None,
+        };
+        if let Some(k) = key {
+            if !seen.insert(k) {
+                continue;
+            }
+        }
         match block.get("type").and_then(|v| v.as_str()) {
             Some("text") => {
                 let t = block.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
@@ -2270,7 +2296,12 @@ fn route_event(
             if ev.get("subtype").and_then(|v| v.as_str()) == Some("task_started") {
                 background.started(ev);
             }
-            emit_agent_progress(ev, channel);
+            // Every shell command is a "task" too now (`task_type: local_bash`),
+            // under its own tool_use id. Passing that on as agent progress made
+            // the window treat each shell chip as a sub-agent it had missed.
+            if is_agent_task(ev) {
+                emit_agent_progress(ev, channel);
+            }
         }
         "system" if ev.get("subtype").and_then(|v| v.as_str()) == Some("background_tasks_changed") => {
             background.sync(ev);
@@ -3382,5 +3413,98 @@ fn main() {}
             .position(|a| a == "--append-system-prompt-file")
             .expect("spilled to a file");
         assert_eq!(std::fs::read_to_string(&out[i + 1]).unwrap(), sys);
+    }
+
+    #[test]
+    fn a_shell_command_is_not_mistaken_for_a_sub_agent() {
+        // As the CLI sends it: every foreground shell run is a task of its own.
+        let (channel, seen) = recording_channel();
+        let mut result = ChatResult::default();
+        result.push_tool(json!({ "type": "tool", "name": "PowerShell", "id": "toolu_sh" }));
+        let mut bg = BackgroundAgents::default();
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "b1", "tool_use_id": "toolu_sh",
+                        "description": "Print six ticks", "is_backgrounded": false, "task_type": "local_bash" }),
+                json!({ "type": "system", "subtype": "task_notification", "task_id": "b1", "tool_use_id": "toolu_sh",
+                        "status": "completed", "output_file": "", "summary": "Print six ticks" }),
+                json!({ "type": "user", "message": { "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_sh", "content": "tick 1\ntick 2" }
+                ] } }),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        let sent = seen.lock().unwrap();
+        assert!(!sent.iter().any(|e| e["type"] == "agent_progress"), "a shell is not an agent: {sent:?}");
+        // …and its chip still gets its real output, not the task's summary.
+        assert_eq!(result.segments[0]["output"], json!("tick 1\ntick 2"));
+        assert!(!bg.holds_turn());
+    }
+
+    #[test]
+    fn an_agents_own_progress_still_comes_through() {
+        let (channel, seen) = recording_channel();
+        let mut result = ChatResult::default();
+        let mut bg = BackgroundAgents::default();
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a1", "tool_use_id": "toolu_ag",
+                        "description": "Look around", "is_backgrounded": false, "task_type": "local_agent",
+                        "subagent_type": "general-purpose" }),
+                // task_progress carries no task_type — it is an agent's by nature.
+                json!({ "type": "system", "subtype": "task_progress", "task_id": "a1", "tool_use_id": "toolu_ag",
+                        "description": "Reading README.txt", "last_tool_name": "Read",
+                        "usage": { "total_tokens": 24875, "tool_uses": 3, "duration_ms": 7309 } }),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        let sent = seen.lock().unwrap();
+        let progress: Vec<_> = sent.iter().filter(|e| e["type"] == "agent_progress").collect();
+        assert_eq!(progress.len(), 2);
+        assert_eq!(progress[1]["durationMs"], json!(7309));
+        assert_eq!(progress[1]["lastTool"], json!("Read"));
+    }
+
+    #[test]
+    fn a_workers_step_after_thinking_reaches_the_timeline() {
+        // One message, sent as one event per block, all under the message's id.
+        let (channel, seen) = recording_channel();
+        let mut result = ChatResult::default();
+        let mut bg = BackgroundAgents::default();
+        let block = |content: Value| json!({
+            "type": "assistant", "parent_tool_use_id": "toolu_ag",
+            "message": { "id": "msg_1", "content": [content] },
+        });
+        let tool = block(json!({ "type": "tool_use", "id": "toolu_ls", "name": "Bash",
+                                 "input": { "command": "ls", "description": "List files" } }));
+        route_all(
+            &[
+                block(json!({ "type": "thinking", "thinking": "Let me look." })),
+                tool.clone(),
+                tool, // a genuine repeat of the same block is still dropped
+                block(json!({ "type": "text", "text": "Found three files." })),
+            ],
+            &mut result, &mut bg, &channel,
+        );
+        let sent = seen.lock().unwrap();
+        let lines: Vec<_> = sent.iter().filter(|e| e["type"] == "agent_activity").collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0]["kind"], json!("tool"));
+        assert_eq!(lines[0]["toolId"], json!("toolu_ls"));
+        assert_eq!(lines[0]["target"], json!("List files"));
+        assert_eq!(lines[1]["text"], json!("Found three files."));
+    }
+
+    #[test]
+    fn a_shell_chip_says_what_the_command_is_for() {
+        let input = json!({ "command": "Get-ChildItem -Recurse -Filter *.md | Measure-Object", "description": "Count markdown files" });
+        let (detail, target) = tool_detail("PowerShell", &input);
+        assert_eq!(detail.as_deref(), Some("Get-ChildItem -Recurse -Filter *.md | Measure-Object"));
+        assert_eq!(target.as_deref(), Some("Count markdown files"));
+        // No description: the start of the command will have to do.
+        let (_, target) = tool_detail("Bash", &json!({ "command": "npm test" }));
+        assert_eq!(target.as_deref(), Some("npm test"));
+        let (_, target) = tool_detail("Bash", &json!({ "command": "npm test", "description": "  " }));
+        assert_eq!(target.as_deref(), Some("npm test"));
     }
 }
