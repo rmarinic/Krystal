@@ -48,9 +48,10 @@ async function renderProjects() {
           <span class="proj-meta-live" hidden></span>
         </span>
       </button>
-      <button class="proj-move" title="${escapeHtml(tr('project.moveTitle'))}">📁</button>
+      <button class="proj-move" title="${escapeHtml(tr('project.moveTitle'))}">${icon('folder')}</button>
       <button class="proj-del" title="${tr('project.removeTitle')}">×</button>`;
-    li.querySelector('.project-open').onclick = () => enterProject(p);
+    const open = li.querySelector('.project-open');
+    open.onclick = () => enterProject(p, open);   // the card grows into the chat
     li.querySelector('.proj-move').onclick = (e) => {
       e.stopPropagation();
       moveProjectFolder(p);
@@ -110,7 +111,19 @@ async function moveProjectFolder(p) {
   if (card) replayClass(card, 'moved', 700);
 }
 
-async function enterProject(project) {
+/* A soft glow follows the cursor across a project card (motion.css reads the
+ * position from --mx/--my). */
+els.projectList.addEventListener('pointermove', (e) => {
+  const card = e.target.closest && e.target.closest('.project-open');
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+});
+
+/* Open a project. `card` is the picker card it was opened from, if any: that
+ * card then grows into the chat (morphInto) instead of the picker fading out. */
+async function enterProject(project, card) {
   try { project = (await api.selectProject(project.id)) || project; } catch {}
   state.project = project;
   syncDiscordProject();
@@ -120,19 +133,27 @@ async function enterProject(project) {
   els.cpName.textContent = project.name || basename(project.path);
   els.cpName.title = project.path || '';
   refreshRunBtn();   // a run may already be in flight for this folder
-  // Ease the picker out of the way rather than cutting to the chat.
   const screen = els.projectScreen;
+  const land = async () => {
+    playLogoIntro(document.querySelector('aside.sidebar'));   // greet from the sidebar logo
+    state.view = 'threads';
+    els.search.value = '';
+    els.savedToggle.classList.remove('active');
+    await loadThreads();
+    // Always land on the welcome screen: the chats live in the sidebar to pick
+    // from, and the empty state offers "new chat" / "Initialize" — so the project
+    // entry feels intentional rather than dumping you mid-conversation.
+    showEmpty();
+  };
+  const morph = morphInto(card, document.querySelector('main.chat'), async () => {
+    screen.hidden = true;
+    await land();
+  });
+  if (morph) { await morph.catch(() => {}); return; }
+  // Otherwise ease the picker out of the way rather than cutting to the chat.
   screen.classList.add('leaving');
   setTimeout(() => { screen.hidden = true; screen.classList.remove('leaving'); }, 240);
-  playLogoIntro(document.querySelector('aside.sidebar'));   // greet from the sidebar logo
-  state.view = 'threads';
-  els.search.value = '';
-  els.savedToggle.classList.remove('active');
-  await loadThreads();
-  // Always land on the welcome screen: the chats live in the sidebar to pick
-  // from, and the empty state offers "new chat" / "Initialize" — so the project
-  // entry feels intentional rather than dumping you mid-conversation.
-  showEmpty();
+  await land();
 }
 
 els.toProjects.onclick = () => showProjectPicker();
@@ -245,7 +266,7 @@ function renderDirsPanel() {
     // The project folder itself: always there, never removable — showing it is
     // what makes the list an answer to "where can Claude reach?".
     `<li class="dir-row home">` +
-      `<span class="dir-ico" aria-hidden="true">🏠</span>` +
+      `<span class="dir-ico" aria-hidden="true">${icon('home')}</span>` +
       `<span class="dir-text">` +
         `<span class="dir-path">${escapeHtml(state.project.path)}</span>` +
         `<span class="dir-tag">${escapeHtml(tr('dirs.projectFolder'))}</span>` +
@@ -255,7 +276,7 @@ function renderDirsPanel() {
   for (const d of projectDirs) {
     rows.push(
       `<li class="dir-row" data-id="${d.id}">` +
-        `<span class="dir-ico" aria-hidden="true">📁</span>` +
+        `<span class="dir-ico" aria-hidden="true">${icon('folder')}</span>` +
         `<span class="dir-text"><span class="dir-path">${escapeHtml(d.path)}</span></span>` +
         `<button type="button" class="dir-x" title="${escapeHtml(tr('dirs.remove'))}" ` +
           `aria-label="${escapeHtml(tr('dirs.remove'))}">×</button>` +

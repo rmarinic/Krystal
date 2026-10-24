@@ -9,7 +9,7 @@
 
 const ACTIVITY_SVG =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
-const ACT_ICON = { Bash: '⚡', Agent: '🧩', Task: '🧩' };
+const ACT_ICON = { Bash: 'terminal', Agent: 'agent', Task: 'agent' };
 // Shells & sub-agents — the two kinds of thing worth logging here.
 const isActivityTool = (name) => name === 'Bash' || isAgentTool(name);
 
@@ -111,7 +111,7 @@ function renderOrchBanner(o) {
   el.className = 'activity-orch';
   el.innerHTML =
     `<div class="activity-orch-head">` +
-      `<span class="activity-orch-ico" aria-hidden="true">⚡</span>` +
+      `<span class="activity-orch-ico" aria-hidden="true">${icon('zap')}</span>` +
       `<span class="activity-orch-title">${escapeHtml(tr('activity.orch.title'))}</span>` +
       `<span class="activity-orch-pct">${pct}% <span class="activity-orch-pct-sub">${escapeHtml(tr('activity.orch.onWorkers'))}</span></span>` +
     `</div>` +
@@ -220,7 +220,7 @@ function renderActivityBody(body) {
     const head = document.createElement('div');
     head.className = 'activity-item-head';
     head.innerHTML =
-      `<span class="activity-ico" aria-hidden="true">${ACT_ICON[a.name] || '⚙️'}</span>` +
+      `<span class="activity-ico" aria-hidden="true">${icon(ACT_ICON[a.name] || 'tool')}</span>` +
       `<span class="activity-name">${escapeHtml(kind)}</span>` +
       `<span class="activity-target">${escapeHtml(a.target || '')}</span>` +
       `<span class="activity-state ${cls}">${a.running ? '<span class="activity-spin"></span>' : ''}${escapeHtml(stateLbl)}</span>`;

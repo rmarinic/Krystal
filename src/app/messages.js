@@ -6,12 +6,14 @@
 function toolLabel(name) { return tr('tool.' + name, null, name); }
 
 // A small glyph per tool, shown on the action chip for quick visual scanning.
+// Which icon (icons.js) each tool's chip wears; anything unlisted gets `tool`.
 const TOOL_ICON = {
-  Read: '📖', Write: '✍️', Edit: '✏️', MultiEdit: '✏️', NotebookEdit: '✏️',
-  Bash: '⚡', Glob: '🔎', Grep: '🔎', WebSearch: '🌐', WebFetch: '🌐',
-  Agent: '🧩', Task: '🧩', TodoWrite: '🗒️', AskUserQuestion: '🗳️', ExitPlanMode: '📋',
-  mcp__krystal__artifact: '◱',
+  Read: 'read', Write: 'write', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
+  Bash: 'terminal', Glob: 'search', Grep: 'search', WebSearch: 'globe', WebFetch: 'globe',
+  Agent: 'agent', Task: 'agent', TodoWrite: 'todo', AskUserQuestion: 'ask', ExitPlanMode: 'plan',
+  mcp__krystal__artifact: 'artifact',
 };
+const toolIcon = (name) => icon(TOOL_ICON[name] || 'tool');
 
 /* ExitPlanMode (Plan mode): Claude proposes a plan; render its markdown as a
  * readable card rather than a blank chip. */
@@ -20,7 +22,7 @@ function renderPlanCard(seg) {
   card.className = 'plan-card';
   const head = document.createElement('div');
   head.className = 'plan-head';
-  head.innerHTML = `<span aria-hidden="true">📋</span><span>${escapeHtml(tr('plan.title'))}</span>`;
+  head.innerHTML = `${icon('plan')}<span>${escapeHtml(tr('plan.title'))}</span>`;
   card.appendChild(head);
   const body = document.createElement('div');
   body.className = 'plan-body';
@@ -114,7 +116,7 @@ function renderQuestionCard(seg) {
 
   const intro = document.createElement('div');
   intro.className = 'qa-intro';
-  intro.innerHTML = `<span class="qa-ico" aria-hidden="true">🗳️</span><span>${escapeHtml(tr('qa.title'))}</span>`;
+  intro.innerHTML = `<span class="qa-ico" aria-hidden="true">${icon('ask')}</span><span>${escapeHtml(tr('qa.title'))}</span>`;
   card.appendChild(intro);
 
   const sel = questions.map(() => new Set());   // selected option labels per question
@@ -219,8 +221,14 @@ function renderQuestionCard(seg) {
 
 const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
 
+/* The check a chip's status settles into once its action is done. It lives in
+ * the markup from the start (hidden while working) so a live chip can draw it
+ * the moment it finishes. Shared with the agent chip (agents.js). */
+const CHIP_TICK_SVG =
+  '<svg class="chip-tick" viewBox="0 0 12 12"><path d="M2.6 6.4l2.2 2.2 4.6-4.9"/></svg>';
+
 /* Build one "action chip" — the persisted, on-its-own-line record of a tool
- * action. `working` shows a live spinner + glow; otherwise a settled dot.
+ * action. `working` shows a live spinner + glow; otherwise a settled check.
  * The chip is expandable: clicking it reveals what the tool did — a diff for
  * edits, the written content, or the tool's output. Shared by the live stream
  * and the reload path so they look (and expand) identically. */
@@ -240,8 +248,8 @@ function renderActionChip(seg, working) {
   row.className = 'chip-row';
   row.title = tr('chip.expandTitle');
   row.innerHTML =
-    '<span class="chip-status" aria-hidden="true"></span>' +
-    `<span class="chip-ico" aria-hidden="true">${TOOL_ICON[name] || '⚙️'}</span>` +
+    `<span class="chip-status" aria-hidden="true">${CHIP_TICK_SVG}</span>` +
+    `<span class="chip-ico" aria-hidden="true">${toolIcon(name)}</span>` +
     `<span class="chip-label">${escapeHtml(label)}</span>` +
     '<span class="chip-caret" aria-hidden="true">▸</span>';
   el.appendChild(row);

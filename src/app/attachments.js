@@ -147,7 +147,7 @@ function renderAttachmentTray() {
     if (a.failed) pill.title = tr('attach.failed');
     const media = a.thumb
       ? '<img class="att-thumb" alt="">'
-      : `<span class="att-ico" aria-hidden="true">${a.isImage ? '🖼' : '📄'}</span>`;
+      : `<span class="att-ico" aria-hidden="true">${icon(a.isImage ? 'image' : 'file')}</span>`;
     pill.innerHTML =
       media +
       '<span class="att-name"></span>' +

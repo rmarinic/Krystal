@@ -42,7 +42,8 @@ function initError(message, retry) {
   if (window.krystalNeedsLogin) window.krystalNeedsLogin(message);
   const err = document.createElement('span');
   err.className = 'init-err';
-  err.textContent = '⚠ ' + message;
+  err.innerHTML = icon('alert');
+  err.appendChild(document.createTextNode(' ' + message));
   els.initFoot.innerHTML = '';
   els.initFoot.appendChild(err);
   els.initFoot.appendChild(footBtn(tr('wiz.close'), 'ghost', closeInit));
@@ -57,6 +58,7 @@ function openInit() {
   wiz.brief = ''; wiz.summary = ''; wiz.questions = []; wiz.sel = {}; wiz.markdown = '';
   showInitOverlay();
   els.initTitle.textContent = tr('wiz.title');
+  els.initTitle.dataset.icon = 'sparkle';
   wizRenderBrief();
 }
 
@@ -68,6 +70,7 @@ async function openClaudeEditor() {
   if (!state.activeId) return;
   showInitOverlay();
   els.initTitle.textContent = tr('wiz.editTitle');
+  els.initTitle.dataset.icon = 'doc';
   els.initSteps.innerHTML = '';                 // not a wizard — no step dots
   els.initBody.innerHTML =
     `<div class="init-loading"><div class="spin"></div><h3>${tr('wiz.loadingClaude')}</h3></div>`;
@@ -102,7 +105,7 @@ function renderClaudeEditor(md, exists) {
 
 async function saveClaudeEditor(md) {
   if (!md.trim()) {
-    showTip({ key: 'status', cls: 'warn', icon: '✍️', label: tr('wiz.emptyLabel'),
+    showTip({ key: 'status', cls: 'warn', icon: 'edit', label: tr('wiz.emptyLabel'),
       body: tr('wiz.emptyBody') });
     return;
   }
@@ -112,11 +115,11 @@ async function saveClaudeEditor(md) {
     const data = await api.initSave(state.activeId, md);
     if (data && data.error) throw new Error(data.error);
     closeInit();
-    showTip({ key: 'status', icon: '✨', label: tr('wiz.savedLabel'),
+    showTip({ key: 'status', icon: 'sparkle', label: tr('wiz.savedLabel'),
       body: tr('wiz.savedBodyEdit') });
   } catch (e) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = tr('wiz.save'); }
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('wiz.errorLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('wiz.errorLabel'),
       body: escapeHtml(String(e && e.message || e)) });
   }
 }
@@ -220,7 +223,7 @@ function wizCollectAnswers() {
 async function generateDraft() {
   const answers = wizCollectAnswers();
   if (!answers.length) {
-    showTip({ key: 'status', cls: 'warn', icon: '✍️', label: tr('wiz.moreLabel'),
+    showTip({ key: 'status', cls: 'warn', icon: 'edit', label: tr('wiz.moreLabel'),
       body: tr('wiz.moreBody') });
     return;
   }
@@ -258,7 +261,7 @@ async function acceptDraft() {
     const data = await api.initSave(state.activeId, wiz.markdown);
     if (data.error) throw new Error(data.error);
     closeInit();
-    showTip({ key: 'status', icon: '✨', label: tr('wiz.savedLabel'),
+    showTip({ key: 'status', icon: 'sparkle', label: tr('wiz.savedLabel'),
       body: tr('wiz.savedBodyAccept') });
   } catch (e) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = tr('wiz.acceptSave'); }

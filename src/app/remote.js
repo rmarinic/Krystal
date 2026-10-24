@@ -418,7 +418,7 @@ function onRemoteLost() {
   clearRemote();
   syncRemoteBanner();
   showTip({
-    key: 'status', cls: 'high', icon: '🔌', label: tr('remote.lostLabel'),
+    key: 'status', cls: 'high', icon: 'plug', label: tr('remote.lostLabel'),
     body: escapeHtml(tr('remote.lostBody', { name: was || '' })),
   });
   showProjectPicker();
@@ -441,7 +441,7 @@ function syncRemoteBanner() {
 function remoteBlocks(what) {
   if (!remote.active) return false;
   showTip({
-    key: 'status', icon: '🖥', label: tr('remote.blockedLabel'),
+    key: 'status', icon: 'monitor', label: tr('remote.blockedLabel'),
     body: escapeHtml(tr('remote.blockedBody', { what: what || '' })),
   });
   return true;

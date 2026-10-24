@@ -84,7 +84,7 @@ function upgradeChipToAgent(chip, r) {
   if (!row) return;
   row.title = tr('agent.openTitle');
   const ico = row.querySelector('.chip-ico');
-  if (ico) ico.textContent = TOOL_ICON.Agent;
+  if (ico) ico.innerHTML = icon('agent');
   const caret = row.querySelector('.chip-caret');
   if (caret) caret.remove();
   if (!row.querySelector('.chip-tally')) {
@@ -265,8 +265,8 @@ function renderAgentChip(seg, working) {
   row.className = 'chip-row';
   row.title = tr('agent.openTitle');
   row.innerHTML =
-    '<span class="chip-status" aria-hidden="true"></span>' +
-    `<span class="chip-ico" aria-hidden="true">${TOOL_ICON.Agent}</span>` +
+    `<span class="chip-status" aria-hidden="true">${CHIP_TICK_SVG}</span>` +
+    `<span class="chip-ico" aria-hidden="true">${icon('agent')}</span>` +
     `<span class="chip-label">${escapeHtml(toolLabel(seg.name || 'Agent') + (seg.target ? ' · ' + seg.target : ''))}</span>` +
     '<span class="chip-tally"></span>' +
     '<span class="chip-open" aria-hidden="true">⤢</span>';
@@ -281,9 +281,11 @@ function syncAgentChip(el, r) {
   const tally = el.querySelector('.chip-tally');
   if (tally) tally.textContent = agentTally(r);
   const st = agentState(r);
+  const finishing = st !== 'running' && el.classList.contains('working');
   el.classList.toggle('working', st === 'running');
   el.classList.toggle('done', st !== 'running');
   el.classList.toggle('error', st === 'error');
+  if (finishing && st !== 'error') replayClass(el, 'just-done', 500);   // draws its check (motion.css)
 }
 
 /* Refresh every agent chip on screen from the store (used after a thread switch
@@ -394,7 +396,7 @@ function agentRow(kind, r, entry) {
   body.className = 'ag-body';
   if (kind === 'tool') {
     body.innerHTML =
-      `<span class="ag-ico" aria-hidden="true">${TOOL_ICON[entry.tool] || '⚙️'}</span>` +
+      `<span class="ag-ico" aria-hidden="true">${toolIcon(entry.tool)}</span>` +
       '<span class="ag-label"></span>';
     body.querySelector('.ag-label').textContent =
       toolLabel(entry.tool) + (entry.target ? ' · ' + entry.target : '');

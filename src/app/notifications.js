@@ -32,7 +32,7 @@ const NOTIF_KINDS = {
   question: { icon: '?', tone: 'warn' },   // ended on an AskUserQuestion card
   plan:     { icon: '☰', tone: 'warn' },   // ended on a plan to approve
   ask:      { icon: '!', tone: 'warn' },   // stopped mid-turn on a permission prompt
-  held:     { icon: '⏸', tone: 'warn' },   // queued messages left unsent
+  held:     { icon: '‖', tone: 'warn' },   // queued messages left unsent
   failed:   { icon: '×', tone: 'high' },
 };
 
@@ -196,7 +196,10 @@ function paintBell(rang) {
   document.querySelectorAll('.notif-toggle').forEach((b) => {
     if (!b.firstChild) b.innerHTML = BELL_SVG + '<span class="notif-badge" hidden></span>';
     const badge = b.querySelector('.notif-badge');
-    badge.textContent = count > 9 ? '9+' : String(count);
+    // A count already showing rolls to the new one; "9+" and a fresh badge just appear.
+    if (badge.hidden || count > 9) badge._rollAt = null;
+    if (count > 9) badge.textContent = '9+';
+    else rollNumber(badge, count);
     badge.hidden = !count;
     b.classList.toggle('has', count > 0);
     b.title = count ? tr('notif.bellTitleN', { n: count }) : tr('notif.bellTitle');

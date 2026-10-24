@@ -187,6 +187,7 @@ function updateUsage(usage, opts = {}) {
 
   els.meterFill.style.width = pct + '%';
   els.meterFill.className = 'meter-fill lvl-' + level;
+  paintContextRing(pct, level);   // the ring in the dock (header.js)
   // A subtle sheen flicks across the fill when context actually grew (a turn
   // completing), not on silent loads/model switches.
   if (!opts.silent && pct > lastMeterPct && pct > 0) replayClass(els.meterFill, 'grew', 1000);
@@ -226,7 +227,7 @@ function updateUsage(usage, opts = {}) {
 function showCompactSummary() {
   if (!state.summary) return;
   const close = showTip({
-    key: 'summary', cls: 'summary', icon: '🧹', label: tr('compact.summaryLabel'),
+    key: 'summary', cls: 'summary', icon: 'compact', label: tr('compact.summaryLabel'),
     body: renderMarkdown(state.summary),
   });
   // Highlight + copy-enable any code in the kept brief, just like a normal reply.
@@ -238,20 +239,20 @@ function showCompactSummary() {
 function showContextTip(level) {
   if (level === 'warn') {
     showTip({
-      key: 'ctx', cls: 'warn', icon: '⏳', label: tr('ctx.warnLabel'),
+      key: 'ctx', cls: 'warn', icon: 'clock', label: tr('ctx.warnLabel'),
       body: tr('ctx.warnBody'),
       actions: [
-        { text: tr('ctx.compactNow'), run: doCompact },
+        { text: tr('ctx.compactNow'), icon: 'compact', run: doCompact },
         { text: tr('ctx.gotIt'), ghost: true, run: (close) => close() },
       ],
     });
   } else {
     showTip({
-      key: 'ctx', cls: 'high', icon: '⚠️', label: tr('ctx.highLabel'),
+      key: 'ctx', cls: 'high', icon: 'alert', label: tr('ctx.highLabel'),
       body: tr('ctx.highBody'),
       actions: [
-        { text: tr('ctx.compact'), run: doCompact },
-        { text: tr('ctx.clear'), run: doClear },
+        { text: tr('ctx.compact'), icon: 'compact', run: doCompact },
+        { text: tr('ctx.clear'), icon: 'trash', run: doClear },
         { text: tr('ctx.later'), ghost: true, run: (close) => close() },
       ],
     });
@@ -260,7 +261,7 @@ function showContextTip(level) {
 
 /* Generic side-tip card. `key` de-dupes: a new tip with the same key replaces
  * the old one instead of stacking. */
-function showTip({ key, cls = '', icon = '💡', label = 'Tip', body = '', actions = [] }) {
+function showTip({ key, cls = '', icon = 'bulb', label = 'Tip', body = '', actions = [] }) {
   if (key) els.tips.querySelectorAll(`[data-key="${key}"]`).forEach((n) => n.remove());
   const card = document.createElement('div');
   card.className = 'tip ' + cls;
@@ -269,7 +270,7 @@ function showTip({ key, cls = '', icon = '💡', label = 'Tip', body = '', actio
 
   const head = document.createElement('div');
   head.className = 'tip-head';
-  head.innerHTML = `<span class="ico">${icon}</span><span>${escapeHtml(label)}</span>`;
+  head.innerHTML = `<span class="ico">${iconOrText(icon)}</span><span>${escapeHtml(label)}</span>`;
   const x = document.createElement('button');
   x.className = 'x'; x.textContent = '×'; x.onclick = close;
   head.appendChild(x);
@@ -287,6 +288,7 @@ function showTip({ key, cls = '', icon = '💡', label = 'Tip', body = '', actio
       const b = document.createElement('button');
       b.className = 'tip-act' + (a.ghost ? ' ghost' : '');
       b.textContent = a.text;
+      if (a.icon) b.dataset.icon = a.icon;
       b.onclick = () => a.run(close);
       row.appendChild(b);
     }

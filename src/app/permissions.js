@@ -163,7 +163,7 @@ function renderPermission(force) {
   const head = document.createElement('div');
   head.className = 'perm-head';
   head.innerHTML =
-    '<span class="perm-ico" aria-hidden="true">🛡</span>' +
+    `<span class="perm-ico" aria-hidden="true">${icon('shield')}</span>` +
     `<span class="perm-title">${escapeHtml(permissionTitle(p))}</span>` +
     '<span class="perm-more" hidden></span>';
   card.appendChild(head);
@@ -236,7 +236,7 @@ async function answerPermission(threadId, id, decision, acts) {
     await api.answerPermission(threadId, id, decision);
   } catch (e) {
     buttons.forEach((b) => { b.disabled = false; });
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('perm.failed'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('perm.failed'),
       body: escapeHtml(String((e && e.message) || e)) });
     return;
   }

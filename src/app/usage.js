@@ -163,7 +163,7 @@ function renderUsageChip() {
   chip.className = 'usage-chip lvl-' + (usageLevel(Math.max(f5 || 0, f7 || 0)) || 'ok');
   chip.title = tr('usage.chipTitle');
   chip.innerHTML =
-    `<span class="uc-ico" aria-hidden="true">⚡</span>` +
+    `<span class="uc-ico" aria-hidden="true">${icon('zap')}</span>` +
     `<span class="uc-seg"><span class="uc-k">${escapeHtml(tr('usage.5hShort'))}</span> ${fmtPct(f5)}</span>` +
     `<span class="uc-seg"><span class="uc-k">${escapeHtml(tr('usage.wkShort'))}</span> ${fmtPct(f7)}</span>`;
 }
@@ -248,13 +248,13 @@ async function saveCalibration(p5, p7, weekday, time) {
   if (p5 > 0 && d.h5 > 0) { setSettingVal('usageCap5h', d.h5 / (p5 / 100)); set = true; }
   if (p7 > 0 && d.d7 > 0) { setSettingVal('usageCap7d', d.d7 / (p7 / 100)); set = true; }
   if (!set) {
-    showTip({ key: 'usage', cls: 'warn', icon: '⚡', label: tr('usage.calLabel'), body: tr('usage.calNeedData') });
+    showTip({ key: 'usage', cls: 'warn', icon: 'zap', label: tr('usage.calLabel'), body: tr('usage.calNeedData') });
     return;
   }
   for (const k in usageWarned) delete usageWarned[k];   // re-evaluate against the new caps
   refreshUsageSurfaces();
   maybeWarnUsage();
-  showTip({ key: 'usage', icon: '⚡', label: tr('usage.calLabel'), body: tr('usage.calSaved') });
+  showTip({ key: 'usage', icon: 'zap', label: tr('usage.calLabel'), body: tr('usage.calSaved') });
 }
 
 /* ------------------------------- warnings -------------------------------- */
@@ -276,7 +276,7 @@ function warnWindow(tag, f, warnKey, highKey, withReset) {
   const vars = { pct: fmtPct(f) };
   if (withReset) vars.time = fmtResetIn(usageResetSecs());
   showTip({
-    key: 'usage-' + tag, cls: isHigh ? 'high' : 'warn', icon: '⚡',
+    key: 'usage-' + tag, cls: isHigh ? 'high' : 'warn', icon: 'zap',
     label: tr('usage.warnLabel'),
     body: tr(isHigh ? highKey : warnKey, vars),
     actions: [{ text: tr('usage.warnDismiss'), ghost: true, run: (close) => close() }],

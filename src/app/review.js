@@ -94,7 +94,19 @@ function reviewTotals(files) {
 }
 
 function reviewStatsHtml(added, removed) {
-  return `<span class="rv-add">+${added}</span><span class="rv-del">−${removed}</span>`;
+  return `<span class="rv-add">+<span class="rv-n">${added}</span></span>` +
+    `<span class="rv-del">−<span class="rv-n">${removed}</span></span>`;
+}
+
+/* A reply that just landed: roll its strip's line counts up from zero, so the
+ * size of what changed registers (a reload paints them settled). */
+function rollTurnChanges(msgEl) {
+  const strip = msgEl && msgEl.querySelector(':scope > .turn-changes');
+  if (!strip) return;
+  strip.querySelectorAll('.rv-n').forEach((n) => {
+    const to = n.textContent;
+    rollNumber(n, to, '0'.repeat(to.length));
+  });
 }
 
 /* Hang the "changed files" strip under an assistant message. `ckpt` is the id
@@ -112,7 +124,7 @@ function attachTurnChanges(msgEl, segs, ckpt, threadId) {
   btn.className = 'turn-changes';
   btn.title = tr('review.openTitle');
   btn.innerHTML =
-    '<span class="tc-ico" aria-hidden="true">📝</span>' +
+    `<span class="tc-ico" aria-hidden="true">${icon('diff')}</span>` +
     `<span class="tc-label">${escapeHtml(tr('review.strip', { n: files.length }))}</span>` +
     `<span class="tc-stats">${reviewStatsHtml(added, removed)}</span>` +
     '<span class="tc-open" aria-hidden="true">⤢</span>';

@@ -1,0 +1,157 @@
+/* motion.css — the "Calm+" motion layer: what makes the app feel continuous
+ * rather than merely animated. Things travel from where they were to where they
+ * go (a sent message, the selected chat, a reordered row), presses can be felt,
+ * and small wins are acknowledged at the size they deserve. The JS half lives in
+ * app/motion.js; every effect has a reduced-motion fallback at the bottom. */
+
+:root {
+  --ease-out: cubic-bezier(.2,.8,.2,1);       /* glides, slides, settles */
+  --ease-spring: cubic-bezier(.2,.9,.3,1.25); /* tiny accents only (a checkbox pop) */
+}
+
+/* ---- Sidebar: one highlight glides to the open chat (glideMark) ---- */
+.sidebar-list { position: relative; }        /* rows measure offsetTop against it */
+.sidebar-list .glide-mark {   /* beats `.sidebar-list li { position: relative }` */
+  position: absolute; left: 0; right: 0; top: 0; z-index: 0; pointer-events: none;
+  border-radius: var(--radius-sm); background: var(--bg-card);
+  border: 1px solid rgba(108,199,142,0.35); box-shadow: inset 3px 0 0 var(--accent-2);
+  transition: transform .38s var(--ease-out), height .38s var(--ease-out);
+}
+.sidebar-list .glide-mark.instant { transition: none; }
+.sidebar-list.gliding li.current > a,
+.sidebar-list.gliding li.current > a:hover {
+  background: transparent; border-color: transparent; box-shadow: none; transform: none;
+}
+
+/* ---- Rolling numbers (rollNumber): one column per digit ---- */
+.roll-d {
+  position: relative; display: inline-block;
+  clip-path: inset(0);                       /* clips without moving the baseline, unlike overflow */
+  font-variant-numeric: tabular-nums;
+}
+.roll-ph { visibility: hidden; }             /* holds the width and the baseline */
+.roll-col {
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; flex-direction: column; text-align: center;
+  transform: translateY(calc(var(--d, 0) * -1lh));
+  transition: transform .6s var(--ease-out);
+}
+.roll-col > span { display: block; height: 1lh; }
+
+/* ---- Sending: the message flies, the arrow launches ---- */
+.msg.user.fly-ghost {
+  position: fixed; left: 0; top: 0; z-index: 80; margin: 0; padding: 0;
+  max-width: none; animation: none; pointer-events: none; will-change: transform, opacity;
+}
+.msg.user .bubble.landed-in { animation: bubble-landed .7s ease; }
+@keyframes bubble-landed { from { box-shadow: -4px 0 16px -5px rgba(108,199,142,0.7); } }
+
+/* The plane takes off up-right after a tiny wind-up; Stop arrives once it's gone.
+ * When the turn ends, a fresh plane drops in from the lower left. */
+.send-btn.launch .ic-send { animation: send-launch .36s forwards; }
+.send-btn.launch.is-stop .ic-stop { transition-delay: .14s; }
+.send-btn.land .ic-send { animation: send-land .34s var(--ease-out) backwards; }
+@keyframes send-launch {
+  0%   { transform: none; opacity: 1; animation-timing-function: ease-out; }
+  28%  { transform: translate(-2px, 2px); animation-timing-function: cubic-bezier(.5,0,.8,.2); }
+  100% { transform: translate(18px, -18px); opacity: 0; }
+}
+@keyframes send-land { from { transform: translate(-10px, 10px); opacity: 0; } }
+
+/* The composer exhales back to one line once the message has left. */
+.composer-row textarea.exhale { transition: height .22s var(--ease-out); }
+
+/* ---- Streaming ---- */
+/* "Thinking": a breathing dot and a slow shimmer instead of a spinner. */
+.action-chip.thinking .chip-status {
+  width: 7px; height: 7px; margin: 0 2px; border: none; border-radius: 50%;
+  background: var(--accent-2);
+  animation: think-breath 1.7s ease-in-out infinite;
+}
+.action-chip.thinking .chip-label {
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg,
+    rgba(143,224,170,0.6) 0%, rgba(143,224,170,0.6) 38%, var(--fg) 50%,
+    rgba(143,224,170,0.6) 62%, rgba(143,224,170,0.6) 100%);
+  background-size: 250% 100%;
+  animation: think-shimmer 2s linear infinite;
+}
+@keyframes think-breath {
+  0%, 100% { transform: scale(.7); opacity: .5; box-shadow: 0 0 0 0 rgba(108,199,142,0); }
+  50%      { transform: scale(1); opacity: 1; box-shadow: 0 0 10px 1px rgba(108,199,142,0.45); }
+}
+@keyframes think-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* Each revealed stretch of text fades in, so the leading edge reads as ink
+ * settling rather than characters popping on. */
+.seg-text.streaming .tw { animation: tw-in .32s ease-out backwards; }
+@keyframes tw-in { from { opacity: 0; } }
+
+/* A tool that just finished draws its check (the persisted look is the same
+ * check, already drawn). */
+.action-chip.just-done .chip-tick { animation: tick-draw .36s var(--ease-out) both; }
+@keyframes tick-draw { from { stroke-dashoffset: 11; } to { stroke-dashoffset: 0; } }
+
+/* Reply landed: one soft light sweep across the card, and its edge settles. */
+.msg.assistant .bubble.landed {
+  background-image: linear-gradient(100deg, transparent 38%, rgba(143,224,170,0.07) 50%, transparent 62%);
+  background-size: 250% 100%; background-repeat: no-repeat;
+  animation: reply-landed 1.2s var(--ease-out) both;
+}
+@keyframes reply-landed {
+  from { background-position: 100% 0; border-color: rgba(108,199,142,0.45); }
+  to   { background-position: 0 0; }
+}
+
+/* ---- Tasks: the tick draws itself and a strike sweeps across the title ---- */
+.task-check svg path { stroke-dasharray: 23; }
+.task-item.just-done .task-check { animation: check-pop .36s var(--ease-spring); }
+.task-item.just-done .task-check svg path { animation: tick-draw-task .3s .04s var(--ease-out) both; }
+@keyframes check-pop { 45% { transform: scale(1.15); } }
+@keyframes tick-draw-task { from { stroke-dashoffset: 23; } to { stroke-dashoffset: 0; } }
+/* An inline background rather than text-decoration, so the strike can grow —
+ * and, being inline, it sweeps line by line across a title that wraps. */
+.task-text {
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 56% / 0 1.5px;
+  transition: background-size .34s .06s var(--ease-out);
+}
+.task-item.done .task-text { background-size: 100% 1.5px; }
+
+/* ---- Project cards: a soft glow follows the cursor ---- */
+.project-card .project-open { position: relative; isolation: isolate; }
+.project-card .project-open::before,
+.project-card .project-open::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; opacity: 0; transition: opacity .25s ease;
+}
+.project-card .project-open::before {          /* the glow, under the text */
+  z-index: -1;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(108,199,142,0.10), transparent 60%);
+}
+.project-card .project-open::after {           /* the border lighting up nearest the cursor */
+  padding: 1px;
+  background: radial-gradient(160px circle at var(--mx, 50%) var(--my, 50%), rgba(143,224,170,0.55), transparent 65%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.project-card .project-open:hover::before,
+.project-card .project-open:hover::after { opacity: 1; }
+
+/* ---- Project → chat: the clicked card grows into the chat (morphInto) ---- */
+::view-transition-group(k-morph) { animation-duration: .42s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
+::view-transition-old(k-morph),
+::view-transition-new(k-morph) { height: 100%; object-fit: cover; object-position: left top; }
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: .3s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-list .glide-mark, .roll-col, .task-text, .composer-row textarea.exhale { transition: none; }
+  .msg.user .bubble.landed-in, .send-btn.launch .ic-send, .send-btn.land .ic-send,
+  .action-chip.thinking .chip-status, .action-chip.thinking .chip-label,
+  .seg-text.streaming .tw, .action-chip.just-done .chip-tick, .msg.assistant .bubble.landed,
+  .task-item.just-done .task-check, .task-item.just-done .task-check svg path { animation: none; }
+  .project-card .project-open::before, .project-card .project-open::after { transition: none; }
+  .head-btn:hover:not(:disabled), .action-chip.expandable:not(.open):hover,
+  .turn-changes:hover, .suggest-chip:hover { translate: none; }
+}

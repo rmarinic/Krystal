@@ -3,7 +3,9 @@
    Part of the chat frontend; shares one global scope (see core.js). */
 /* ------------------------------ git status ------------------------------- */
 /* A tiny line under the composer: current branch + working-tree line changes.
- * Auto-hidden when the feature is off or the project folder isn't a git repo. */
+ * Auto-hidden when the feature is off or the project folder isn't a git repo.
+ * When a turn changes the counts, they roll from the old ones (`gitShown`). */
+let gitShown = null;   // { path, added, deleted } last painted
 
 async function refreshGit() {
   const el = els.gitStatus;
@@ -13,10 +15,16 @@ async function refreshGit() {
     const r = await api.gitStatus(state.project.path);
     if (!r || !r.isRepo) { el.hidden = true; return; }
     const parts = [`<span class="git-branch">${escapeHtml(r.branch)}</span>`];
-    if (r.added) parts.push(`<span class="git-add">+${r.added}</span>`);
-    if (r.deleted) parts.push(`<span class="git-del">−${r.deleted}</span>`);
+    if (r.added) parts.push(`<span class="git-add">+<span class="git-n">${r.added}</span></span>`);
+    if (r.deleted) parts.push(`<span class="git-del">−<span class="git-n">${r.deleted}</span></span>`);
     if (!r.added && !r.deleted) parts.push(`<span class="git-clean">${escapeHtml(tr('git.clean'))}</span>`);
     el.innerHTML = parts.join('');
+    const prev = gitShown && gitShown.path === state.project.path && !el.hidden ? gitShown : null;
+    if (prev) {
+      if (r.added && prev.added) rollNumber(el.querySelector('.git-add .git-n'), r.added, prev.added);
+      if (r.deleted && prev.deleted) rollNumber(el.querySelector('.git-del .git-n'), r.deleted, prev.deleted);
+    }
+    gitShown = { path: state.project.path, added: r.added, deleted: r.deleted };
     el.hidden = false;
     const br = el.querySelector('.git-branch');
     if (br) {
@@ -176,7 +184,7 @@ function ciOpen(url) {
 function announceCi(run) {
   const st = ciState(run);
   showTip({
-    key: 'ci', cls: st === 'fail' ? 'high' : '', icon: st === 'ok' ? '✅' : st === 'fail' ? '⚠️' : '⏹',
+    key: 'ci', cls: st === 'fail' ? 'high' : '', icon: st === 'ok' ? 'check' : st === 'fail' ? 'alert' : 'stop',
     label: tr('ci.tipLabel', { workflow: run.workflow || tr('ci.build'), state: ciStateLabel(run) }),
     body: escapeHtml(run.title || run.branch),
     actions: [{ text: tr('ci.details'), run: (close) => { openCiRun(run); close(); } }],
@@ -583,7 +591,7 @@ async function switchBranch(branch) {
     showTip({ key: 'status', icon: '⎇', label: tr('branch.switchedLabel'),
       body: tr('branch.switchedBody', { branch: escapeHtml(branch) }) });
   } catch (e) {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('branch.switchFailLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('branch.switchFailLabel'),
       body: escapeHtml(String(e.message || e)) });
   }
 }
@@ -601,7 +609,7 @@ async function runGitAction(call, okLabel, failLabel, opts = {}) {
     showTip({ key: 'status', icon: opts.icon || '⎇', label: tr(okLabel),
       body: r.output ? escapeHtml(r.output) : tr('branch.actionDone') });
   } catch (e) {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr(failLabel),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr(failLabel),
       body: escapeHtml(String(e.message || e)) });
   }
 }

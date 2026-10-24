@@ -26,10 +26,11 @@ const PIN_FILTERS = [
  * is closed and only the icons show. */
 function pinIcon(name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
-  if (ext === 'md' || ext === 'markdown') return '📄';
-  if (ext === 'json' || ext === 'yml' || ext === 'yaml' || ext === 'toml') return '⚙️';
-  if (ext === 'csv') return '▦';
-  return '📄';
+  if (ext === 'md' || ext === 'markdown') return icon('doc');
+  if (ext === 'json' || ext === 'yml' || ext === 'yaml' || ext === 'toml') return icon('gear');
+  if (ext === 'csv') return icon('chart');
+  if (/^(png|jpe?g|gif|webp|svg)$/.test(ext)) return icon('image');
+  return icon('file');
 }
 
 /* ------------------------------- the rail -------------------------------- */
@@ -102,7 +103,7 @@ async function addPins() {
     } catch (e) {
       showTip({
         key: 'status',
-        icon: '📌',
+        icon: 'pin',
         label: tr('pins.addFailed'),
         body: String(basename(path)),
       });

@@ -20,12 +20,12 @@ let artifacts = [];
 /* The artifact on screen: { artId, version, versions, title, kind, content }. */
 let shownArtifact = null;
 
-/* An icon per kind, used in the list and on transcript cards. */
+/* An icon per kind (icons.js), used in the list and on transcript cards. */
 function artifactIcon(kind) {
-  if (kind === 'image/svg+xml') return '▨';
-  if (kind === 'text/markdown') return '📄';
-  if (kind === 'application/vnd.ant.mermaid') return '⌥';
-  return '◱';                                   // text/html — a little window
+  if (kind === 'image/svg+xml') return icon('image');
+  if (kind === 'text/markdown') return icon('doc');
+  if (kind === 'application/vnd.ant.mermaid') return icon('branch');
+  return icon('artifact');                      // text/html — a little window
 }
 
 /* True for artifacts we show as something other than what we store. Today just
@@ -142,7 +142,7 @@ function decorateArtifactCard(card, info) {
   const known = artifacts.find((a) => a.artId === card.dataset.art);
   const kind = (info && info.kind) || (known && known.kind) || 'text/html';
   const title = (info && (info.title || info.target)) || (known && known.title) || card.dataset.art;
-  card.querySelector('.artifact-card-ico').textContent = artifactIcon(kind);
+  card.querySelector('.artifact-card-ico').innerHTML = artifactIcon(kind);
   card.querySelector('.artifact-card-title').textContent = title || tr('artifacts.untitled');
 }
 
@@ -439,7 +439,7 @@ async function saveArtifactAs(art, version) {
   try {
     rendered = await renderedFor(art);
   } catch (e) {
-    return showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('artifacts.saveFailed'),
+    return showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('artifacts.saveFailed'),
       body: escapeHtml(tr('artifacts.diagramFailed')) });
   }
   const ext = rendered ? 'svg'
@@ -458,9 +458,9 @@ async function saveArtifactAs(art, version) {
   if (!target) return;                                   // cancelled
   try {
     await api.exportArtifact(state.project.path, art.artId, version, target, rendered);
-    showTip({ key: 'status', icon: '💾', label: tr('artifacts.savedLabel'), body: escapeHtml(basename(target)) });
+    showTip({ key: 'status', icon: 'save', label: tr('artifacts.savedLabel'), body: escapeHtml(basename(target)) });
   } catch (e) {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('artifacts.saveFailed'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('artifacts.saveFailed'),
       body: escapeHtml(String((e && e.message) || e)) });
   }
 }
@@ -475,7 +475,7 @@ async function openArtifactOutside(art, version) {
       state.project.path, art.artId, version, rendered, rendered ? 'svg' : null,
     );
   } catch (e) {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('artifacts.openFailed'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('artifacts.openFailed'),
       body: escapeHtml(String((e && e.message) || e)) });
   }
 }

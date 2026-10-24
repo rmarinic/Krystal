@@ -160,15 +160,16 @@ function renderQueue(freshId) {
     add('span', 'queue-num', String(i + 1));
     add('span', 'queue-text', queuedSummary(item)).title = item.text || '';
     const files = (item.files || []).length;
-    if (files && item.text) add('span', 'queue-files', '📎 ' + files);
+    if (files && item.text) add('span', 'queue-files', String(files)).setAttribute('data-icon', 'paperclip');
     const action = (cls, glyph, label, run) => {
       const b = add('button', 'queue-act ' + cls, glyph);
       b.type = 'button';
       b.title = label;
       b.setAttribute('aria-label', label);
       b.onclick = run;
+      return b;
     };
-    action('edit', '✎', tr('queue.edit'), () => editQueued(threadId, item.id));
+    action('edit', '', tr('queue.edit'), () => editQueued(threadId, item.id)).innerHTML = icon('edit');
     action('x', '×', tr('queue.remove'), () => { takeQueued(threadId, item.id); els.input.focus(); });
     list.appendChild(row);
   });

@@ -210,7 +210,7 @@ function startModelRefresh() {
 let procCreep = null;
 function showProgressOverlay({ glyph, title, sub }) {
   clearInterval(procCreep);
-  els.procGlyph.textContent = glyph;
+  els.procGlyph.innerHTML = iconOrText(glyph);
   els.procTitle.textContent = title;
   els.procSub.textContent = sub;
   els.procOverlay.classList.remove('closing', 'is-done');
@@ -247,17 +247,17 @@ async function doClear(close) {
   if (close) close();
   if (!state.activeId) return;
   if (!confirm(tr('clear.confirm'))) return;
-  showProgressOverlay({ glyph: '🗑', title: tr('clear.overlayTitle'), sub: tr('clear.overlaySub') });
+  showProgressOverlay({ glyph: 'trash', title: tr('clear.overlayTitle'), sub: tr('clear.overlaySub') });
   try {
     await api.clear(state.activeId);
     state.tipLevelShown = null;
     await openThread(state.activeId);
     finishProgressOverlay(tr('clear.overlayDone'));
-    showTip({ key: 'status', icon: '✨', label: tr('clear.toastLabel'),
+    showTip({ key: 'status', icon: 'sparkle', label: tr('clear.toastLabel'),
       body: tr('clear.toastBody') });
   } catch (e) {
     hideProgressOverlay();
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('clear.toastLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('clear.toastLabel'),
       body: escapeHtml(String(e.message || e)) });
   }
 }
@@ -267,18 +267,18 @@ async function doCompact(close) {
   if (!state.activeId || state.streaming) return;
   els.compactBtn.disabled = true;
   els.compactBtn.textContent = tr('compact.tidying');
-  showProgressOverlay({ glyph: '🧹', title: tr('compact.overlayTitle'), sub: tr('compact.overlaySub') });
+  showProgressOverlay({ glyph: 'compact', title: tr('compact.overlayTitle'), sub: tr('compact.overlaySub') });
   try {
     const r = await api.compact(state.activeId);
     if (r.error) throw new Error(r.error);
     state.tipLevelShown = null;
     await openThread(state.activeId);
     finishProgressOverlay(tr('compact.overlayDone'));
-    showTip({ key: 'status', icon: '🧹', label: tr('compact.doneLabel'),
+    showTip({ key: 'status', icon: 'compact', label: tr('compact.doneLabel'),
       body: tr('compact.doneBody') });
   } catch (e) {
     hideProgressOverlay();
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('compact.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('compact.failLabel'),
       body: escapeHtml(String(e.message || e)) });
   } finally {
     els.compactBtn.disabled = state.streaming || !state.activeId;
@@ -302,7 +302,7 @@ async function doBranch() {
   const midTurn = state.streaming;
   // Nothing to fork from an empty chat — nudge instead of making a blank copy.
   if (!els.feed.querySelector('.msg')) {
-    showTip({ key: 'status', icon: '🌿', label: tr('fork.emptyLabel'), body: tr('fork.emptyBody') });
+    showTip({ key: 'status', icon: 'branch', label: tr('fork.emptyLabel'), body: tr('fork.emptyBody') });
     return;
   }
   els.branchBtn.disabled = true;
@@ -316,10 +316,10 @@ async function doBranch() {
     await loadThreads();                             // it appears at the top of the list
     await openThread(t.id);                          // switch into the branch…
     replayClass(els.feed, 'branch-switch', 900);     // …with a calm settle of the copied thread
-    showTip({ key: 'status', icon: '🌿', label: tr('fork.doneLabel'),
+    showTip({ key: 'status', icon: 'branch', label: tr('fork.doneLabel'),
       body: tr(midTurn ? 'fork.doneBodyLive' : 'fork.doneBody') });
   } catch (e) {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('fork.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('fork.failLabel'),
       body: escapeHtml(String(e.message || e)) });
   } finally {
     els.branchBtn.disabled = false;
@@ -339,14 +339,14 @@ els.hintBtn.onclick = async () => {
     const r = await api.hint(state.activeId);
     if (r.error) throw new Error(r.error);
     if (r.allGood || !r.tip) {
-      showTip({ key: 'hint', cls: 'hint', icon: '👍', label: tr('hint.label'),
+      showTip({ key: 'hint', cls: 'hint', icon: 'thumbs', label: tr('hint.label'),
         body: tr('hint.allGood') });
     } else {
-      showTip({ key: 'hint', cls: 'hint', icon: '✨', label: tr('hint.label'),
+      showTip({ key: 'hint', cls: 'hint', icon: 'sparkle', label: tr('hint.label'),
         body: renderMarkdown(r.tip) });
     }
   } catch (e) {
-    showTip({ key: 'hint', cls: 'high', icon: '⚠️', label: tr('hint.label'),
+    showTip({ key: 'hint', cls: 'high', icon: 'alert', label: tr('hint.label'),
       body: escapeHtml(String(e.message || e)) });
   } finally {
     els.hintBtn.disabled = false;

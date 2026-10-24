@@ -30,9 +30,18 @@ function dropDraft(id) {
   if (id && drafts[id] != null) { delete drafts[id]; persistDrafts(); }
 }
 
+/* Fit the composer to its text. Growing is instant (a transition there would
+ * leave the text a frame behind its box while you type); shrinking — a message
+ * just sent, a paragraph deleted — exhales back down. */
 function autosize() {
-  els.input.style.height = 'auto';
-  els.input.style.height = Math.min(els.input.scrollHeight, 200) + 'px';
+  const el = els.input;
+  const prev = parseFloat(el.style.height) || 0;
+  el.style.height = 'auto';
+  const next = Math.min(el.scrollHeight, 200);
+  const exhale = motionOK() && prev > next;
+  el.classList.toggle('exhale', exhale);
+  if (exhale) { el.style.height = prev + 'px'; void el.offsetHeight; }
+  el.style.height = next + 'px';
 }
 els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
@@ -108,8 +117,8 @@ async function stopTurn(id) {
   }
   try { await api.stopChat(id, force); } catch (_) {}
   showTip(force
-    ? { key: 'status', icon: '⏹', label: tr('stop.forcedLabel'), body: tr('stop.forcedBody') }
-    : { key: 'status', icon: '⏹', label: tr('stop.toastLabel'), body: tr('stop.toastBody') });
+    ? { key: 'status', icon: 'stop', label: tr('stop.forcedLabel'), body: tr('stop.forcedBody') }
+    : { key: 'status', icon: 'stop', label: tr('stop.toastLabel'), body: tr('stop.toastBody') });
 }
 
 function clearStopTimer(live) {
@@ -174,7 +183,31 @@ els.feed.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') unfollowFeed();
 });
 
-function maybeFollow() { if (stickToBottom) scrollFeed(); }
+function maybeFollow() { if (stickToBottom) glideFeed(); }
+
+/* Follow the stream by easing toward the bottom rather than jumping: each frame
+ * closes a fifth of the gap, so a paragraph or a chip landing reads as the feed
+ * gliding, and steady streaming as a smooth crawl. Each step records where it
+ * put the feed (`feedAutoTop`), so its scroll echo counts as following; any user
+ * scroll turns `stickToBottom` off and the glide simply stops there. */
+let feedGlide = 0;
+function glideFeed() {
+  if (!motionOK()) { scrollFeed(); return; }
+  if (feedGlide) return;
+  const step = () => {
+    feedGlide = 0;
+    if (!stickToBottom) return;
+    const f = els.feed;
+    const gap = f.scrollHeight - f.clientHeight - f.scrollTop;
+    if (Math.abs(gap) <= 1) { scrollFeed(); return; }
+    const was = f.scrollTop;
+    f.scrollTop = was + Math.sign(gap) * Math.max(1, Math.abs(gap) * 0.2);
+    if (f.scrollTop === was) { scrollFeed(); return; }   // pinned by rounding — just land
+    feedAutoTop = f.scrollTop;
+    feedGlide = requestAnimationFrame(step);
+  };
+  feedGlide = requestAnimationFrame(step);
+}
 
 /* Typewriter: decouples network arrival from rendering. Tokens are buffered
  * and revealed at a smooth, adaptive cadence (always ~one breath behind the
@@ -194,24 +227,49 @@ function makeTyper(bubble) {
   let textEl = null;       // DOM node of the open (streaming) text block, or null
   let chipEl = null;       // DOM node of the current working tool chip, or null
   let thinkEl = null;      // DOM node of the transient "thinking" indicator
+  let caretEl = null;      // the open text block's caret; revealed text goes before it
   let finished = false;
+  let quietEnd = false;    // the turn was stopped — no "landed" flourish
   let finalText = null;    // canonical text, used only as a no-stream fallback
   let errMsg = null;
   let raf = null, last = 0;
 
-  const caret = '<span class="caret"></span>';
-
   function clearThinking() { if (thinkEl) { thinkEl.remove(); thinkEl = null; } }
   function settleChip() {
-    if (chipEl) { chipEl.classList.remove('working'); chipEl.classList.add('done'); chipEl = null; }
+    if (!chipEl) return;
+    chipEl.classList.remove('working');
+    chipEl.classList.add('done');
+    replayClass(chipEl, 'just-done', 500);   // its check draws itself (motion.css)
+    chipEl = null;
   }
 
   function openTextBlock() {
     settleChip();
     textEl = document.createElement('div');
     textEl.className = 'seg-text streaming';
+    caretEl = document.createElement('span');
+    caretEl.className = 'caret';
+    textEl.appendChild(caretEl);
     bubble.appendChild(textEl);
     shown = ''; pending = '';
+  }
+
+  /* Append newly revealed text in front of the caret. Each frame's stretch is
+   * its own span that fades in (`.tw`), so nothing already on screen is
+   * repainted; a replay (`still`) folds into the previous plain span instead,
+   * so catching up on a long answer doesn't leave thousands of them. */
+  function appendText(t, still) {
+    if (!textEl || !t) return;
+    const html = escapeHtml(t).replace(/\n/g, '<br>');
+    const prev = caretEl.previousSibling;
+    if (still && prev && prev.nodeName === 'SPAN' && !prev.className) {
+      prev.insertAdjacentHTML('beforeend', html);
+      return;
+    }
+    const s = document.createElement('span');
+    if (!still) s.className = 'tw';
+    s.innerHTML = html;
+    textEl.insertBefore(s, caretEl);
   }
 
   function closeTextBlock() {
@@ -225,12 +283,7 @@ function makeTyper(bubble) {
       textEl.remove();          // drop an empty text block (e.g. tool-only turn)
     }
     textEl = null;
-  }
-
-  function paintText() {
-    if (!textEl) return;
-    textEl.innerHTML = escapeHtml(shown).replace(/\n/g, '<br>') + caret;
-    maybeFollow();
+    caretEl = null;
   }
 
   function frame(now) {
@@ -241,8 +294,10 @@ function makeTyper(bubble) {
       const cps = Math.max(45, pending.length / 0.34);
       let n = Math.max(1, Math.round((cps * dt) / 1000));
       n = Math.min(n, pending.length);
-      shown += pending.slice(0, n);
+      const chunk = pending.slice(0, n);
+      shown += chunk;
       pending = pending.slice(n);
+      appendText(chunk);
     }
     if ((finished || errMsg) && !pending) {
       closeTextBlock();
@@ -260,14 +315,18 @@ function makeTyper(bubble) {
         const d = document.createElement('div');
         d.className = 'action-chip error';
         d.innerHTML = '<div class="chip-row"></div>';
-        d.querySelector('.chip-row').textContent = '⚠ ' + errMsg;
+        const row = d.querySelector('.chip-row');
+        row.innerHTML = icon('alert');
+        row.appendChild(document.createTextNode(' ' + errMsg));
         bubble.appendChild(d);
+      } else if (!quietEnd && bubble.childElementCount) {
+        replayClass(bubble, 'landed', 1300);   // the answer is in: one soft sweep (motion.css)
       }
       maybeFollow();
       raf = null;
       return;
     }
-    if (textEl) paintText();
+    if (textEl) maybeFollow();
     raf = requestAnimationFrame(frame);
   }
 
@@ -283,7 +342,8 @@ function makeTyper(bubble) {
       if (!textEl) openTextBlock();   // text after a chip starts a fresh block
       if (instant) {                  // replay path: reveal buffered backlog without re-typing
         shown += t;
-        paintText();
+        appendText(t, true);
+        maybeFollow();
       } else {
         pending += t;
         run();
@@ -320,7 +380,8 @@ function makeTyper(bubble) {
       }
       maybeFollow();
     },
-    finish(text) { finalText = text; finished = true; run(); },
+    // `quiet`: the turn was stopped, so it ends without the "landed" sweep.
+    finish(text, quiet) { finalText = text; finished = true; quietEnd = !!quiet; run(); },
     error(msg) { errMsg = msg; run(); },
     // A tool's output arrived — fold it into its chip so expanding shows it.
     setToolResult(msg) {
@@ -350,7 +411,12 @@ function syncComposer() {
   // While streaming, the send button always becomes a stop button so the user
   // can interrupt the turn; otherwise it sends (disabled when there's no chat).
   const canStop = state.streaming;
+  const wasStop = els.sendBtn.classList.contains('is-stop');
   els.sendBtn.classList.toggle('is-stop', canStop);   // CSS morphs the icon
+  // Sending launched the plane (startTurn); when the turn is over a fresh one
+  // drops back in, instead of the square simply morphing back.
+  if (!canStop) els.sendBtn.classList.remove('launch');
+  if (wasStop && !canStop && motionOK()) replayClass(els.sendBtn, 'land', 400);
   els.sendBtn.title = tr(canStop ? 'composer.stopTitle' : 'composer.sendTitle');
   els.sendBtn.disabled = canStop ? false : !state.activeId;
   // Mid-turn, Enter queues rather than sends — the box says so.
@@ -379,6 +445,9 @@ function attachLiveTyper(live) {
     if (ev.type === 'token') typer.push(ev.text, true);  // instant: catch up without re-typing
     else if (ev.type === 'tool') typer.setTool(ev);
   }
+  // The replay settled every earlier chip at once; only a chip finishing live
+  // should draw its check, so drop the flourish before it can paint.
+  live.bubble.querySelectorAll('.just-done').forEach((c) => c.classList.remove('just-done'));
   // Re-apply any tool outputs received so far so expanded chips show them again.
   if (live.outputs) for (const id in live.outputs) {
     typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError });
@@ -495,6 +564,9 @@ function handleLiveEvent(live, msg) {
     // skips those rows while the turn is live, since the live view paints them.
     live.savedFrom = msg.userId;
     live.ckpt = msg.ckpt || '';   // what undoing this turn's file changes is keyed by
+    // Saving bumped the chat's last-activity time — reload the list so it slides
+    // up to the top now, as you send, rather than when the answer lands.
+    if (state.view === 'threads') loadThreads();
   } else if (event === 'token') {
     live.events.push({ type: 'token', text: msg.text });
     if (live.typer) live.typer.push(msg.text);
@@ -513,10 +585,12 @@ function handleLiveEvent(live, msg) {
   } else if (event === 'done') {
     live.finalText = msg.text;
     if (live.typer) {
-      live.typer.finish(msg.text);
-      // What this reply changed, as a strip that opens the review panel.
+      live.typer.finish(msg.text, !!live.stopped);
+      // What this reply changed, as a strip that opens the review panel — its
+      // line counts rolling up from zero, since they were just made.
       if (typeof attachTurnChanges === 'function') {
         attachTurnChanges(live.bubble, liveTurnSegments(live), live.ckpt, live.threadId);
+        rollTurnChanges(live.bubble);
       }
       if (msg.assistantId && live.bubble) {   // make the fresh reply starrable right away
         live.bubble.dataset.mid = msg.assistantId;
@@ -597,7 +671,7 @@ function handleLiveEvent(live, msg) {
     if (!live.stopped && typeof notifyChat === 'function') notifyChat(live, 'failed', msg.message);
     if (!live.stopped && window.krystalNeedsLogin) window.krystalNeedsLogin(msg.message);
     if (live.typer) {
-      if (live.stopped) live.typer.finish(live.finalText || '');
+      if (live.stopped) live.typer.finish(live.finalText || '', true);
       else live.typer.error(msg.message || 'error');
     }
     finishLive(live);
@@ -634,8 +708,14 @@ async function send() {
   }
   if (!text && !files.length) return;   // everything (e.g. a failed paste) dropped out
 
-  // The message is taken — clear the composer it came from.
-  if (threadId === state.activeId) { els.input.value = ''; autosize(); }
+  // The message is taken — clear the composer it came from. Where it sat is
+  // where the sent bubble flies from (startTurn).
+  let from = null;
+  if (threadId === state.activeId) {
+    const row = els.input.closest('.composer-row');
+    if (row) from = row.getBoundingClientRect();
+    els.input.value = ''; autosize();
+  }
   saveDraft(threadId, '');           // the draft was just sent — clear it
   if (typeof clearComposerRefs === 'function') clearComposerRefs(threadId);
   if (typeof clearComposerAttachments === 'function') clearComposerAttachments(threadId);
@@ -647,7 +727,7 @@ async function send() {
   }
   // Sending re-engages auto-follow (you want to watch the new reply), even if
   // you'd scrolled up earlier.
-  startTurn(threadId, msg, { follow: true });
+  startTurn(threadId, msg, { follow: true, from });
 }
 
 /* Start a turn in `threadId` with `msg` ({ text, files, refs }) — typed just now,
@@ -667,7 +747,13 @@ async function startTurn(threadId, msg, opts = {}) {
     if (opts.follow) stickToBottom = true;
     state.seed = null;               // this turn folds the compaction summary back in
     hideSuggestion();                // the next message has been chosen
-    appendMessage('user', text, files, null);
+    const sent = appendMessage('user', text, files, null);
+    // Typed just now: the message lifts out of the composer into its place, and
+    // the send arrow takes off as the button turns into Stop (motion.js/.css).
+    if (opts.from && motionOK()) {
+      flyFromComposer(sent.querySelector('.bubble'), opts.from);
+      els.sendBtn.classList.add('launch');
+    }
   }
 
   // The liveTurn owns this turn independently of the on-screen thread. On screen
@@ -686,7 +772,7 @@ async function startTurn(threadId, msg, opts = {}) {
   // (attachLiveTyper shows the "thinking" indicator while events is empty)
   if (onScreen) {
     attachLiveTyper(live);
-    if (opts.follow) scrollFeed(); else maybeFollow();
+    if (opts.follow) glideFeed(); else maybeFollow();
   }
   syncComposer();
   if (state.view === 'threads') renderSidebar();   // show the live mark on this row

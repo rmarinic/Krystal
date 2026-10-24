@@ -51,6 +51,7 @@ function load() {
     // Echo the key with its variables, so a test can see which string was chosen.
     tr: (k, vars) => (vars ? `${k}(${Object.values(vars).join(',')})` : k),
     escapeHtml: (s) => String(s),
+    icon: (name) => `<svg data-name="${name}"></svg>`,   // icons.js
     basename: (p) => String(p).split(/[\\/]/).filter(Boolean).pop(),
     replayClass() {},
     renderDiff: () => stubEl('div'),

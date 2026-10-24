@@ -24,7 +24,7 @@ function buildOrchestrator() {
   els.orchPop.innerHTML =
     '<div class="orch-panel">' +
       '<div class="orch-head">' +
-        `<div class="orch-title">⚡ <span>${escapeHtml(tr('orch.title'))}</span></div>` +
+        `<div class="orch-title">${icon('zap')} <span>${escapeHtml(tr('orch.title'))}</span></div>` +
         `<button type="button" class="orch-switch" id="orch-switch" role="switch" aria-label="${escapeHtml(tr('orch.title'))}"><span class="orch-knob"></span></button>` +
       '</div>' +
       `<p class="orch-desc">${escapeHtml(tr('orch.desc'))}</p>` +

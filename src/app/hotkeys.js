@@ -129,6 +129,7 @@ async function toggleRecentChat() {
  * key, so the same spot works on any layout (QWERTZ included). `keys` are shown
  * as-is; the wording lives in i18n (`keys.*`). */
 const SHORTCUTS = [
+  { id: 'palette',  code: 'KeyK', keys: ['Ctrl', 'K'] },
   { id: 'back',     code: 'KeyQ', keys: ['Ctrl', 'Q'] },
   { id: 'forward',  code: 'KeyE', keys: ['Ctrl', 'E'] },
   { id: 'recent',   code: 'Tab',  keys: ['Ctrl', 'Tab'] },
@@ -141,11 +142,12 @@ const SHORTCUTS = [
 function shortcutsBlocked() {
   return !!document.querySelector(
     '.modal-overlay:not([hidden]), .onb-overlay:not([hidden]), ' +
-    '.update-overlay:not([hidden]), .proc-overlay:not([hidden])');
+    '.update-overlay:not([hidden]), .proc-overlay:not([hidden]), .palette-overlay:not([hidden])');
 }
 
 function runShortcut(id) {
-  if (id === 'back') stepChatHistory(-1);
+  if (id === 'palette') togglePalette();   // palette.js (it closes itself on a second Ctrl+K)
+  else if (id === 'back') stepChatHistory(-1);
   else if (id === 'forward') stepChatHistory(1);
   else if (id === 'recent') toggleRecentChat();
   else if (id === 'projects') { if (state.project) showProjectPicker(); }

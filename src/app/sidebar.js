@@ -22,9 +22,13 @@ function renderSidebar() {
   if (state.view === 'saved') return renderResults(tr('sidebar.noSaved'));
 
   els.listHeading.textContent = tr('list.conversations');
+  // Rows that change place (a chat bumped to the top) slide there instead of
+  // jumping: note where each sits before the list is rebuilt (motion.js).
+  const slide = flipCapture(els.threadList, (n) => n.dataset.tid || null);
   els.threadList.innerHTML = '';
   if (!state.threads.length) {
     els.threadList.innerHTML = `<li class="sidebar-empty">${tr('sidebar.noChats')}</li>`;
+    glideMark(els.threadList, null);
     return;
   }
   for (const t of state.threads) {
@@ -45,7 +49,7 @@ function renderSidebar() {
     const draft = typeof hasDraft === 'function' && hasDraft(t.id);
     if (draft) li.classList.add('has-draft');
     const draftDot = draft
-      ? `<span class="draft-dot" title="${tr('sidebar.draftTitle')}" aria-hidden="true">✎</span>` : '';
+      ? `<span class="draft-dot" title="${tr('sidebar.draftTitle')}" aria-hidden="true">${icon('edit')}</span>` : '';
     // Messages queued behind this chat's turn (or held, if that turn was stopped).
     const queued = typeof queuedCount === 'function' ? queuedCount(t.id) : 0;
     const queueDot = queued
@@ -61,7 +65,7 @@ function renderSidebar() {
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
-      <button class="rename" title="${tr('sidebar.renameTitle')}">✎</button>
+      <button class="rename" title="${tr('sidebar.renameTitle')}">${icon('edit')}</button>
       <button class="del" title="${tr('sidebar.deleteTitle')}">×</button>`;
     li.querySelector('a').onclick = () => openThread(t.id);
     li.querySelector('.rename').onclick = (e) => {
@@ -84,6 +88,9 @@ function renderSidebar() {
     };
     els.threadList.appendChild(li);
   }
+  slide();
+  // One highlight glides to the open chat rather than rows switching on and off.
+  glideMark(els.threadList, els.threadList.querySelector('li.current'));
 }
 
 /* Flip a chat row's draft mark without re-rendering the whole list — called as
@@ -102,7 +109,7 @@ function updateDraftMark(id) {
     dot.className = 'draft-dot';
     dot.title = tr('sidebar.draftTitle');
     dot.setAttribute('aria-hidden', 'true');
-    dot.textContent = '✎';
+    dot.innerHTML = icon('edit');
     time.appendChild(dot);
   } else if (!on && dot) {
     dot.remove();
@@ -156,6 +163,7 @@ function beginRename(li, t) {
 function renderResults(emptyMsg) {
   els.listHeading.textContent = state.view === 'saved' ? tr('list.savedReplies') : tr('list.searchResults');
   els.threadList.innerHTML = '';
+  glideMark(els.threadList, null);   // results have no "open chat" row
   if (!state.results.length) {
     els.threadList.innerHTML = `<li class="sidebar-empty">${escapeHtml(emptyMsg)}</li>`;
     return;

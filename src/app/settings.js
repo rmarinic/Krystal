@@ -257,7 +257,7 @@ async function checkClaudeCodeUpdate() {
   if (dismissed === latest) return;                          // already said "later" for this version
 
   showTip({
-    key: 'claudeUpd', icon: '⬆️', label: tr('claudeUpd.label'),
+    key: 'claudeUpd', icon: 'upgrade', label: tr('claudeUpd.label'),
     body: escapeHtml(tr('claudeUpd.body', { latest, current: pf.version })),
     actions: [
       { text: tr('claudeUpd.update'), run: (close) => { close(); runClaudeCodeUpdate(); } },
@@ -272,7 +272,7 @@ async function checkClaudeCodeUpdate() {
 /* Run `claude update` with the polished progress overlay, streaming the updater's
  * latest log line as the sub-caption. Reuses the compact/clear overlay helpers. */
 async function runClaudeCodeUpdate() {
-  showProgressOverlay({ glyph: '⬆️', title: tr('claudeUpd.overlayTitle'), sub: tr('claudeUpd.overlaySub') });
+  showProgressOverlay({ glyph: 'upgrade', title: tr('claudeUpd.overlayTitle'), sub: tr('claudeUpd.overlaySub') });
   const channel = new Channel();
   channel.onmessage = (msg) => {
     if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
@@ -284,7 +284,7 @@ async function runClaudeCodeUpdate() {
       // rather than dead-ending on the registry error.
       hideProgressOverlay();
       showTip({
-        key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.npmLabel'),
+        key: 'status', cls: 'high', icon: 'alert', label: tr('claudeUpd.npmLabel'),
         body: escapeHtml(tr('claudeUpd.npmBody')),
         actions: [
           { text: tr('claudeUpd.npmAction'), run: (close) => { close(); runClaudeCodeNpmInstall(); } },
@@ -295,16 +295,16 @@ async function runClaudeCodeUpdate() {
     }
     finishProgressOverlay(tr('claudeUpd.overlayDone'));
     if (res && res.updated && res.version) {
-      showTip({ key: 'status', icon: '✅', label: tr('claudeUpd.doneLabel'),
+      showTip({ key: 'status', icon: 'check', label: tr('claudeUpd.doneLabel'),
         body: escapeHtml(tr('claudeUpd.doneBody', { version: res.version })) });
     } else if (res && res.version) {
-      showTip({ key: 'status', icon: '👍', label: tr('claudeUpd.doneLabel'),
+      showTip({ key: 'status', icon: 'thumbs', label: tr('claudeUpd.doneLabel'),
         body: escapeHtml(tr('claudeUpd.upToDate', { version: res.version })) });
     }
     try { localStorage.removeItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
   } catch (err) {
     hideProgressOverlay();
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('claudeUpd.failLabel'),
       body: escapeHtml(String((err && err.message) || err)) });
   }
 }
@@ -312,7 +312,7 @@ async function runClaudeCodeUpdate() {
 /* The fallback behind that offer: install Claude Code straight from npm, with the
  * same overlay and the same live sub-caption as the in-place update. */
 async function runClaudeCodeNpmInstall() {
-  showProgressOverlay({ glyph: '📦', title: tr('claudeUpd.npmOverlayTitle'), sub: tr('claudeUpd.npmOverlaySub') });
+  showProgressOverlay({ glyph: 'package', title: tr('claudeUpd.npmOverlayTitle'), sub: tr('claudeUpd.npmOverlaySub') });
   const channel = new Channel();
   channel.onmessage = (msg) => {
     if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
@@ -321,13 +321,13 @@ async function runClaudeCodeNpmInstall() {
     const res = await api.updateClaudeNpm(channel);
     finishProgressOverlay(tr('claudeUpd.overlayDone'));
     if (res && res.version) {
-      showTip({ key: 'status', icon: '✅', label: tr('claudeUpd.doneLabel'),
+      showTip({ key: 'status', icon: 'check', label: tr('claudeUpd.doneLabel'),
         body: escapeHtml(tr('claudeUpd.doneBody', { version: res.version })) });
     }
     try { localStorage.removeItem(CLAUDE_UPD_DISMISS_KEY); } catch (_) {}
   } catch (err) {
     hideProgressOverlay();
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('claudeUpd.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('claudeUpd.failLabel'),
       body: escapeHtml(String((err && err.message) || err)) });
   }
 }

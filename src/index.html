@@ -9,6 +9,7 @@
 
   <link rel="stylesheet" href="base.css">
   <link rel="stylesheet" href="chat.css">
+  <link rel="stylesheet" href="motion.css">
 
   <!-- Code highlighting + markdown + sanitizer (vendored locally — works offline) -->
   <link rel="stylesheet" href="vendor/atom-one-dark.min.css">
@@ -16,9 +17,6 @@
   <script defer src="vendor/marked.min.js"></script>
   <script defer src="vendor/purify.min.js"></script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&family=Orbitron:wght@500;700;900&display=swap">
 </head>
 <body class="app">
 
@@ -56,7 +54,7 @@
         <h1 class="project-title" data-i18n="project.choose">Choose a project</h1>
         <p class="project-sub" data-i18n="project.sub">Pick the folder Claude should work in. Each project keeps its own chats, model and history.</p>
         <div class="project-actions">
-          <button id="new-project-btn" class="project-init-btn" data-i18n="project.initBtn">✨ Initialize new project</button>
+          <button id="new-project-btn" class="project-init-btn" data-icon="sparkle" data-i18n="project.initBtn">Initialize new project</button>
           <!-- Work on another computer's projects: connect to a Krystal that has
                remote access switched on. See app/remote.js. -->
           <button id="remote-connect-btn" class="project-remote-btn" data-i18n-title="remote.connectTitle" title="Connect to Krystal on another computer"></button>
@@ -156,25 +154,27 @@
         </div>
         <div class="chat-tools" id="chat-tools" hidden>
           <div class="picker" id="model-picker" data-i18n-title="model.pickerTitle" title="Which Claude brain to use"></div>
-          <button id="init-btn" class="head-btn subtle" data-i18n="init.editBtn" data-i18n-title="init.editBtnTitle" title="Edit instructions: open this project's CLAUDE.md to edit it directly (or reinitialize from there)">✎ Edit instructions</button>
-          <button class="settings-toggle head-btn" data-i18n-title="settings.title" title="Settings"></button>
-          <button class="lang-toggle head-btn" data-i18n-title="lang.toggleTitle" title="Switch language"></button>
         </div>
         <!-- Outside the tools so it is there with no chat open, too. -->
         <button class="notif-toggle head-btn" type="button" title="Notifications"></button>
-      </div>
-      <div class="meter-row" id="meter-row" hidden>
-        <div class="meter"><div class="meter-fill" id="meter-fill"></div></div>
-        <div class="meter-label" id="meter-label"></div>
-        <!-- Glanceable Claude-usage chip (5h / weekly %); opens Settings → Usage. -->
-        <button class="usage-chip" id="usage-chip" hidden></button>
+        <!-- ⋯ — what you reach for now and then: instructions, settings, language.
+             Kept out of the header itself so the header is the chat's title and
+             model, nothing more. See app/header.js. -->
+        <div class="head-menu-wrap">
+          <button class="head-btn head-more" id="head-more" type="button" data-icon="more" aria-haspopup="menu" aria-expanded="false" data-i18n-title="headMenu.title" title="More"></button>
+          <div class="head-menu" id="head-menu" role="menu" hidden>
+            <button id="init-btn" class="hm-item" type="button" role="menuitem" data-icon="doc" data-i18n="init.editBtn" data-i18n-title="init.editBtnTitle" title="Edit instructions: open this project's CLAUDE.md to edit it directly (or reinitialize from there)">Edit instructions</button>
+            <button id="hm-settings" class="hm-item" type="button" role="menuitem" data-icon="gear"><span data-i18n="settings.title">Settings</span></button>
+            <button id="hm-lang" class="hm-item" type="button" role="menuitem" data-icon="language" data-i18n-title="lang.toggleTitle" title="Switch language"><span data-i18n="headMenu.language">Language</span><span class="hm-val" id="hm-lang-val"></span></button>
+          </div>
+        </div>
       </div>
     </header>
 
     <!-- Drag-and-drop hint: fades in over the chat while files hover the window. -->
     <div class="drop-hint" id="drop-hint" hidden>
       <div class="drop-hint-card">
-        <div class="drop-hint-ico" aria-hidden="true">📎</div>
+        <div class="drop-hint-ico" data-icon="paperclip" aria-hidden="true"></div>
         <div class="drop-hint-text" data-i18n="attach.dropHint">Drop to attach</div>
       </div>
     </div>
@@ -186,30 +186,13 @@
         <p data-i18n="empty.body">This project is ready. Start a chat with “▸ new chat” in the sidebar, or open one from the list. Claude can read anything in the project folder automatically.</p>
         <div class="empty-actions">
           <button id="empty-new-chat" class="empty-btn primary" data-i18n="empty.newChat">▸ New chat</button>
-          <button id="empty-init" class="empty-btn" data-i18n="empty.initBtn">✨ Initialize project</button>
+          <button id="empty-init" class="empty-btn" data-icon="sparkle" data-i18n="empty.initBtn">Initialize project</button>
         </div>
       </div>
     </div>
 
     <!-- Composer -->
     <div class="composer" id="composer" hidden>
-      <div class="composer-tools">
-        <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Ask checks with you before changing or running anything; Plan only researches and proposes"></div>
-        <!-- How hard Claude thinks before answering. Persisted per chat, next to
-             the model and the mode. -->
-        <div class="picker" id="effort-picker" data-i18n-title="effort.pickerTitle" title="How hard Claude thinks before it answers — higher is slower but more thorough"></div>
-        <div class="composer-tools-spacer"></div>
-        <!-- Orchestrator: run a premium model as a supervisor that delegates the
-             heavy lifting to cheaper worker sub-agents. Opens a popover to pick
-             the orchestrator model and the sub-agent model (or Auto). -->
-        <div class="orch-wrap" id="orch-wrap">
-          <button id="orch-btn" class="head-btn" data-i18n-title="orch.btnTitle" title="Orchestrator: run a premium model as a supervisor that delegates the heavy work to cheaper sub-agents">⚡ <span data-i18n="orch.btn">Orchestrate</span></button>
-          <div class="orch-pop" id="orch-pop" hidden></div>
-        </div>
-        <button id="branch-btn" class="head-btn" data-i18n="fork.btn" data-i18n-title="fork.btnTitle" title="Branch: fork this conversation into a copy you can take in a new direction — the original stays untouched">🌿 Branch</button>
-        <button id="compact-btn" class="head-btn" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">🧹 Compact</button>
-        <button id="clear-btn" class="head-btn" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">🗑 Clear</button>
-      </div>
       <!-- Messages sent while a turn was still running, waiting to go out when it
            finishes — each can be edited or dropped. Filled by app/queue.js. -->
       <div class="composer-queue" id="composer-queue" hidden></div>
@@ -226,17 +209,55 @@
       <!-- Pasted screenshots / dropped files queued for the next message. No
            upload button by design: attach by pasting (Ctrl+V) or drag-and-drop. -->
       <div class="composer-atts" id="composer-attachments" hidden></div>
-      <div class="composer-row">
-        <span class="shell-badge" data-i18n="shell.badge" aria-hidden="true">shell mode · runs in the project folder</span>
-        <!-- # autocomplete: pick an earlier chat to reference -->
-        <div class="mention-pop" id="mention-pop" hidden></div>
-        <!-- / autocomplete: pick a Claude Code skill to start the message with -->
-        <div class="mention-pop skill-pop" id="skill-pop" hidden></div>
-        <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…  (Enter to send · $ for a shell command · # to reference a chat · paste or drop to attach)"></textarea>
-        <!-- Mid-turn the send button is Stop; this one appears beside it once
-             there is something typed, and queues it (same as Enter). -->
-        <button class="queue-btn" id="queue-btn" type="button" data-i18n-title="queue.btnTitle" title="Queue this message — it’s sent when Claude finishes (Enter)" hidden></button>
-        <button class="send-btn" id="send-btn" title="Send"></button>
+      <!-- The dock: the input and, under it, the tools that act on this chat —
+           one floating card (motion.css / chat.css "Composer dock"). The strips
+           above it (queue, references, permission, suggestion, attachments)
+           stay outside, so the card itself never changes shape. -->
+      <div class="composer-dock">
+        <div class="composer-row">
+          <span class="shell-badge" data-i18n="shell.badge" aria-hidden="true">shell mode · runs in the project folder</span>
+          <!-- # autocomplete: pick an earlier chat to reference -->
+          <div class="mention-pop" id="mention-pop" hidden></div>
+          <!-- / autocomplete: pick a Claude Code skill to start the message with -->
+          <div class="mention-pop skill-pop" id="skill-pop" hidden></div>
+          <textarea id="input" rows="1" data-i18n-ph="composer.placeholder" placeholder="Message Claude…   / skill · $ shell · # chat · drop files to attach"></textarea>
+          <!-- Mid-turn the send button is Stop; this one appears beside it once
+               there is something typed, and queues it (same as Enter). -->
+          <button class="queue-btn" id="queue-btn" type="button" data-i18n-title="queue.btnTitle" title="Queue this message — it’s sent when Claude finishes (Enter)" hidden></button>
+          <button class="send-btn" id="send-btn" title="Send"></button>
+        </div>
+        <div class="composer-tools">
+          <div class="picker" id="mode-picker" data-i18n-title="mode.pickerTitle" title="How much Claude may do on its own: Auto acts freely; Ask checks with you before changing or running anything; Plan only researches and proposes"></div>
+          <!-- How hard Claude thinks before answering. Persisted per chat, next to
+               the model and the mode. -->
+          <div class="picker" id="effort-picker" data-i18n-title="effort.pickerTitle" title="How hard Claude thinks before it answers — higher is slower but more thorough"></div>
+          <div class="composer-tools-spacer"></div>
+          <!-- Orchestrator: run a premium model as a supervisor that delegates the
+               heavy lifting to cheaper worker sub-agents. Opens a popover to pick
+               the orchestrator model and the sub-agent model (or Auto). -->
+          <div class="orch-wrap" id="orch-wrap">
+            <button id="orch-btn" class="head-btn" data-i18n-title="orch.btnTitle" title="Orchestrator: run a premium model as a supervisor that delegates the heavy work to cheaper sub-agents" data-icon="zap"><span data-i18n="orch.btn">Orchestrate</span></button>
+            <div class="orch-pop" id="orch-pop" hidden></div>
+          </div>
+          <button id="branch-btn" class="head-btn" data-icon="branch" data-i18n="fork.btn" data-i18n-title="fork.btnTitle" title="Branch: fork this conversation into a copy you can take in a new direction — the original stays untouched">Branch</button>
+          <button id="compact-btn" class="head-btn" data-icon="compact" data-i18n="compact.btn" data-i18n-title="compact.btnTitle" title="Tidy up: keep a summary, drop the bulk — keeps Claude quick & sharp">Compact</button>
+          <button id="clear-btn" class="head-btn" data-icon="trash" data-i18n="clear.btn" data-i18n-title="clear.btnTitle" title="Start fresh: Claude forgets this chat">Clear</button>
+          <!-- How full the conversation is: a ring, next to the tools that empty
+               it. Click for the numbers (and the usage chip). See app/header.js. -->
+          <div class="ctx-wrap" id="meter-row" hidden>
+            <button class="ctx-ring" id="ctx-ring" type="button" aria-expanded="false" data-i18n-title="meter.ringTitle" title="Conversation size — click for details">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ctx-track" cx="10" cy="10" r="8"/><circle class="ctx-arc" id="ctx-arc" cx="10" cy="10" r="8"/></svg>
+              <span class="ctx-pct" id="ctx-pct">0%</span>
+            </button>
+            <div class="ctx-pop" id="ctx-pop" hidden>
+              <div class="ctx-pop-head" data-i18n="meter.popTitle">Conversation size</div>
+              <div class="meter"><div class="meter-fill" id="meter-fill"></div></div>
+              <div class="meter-label" id="meter-label"></div>
+              <!-- Glanceable Claude-usage chip (5h / weekly %); opens Settings → Usage. -->
+              <button class="usage-chip" id="usage-chip" hidden></button>
+            </div>
+          </div>
+        </div>
       </div>
       <!-- Tiny git status line: current branch + working-tree changes. Hidden
            when the feature is off or the project folder isn't a git repo. -->
@@ -264,7 +285,7 @@
   <div class="modal-overlay" id="init-overlay" hidden>
     <div class="init-modal" role="dialog" aria-modal="true" aria-labelledby="init-modal-title">
       <header class="init-head">
-        <div class="init-title" id="init-modal-title">✨ Početno postavljanje</div>
+        <div class="init-title" id="init-modal-title" data-icon="sparkle">Initial setup</div>
         <div class="init-steps" id="init-steps"></div>
         <button class="init-x" id="init-close" title="Zatvori">×</button>
       </header>
@@ -300,7 +321,7 @@
   <div class="modal-overlay" id="activity-overlay" hidden>
     <div class="init-modal activity-modal" role="dialog" aria-modal="true" aria-labelledby="activity-title">
       <header class="init-head">
-        <div class="init-title" id="activity-title" data-i18n="activity.panelTitle">⚡ Agents &amp; shells</div>
+        <div class="init-title" id="activity-title" data-icon="terminal" data-i18n="activity.panelTitle">Agents &amp; shells</div>
         <div class="activity-filters" id="activity-filters"></div>
         <button class="init-x" id="activity-close" data-i18n-title="activity.close" title="Close">×</button>
       </header>
@@ -314,7 +335,7 @@
   <div class="modal-overlay agent-overlay" id="agent-overlay" hidden>
     <div class="init-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-title">
       <header class="init-head agent-head">
-        <span class="agent-ico" aria-hidden="true">🧩</span>
+        <span class="agent-ico" data-icon="agent" aria-hidden="true"></span>
         <div class="agent-heading">
           <div class="init-title" id="agent-title" data-i18n="agent.panelTitle">Sub-agent</div>
           <div class="agent-sub" id="agent-sub" hidden></div>
@@ -338,7 +359,7 @@
   <div class="modal-overlay ci-overlay" id="ci-overlay" hidden>
     <div class="init-modal ci-modal" role="dialog" aria-modal="true" aria-labelledby="ci-title">
       <header class="init-head agent-head">
-        <span class="agent-ico" aria-hidden="true">🚀</span>
+        <span class="agent-ico" data-icon="rocket" aria-hidden="true"></span>
         <div class="agent-heading">
           <div class="init-title" id="ci-title"></div>
           <div class="agent-sub ci-sub" id="ci-sub"></div>
@@ -363,7 +384,7 @@
   <div class="modal-overlay review-overlay" id="review-overlay" hidden>
     <div class="init-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
       <header class="init-head review-head">
-        <span class="agent-ico" aria-hidden="true">📝</span>
+        <span class="agent-ico" data-icon="diff" aria-hidden="true"></span>
         <div class="agent-heading">
           <div class="init-title" id="review-title" data-i18n="review.title">Changes in this reply</div>
           <div class="review-sub" id="review-sub"></div>
@@ -418,7 +439,7 @@
   <div class="modal-overlay" id="dirs-overlay" hidden>
     <div class="init-modal dirs-modal" role="dialog" aria-modal="true" aria-labelledby="dirs-title">
       <header class="init-head">
-        <div class="init-title" id="dirs-title" data-i18n="dirs.title">📁 Folders Claude can use</div>
+        <div class="init-title" id="dirs-title" data-icon="folder" data-i18n="dirs.title">Folders Claude can use</div>
         <button class="init-x" id="dirs-close" data-i18n-title="dirs.close" title="Close">×</button>
       </header>
       <div class="init-body" id="dirs-body"></div>
@@ -434,7 +455,7 @@
   <div class="modal-overlay" id="remote-overlay" hidden>
     <div class="init-modal remote-modal" role="dialog" aria-modal="true" aria-labelledby="remote-title">
       <header class="init-head">
-        <div class="init-title" id="remote-title" data-i18n="remote.title">🖥 Connect to another computer</div>
+        <div class="init-title" id="remote-title" data-icon="monitor" data-i18n="remote.title">Connect to another computer</div>
         <button class="init-x" id="remote-close" data-i18n-title="remote.close" title="Close">×</button>
       </header>
       <div class="init-body" id="remote-body"></div>
@@ -459,7 +480,7 @@
   <div class="modal-overlay" id="settings-overlay" hidden>
     <div class="init-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <header class="init-head">
-        <div class="init-title" id="settings-modal-title" data-i18n="settings.heading">⚙ Settings</div>
+        <div class="init-title" id="settings-modal-title" data-icon="gear" data-i18n="settings.heading">Settings</div>
         <button class="init-x" id="settings-close" data-i18n-title="settings.close" title="Close">×</button>
       </header>
       <div class="init-body" id="settings-body"></div>
@@ -471,7 +492,7 @@
        cleared. Driven by app/controls.js (showProgressOverlay). -->
   <div class="proc-overlay" id="proc-overlay" hidden>
     <div class="proc-card" role="status" aria-live="polite">
-      <div class="proc-glyph" id="proc-glyph" aria-hidden="true">🧹</div>
+      <div class="proc-glyph" id="proc-glyph" aria-hidden="true"></div>
       <h2 class="proc-title" id="proc-title"></h2>
       <p class="proc-sub" id="proc-sub"></p>
       <div class="proc-bar"><div class="proc-bar-fill" id="proc-bar-fill"></div></div>
@@ -492,7 +513,7 @@
 ╚═╝  ╚═╝</pre>
       </div>
 
-      <div class="onb-spark" id="onb-spark" aria-hidden="true">✨</div>
+      <div class="onb-spark" id="onb-spark" data-icon="sparkle" aria-hidden="true"></div>
       <h2 class="onb-title" id="onb-title"></h2>
       <p class="onb-body" id="onb-body"></p>
 
@@ -526,7 +547,7 @@
 ╚═╝  ╚═╝</pre>
       </div>
 
-      <div class="update-spark" aria-hidden="true">✨</div>
+      <div class="update-spark" data-icon="sparkle" aria-hidden="true"></div>
       <h2 class="update-title" id="update-title" data-i18n="update.title">A new version of Krystal is available</h2>
       <p class="update-version" id="update-version"></p>
 
@@ -564,6 +585,8 @@
        file may use symbols declared in any earlier file. boot.js (entry point)
        must stay last. See app/core.js for the full layout. -->
   <script defer src="app/core.js"></script>
+  <script defer src="app/icons.js"></script>
+  <script defer src="app/motion.js"></script>
   <script defer src="app/sidebar.js"></script>
   <script defer src="app/chat.js"></script>
   <script defer src="app/projects.js"></script>
@@ -583,6 +606,7 @@
   <script defer src="app/wizard.js"></script>
   <script defer src="app/localization.js"></script>
   <script defer src="app/settings.js"></script>
+  <script defer src="app/header.js"></script>
   <script defer src="app/tasks.js"></script>
   <script defer src="app/git.js"></script>
   <script defer src="app/run.js"></script>
@@ -593,6 +617,7 @@
   <script defer src="app/pins.js"></script>
   <script defer src="app/remote.js"></script>
   <script defer src="app/notifications.js"></script>
+  <script defer src="app/palette.js"></script>
   <script defer src="app/hotkeys.js"></script>
   <script defer src="app/boot.js"></script>
 </body>

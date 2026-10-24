@@ -8,10 +8,10 @@
  * mirrors the original top-to-bottom order; boot.js (the entry point) loads last.
  *
  * Load order (see index.html):
- *   core → sidebar → chat → projects → controls → activity → agents → search →
+ *   core → icons → motion → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
- *   localization → settings → remote → tasks → git → links → logo →
- *   notifications → hotkeys → boot
+ *   localization → settings → header → remote → tasks → git → links → logo →
+ *   notifications → palette → hotkeys → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the

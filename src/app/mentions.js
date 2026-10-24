@@ -145,7 +145,7 @@ function renderRefPills() {
     const pill = document.createElement('span');
     pill.className = 'composer-ref';
     pill.innerHTML =
-      `<span class="ref-ico" aria-hidden="true">🔗</span>` +
+      `<span class="ref-ico" aria-hidden="true">${icon('link')}</span>` +
       `<span class="ref-title"></span>` +
       `<button class="ref-x" title="${escapeHtml(tr('mention.removeRef'))}" aria-label="${escapeHtml(tr('mention.removeRef'))}">×</button>`;
     pill.querySelector('.ref-title').textContent = ref.title;

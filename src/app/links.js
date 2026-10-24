@@ -12,7 +12,7 @@ function isOpenableHref(href) {
 
 function openExternalUrl(url) {
   api.openExternal(url).catch((e) => {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('link.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('link.failLabel'),
       body: escapeHtml(String((e && e.message) || e)) });
   });
 }
@@ -40,7 +40,7 @@ function askOpenLink(href) {
   overlay.className = 'modal-overlay link-ask';
   overlay.innerHTML =
     `<div class="init-modal link-ask-modal" role="dialog" aria-modal="true">` +
-      `<header class="init-head"><div class="init-title">🔗 ${escapeHtml(tr('link.askTitle'))}</div></header>` +
+      `<header class="init-head"><div class="init-title" data-icon="link">${escapeHtml(tr('link.askTitle'))}</div></header>` +
       `<div class="init-body">` +
         `<div class="link-url">${escapeHtml(href)}</div>` +
         `<label class="link-remember"><input type="checkbox" class="link-remember-cb"> ${escapeHtml(tr('link.remember'))}</label>` +
@@ -77,7 +77,7 @@ function askOpenLink(href) {
  * own chrome; on failure we fall back to the default browser. */
 function openLinkInApp(href) {
   api.openWebview(href).catch((e) => {
-    showTip({ key: 'status', cls: 'high', icon: '⚠️', label: tr('link.failLabel'),
+    showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('link.failLabel'),
       body: escapeHtml(String((e && e.message) || e)) });
     openExternalUrl(href);
   });

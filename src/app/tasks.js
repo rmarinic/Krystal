@@ -23,13 +23,18 @@ const TASK_CHECK_SVG =
 function projectPath() { return state.project && state.project.path; }
 function openTaskCount() { return taskUI.tasks.filter((t) => !t.done).length; }
 
-/* The sidebar-foot button shows how many tasks are still open. */
+/* The sidebar-foot button shows how many tasks are still open — and rolls to
+ * the new count when one is ticked off or added. */
 let lastOpenCount = null;      // so a sync can say what actually changed
 function setTaskBadge(n) {
   lastOpenCount = n;
   if (!els.tasksCount) return;
-  if (n > 0) { els.tasksCount.textContent = String(n); els.tasksCount.hidden = false; }
-  else els.tasksCount.hidden = true;
+  if (n > 0) {
+    // Only roll a badge that was already showing a count; one appearing just shows it.
+    if (els.tasksCount.hidden) els.tasksCount._rollAt = null;
+    rollNumber(els.tasksCount, n);
+    els.tasksCount.hidden = false;
+  } else els.tasksCount.hidden = true;
 }
 
 /* Refresh just the badge (cheap backend count) — called when a project opens,
@@ -46,6 +51,7 @@ async function refreshTaskCount() {
 function showTasksBtn(show) {
   if (!els.tasksBtn) return;
   els.tasksBtn.hidden = !show;
+  if (els.tasksCount) els.tasksCount._rollAt = null;   // another project's count isn't a "change"
   if (show) refreshTaskCount();
 }
 
@@ -104,7 +110,7 @@ function renderTaskList() {
   // "Let Claude build it" entry point.
   const gen = document.createElement('button');
   gen.className = 'task-gen-btn';
-  gen.innerHTML = `<span aria-hidden="true">✨</span> ${escapeHtml(tr('tasks.genBtn'))}`;
+  gen.innerHTML = `${icon('sparkle')} ${escapeHtml(tr('tasks.genBtn'))}`;
   gen.onclick = renderBrief;
   body.appendChild(gen);
 
@@ -127,6 +133,7 @@ function renderTaskList() {
   els.tasksFoot.innerHTML = '';
   if (done > 0) {
     const clear = footBtn(tr('tasks.clearDone', { n: done }), 'ghost', clearDone);
+    clear.dataset.icon = 'trash';
     clear.style.marginRight = 'auto';
     els.tasksFoot.appendChild(clear);
   }
@@ -152,7 +159,11 @@ function taskItem(t) {
   main.className = 'task-main';
   const title = document.createElement('div');
   title.className = 'task-title';
-  title.textContent = t.title;
+  // Inline, so the done strike can sweep across it line by line (motion.css).
+  const text = document.createElement('span');
+  text.className = 'task-text';
+  text.textContent = t.title;
+  title.appendChild(text);
   title.title = tr('tasks.editTitle');
   title.ondblclick = () => beginEdit(li, t);
   main.appendChild(title);
@@ -166,7 +177,7 @@ function taskItem(t) {
   const edit = document.createElement('button');
   edit.className = 'task-icon task-edit';
   edit.title = tr('tasks.editTitle');
-  edit.innerHTML = '✎';
+  edit.innerHTML = icon('edit');
   edit.onclick = () => beginEdit(li, t);
 
   const del = document.createElement('button');
@@ -236,6 +247,8 @@ async function toggleTask(t) {
   const li = els.tasksBody.querySelector(`.task-item[data-id="${t.id}"]`);
   if (li) {
     li.classList.toggle('done', next);
+    if (next) replayClass(li, 'just-done', 500);   // the tick draws itself, the box pops
+    else li.classList.remove('just-done');
     const check = li.querySelector('.task-check');
     if (check) {
       check.setAttribute('aria-checked', String(next));
@@ -253,6 +266,7 @@ function renderClearDoneFoot() {
   els.tasksFoot.innerHTML = '';
   if (done > 0) {
     const clear = footBtn(tr('tasks.clearDone', { n: done }), 'ghost', clearDone);
+    clear.dataset.icon = 'trash';
     clear.style.marginRight = 'auto';
     els.tasksFoot.appendChild(clear);
   }
@@ -296,7 +310,9 @@ function renderBrief() {
 
   els.tasksFoot.innerHTML = '';
   els.tasksFoot.appendChild(footBtn(tr('tasks.back'), 'ghost', renderTaskList));
-  els.tasksFoot.appendChild(footBtn(tr('tasks.generate'), 'primary', () => runGenerate(null)));
+  const gen = footBtn(tr('tasks.generate'), 'primary', () => runGenerate(null));
+  gen.dataset.icon = 'sparkle';
+  els.tasksFoot.appendChild(gen);
 }
 
 function genLoading(title) {
@@ -310,7 +326,8 @@ function genError(message, retry) {
   els.tasksFoot.innerHTML = '';
   const err = document.createElement('span');
   err.className = 'init-err';
-  err.textContent = '⚠ ' + message;
+  err.innerHTML = icon('alert');
+  err.appendChild(document.createTextNode(' ' + message));
   els.tasksFoot.appendChild(err);
   els.tasksFoot.appendChild(footBtn(tr('tasks.back'), 'ghost', renderBrief));
   if (retry) els.tasksFoot.appendChild(footBtn(tr('tasks.retry'), 'primary', retry));
@@ -319,7 +336,7 @@ function genError(message, retry) {
 async function runGenerate(answers) {
   const brief = (taskUI.brief || '').trim();
   if (!brief) {
-    showTip({ key: 'status', cls: 'warn', icon: '✍️', label: tr('tasks.needBriefLabel'),
+    showTip({ key: 'status', cls: 'warn', icon: 'edit', label: tr('tasks.needBriefLabel'),
       body: tr('tasks.needBriefBody') });
     return;
   }
@@ -380,7 +397,9 @@ function renderQuestions() {
 
   els.tasksFoot.innerHTML = '';
   els.tasksFoot.appendChild(footBtn(tr('tasks.back'), 'ghost', renderBrief));
-  els.tasksFoot.appendChild(footBtn(tr('tasks.createTasks'), 'primary', () => runGenerate(collectAnswers())));
+  const make = footBtn(tr('tasks.createTasks'), 'primary', () => runGenerate(collectAnswers()));
+  make.dataset.icon = 'sparkle';
+  els.tasksFoot.appendChild(make);
 }
 
 function collectAnswers() {
@@ -415,7 +434,7 @@ async function applyGenerated(tasks) {
   taskUI.brief = '';
   setTaskBadge(openTaskCount());
   renderTaskList();
-  showTip({ key: 'status', icon: '✨', label: tr('tasks.addedLabel'),
+  showTip({ key: 'status', icon: 'sparkle', label: tr('tasks.addedLabel'),
     body: tr('tasks.addedBody', { n: clean.length }) });   // the count is the only value; keep its <strong>
 }
 

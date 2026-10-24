@@ -4,6 +4,28 @@
  * standalone response file in .htmlcast/responses/. Keep selectors written
  * so that the same rules style both contexts correctly. */
 
+/* Fonts ship with the app (src/fonts, SIL OFL — licences alongside), so the
+ * look is the same offline and nothing is fetched at start-up. Inter carries
+ * everything you read; JetBrains Mono is kept for what is genuinely technical —
+ * code, paths, numbers, the ▸ prompt and the box-art logo; Orbitron is the
+ * wordmark only. */
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url("fonts/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter"; font-style: italic; font-weight: 100 900; font-display: swap;
+  src: url("fonts/InterVariable-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("fonts/JetBrainsMono-Variable.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Orbitron"; font-style: normal; font-weight: 900; font-display: swap;
+  src: url("fonts/Orbitron-Black-latin.woff2") format("woff2");
+}
+
 :root {
   --bg:         #0a0f0b;
   --bg-elev:    #0e140f;
@@ -26,6 +48,7 @@
   --radius:     10px;
   --radius-sm:  6px;
   --sidebar-w:  280px;
+  --read-w:     760px;   /* the reading column: transcript text and the composer dock */
 }
 
 * { box-sizing: border-box; }
@@ -81,8 +104,7 @@ aside.sidebar {
   /* The whole column is fixed-height; only the chat list inside scrolls, so the
      header, search and foot buttons (Insight/Activity/Tasks) stay pinned. */
   overflow: hidden;
-  background: var(--bg-elev);
-  border-right: 1px solid var(--border);
+  background: var(--bg-elev);   /* a tone apart from the chat — no rule needed between them */
   padding: 22px 14px 24px;
   display: flex;
   flex-direction: column;
@@ -199,7 +221,7 @@ aside.sidebar {
 .sidebar-list .time,
 .archive-list .time {
   display: block;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 10.5px;
   color: var(--fg-dim);
   margin-bottom: 3px;
