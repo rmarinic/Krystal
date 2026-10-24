@@ -152,7 +152,7 @@ async function openThread(id, focusMid) {
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
   if (typeof syncPermission === 'function') syncPermission();   // …and whatever its turn is waiting to be allowed
   refreshGit();
-  activityMinH = 0;                 // new chat → re-measure the activity panel size
+  if (prevId !== id) resetActivityView();   // new chat → its own panel size, groups and filter
   if (!els.activityOverlay.hidden) refreshActivityPanel();
 
   // Restore this chat's unsent draft (kept per chat, persisted across restarts).

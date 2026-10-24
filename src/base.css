@@ -110,7 +110,7 @@ aside.sidebar {
   height: calc(100vh - 2 * var(--panel-gap));
   margin: var(--panel-gap) 0 var(--panel-gap) var(--panel-gap);
   /* The whole column is fixed-height; only the chat list inside scrolls, so the
-     header, search and foot buttons (Insight/Activity/Tasks) stay pinned. */
+     header, search and foot rows (Activity/Tasks/Artifacts) stay pinned. */
   overflow: hidden;
   background: var(--bg-elev);
   border-radius: 14px;

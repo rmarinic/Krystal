@@ -2427,45 +2427,6 @@ pub async fn stop_run(state: State<'_, AppState>, project: String) -> Result<Val
     Ok(json!({ "ok": pid.is_some() }))
 }
 
-const HINT_PROMPT: &str = "You are a warm, plain-spoken usage coach for a NON-TECHNICAL person using a Claude chat app. Below is their recent conversation. If — and only if — you notice a SPECIFIC, concrete way they could get better results (e.g. giving a detail or file Claude clearly needed, being clearer about the goal, or splitting a big request), reply with ONE short friendly tip of 1–2 sentences, no jargon. If they are already communicating well, reply with exactly: ALL_GOOD. Never invent problems or nitpick.\n\n--- conversation ---\n";
-
-#[tauri::command]
-pub async fn hint_thread(state: State<'_, AppState>, id: String) -> CmdResult {
-    let meta = {
-        let conn = state.db.lock().unwrap();
-        db::get_meta(&conn, &id)
-    }
-    .ok_or("not found")?;
-
-    let recent = {
-        let conn = state.db.lock().unwrap();
-        db::recent_messages(&conn, &id, 8)
-    };
-    let joined = recent
-        .iter()
-        .map(|(role, text)| {
-            let who = if role == "user" { "User" } else { "Claude" };
-            format!("{who}: {text}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    if joined.trim().is_empty() {
-        return Ok(json!({ "tip": "", "allGood": true }));
-    }
-
-    let sys = state.sys_prompt();
-    let args = claude::base_args(&meta.model, &sys); // fresh session — won't pollute the chat
-    let prompt = format!("{HINT_PROMPT}{joined}");
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, &prompt).await?;
-
-    let all_good = text.to_uppercase().contains("ALL_GOOD") || text.trim().is_empty();
-    Ok(json!({
-        "tip": if all_good { String::new() } else { text.trim().to_string() },
-        "allGood": all_good,
-    }))
-}
-
 /* --------------------------- Initialize wizard --------------------------- */
 
 // The analyze prompt is built per-run so we can fold in the user's short

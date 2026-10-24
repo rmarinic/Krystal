@@ -116,6 +116,16 @@ pub fn capability_prompt(caps: Caps, ui_lang: &str) -> String {
 ",
     );
 
+    // The shell tools' `description` is optional, and Krystal names each step
+    // by it (the action chip, the Activity panel). Without one the user is left
+    // reading the raw command — which most of them can't.
+    p.push_str(
+        "## Commands
+         Give every Bash/PowerShell call a short plain-language `description` of what it is for (\"Run the tests\", \"Search the code for the login form\"). The app shows it to the user as the name of that step, and many users can't read shell commands.
+
+",
+    );
+
     p.push_str("## Word documents
 ");
     if caps.pandoc {

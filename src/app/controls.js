@@ -1,6 +1,6 @@
-/* controls.js   — model/mode pickers, compact/clear/hint, progress overlay
+/* controls.js   — model/mode pickers, compact/clear, progress overlay
    Part of the chat frontend; shares one global scope (see core.js). */
-/* ----------------------- model / clear / compact / hint ------------------ */
+/* -------------------------- model / clear / compact ---------------------- */
 
 /* A small custom dropdown. Unlike a native <select>, the closed control shows
  * only the option's NAME (compact), while the open menu shows name + blurb.
@@ -372,30 +372,4 @@ async function doBranch() {
   }
 }
 els.branchBtn.onclick = () => doBranch();
-
-const INSIGHT_SVG =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 14.5l.55 1.6 1.6.55-1.6.55-.55 1.6-.55-1.6-1.6-.55 1.6-.55z"/></svg>';
-
-els.hintBtn.onclick = async () => {
-  if (!state.activeId || els.hintBtn.disabled) return;
-  els.hintBtn.disabled = true;
-  els.hintBtn.innerHTML = `<span class="spin"></span><span>${tr('hint.looking')}</span>`;
-  try {
-    const r = await api.hint(state.activeId);
-    if (r.error) throw new Error(r.error);
-    if (r.allGood || !r.tip) {
-      showTip({ key: 'hint', cls: 'hint', icon: 'thumbs', label: tr('hint.label'),
-        body: tr('hint.allGood') });
-    } else {
-      showTip({ key: 'hint', cls: 'hint', icon: 'sparkle', label: tr('hint.label'),
-        body: renderMarkdown(r.tip) });
-    }
-  } catch (e) {
-    showTip({ key: 'hint', cls: 'high', icon: 'alert', label: tr('hint.label'),
-      body: escapeHtml(String(e.message || e)) });
-  } finally {
-    els.hintBtn.disabled = false;
-    els.hintBtn.innerHTML = INSIGHT_SVG + `<span>${tr('hint.label')}</span>`;
-  }
-};
 

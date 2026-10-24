@@ -289,7 +289,8 @@ function renderActionChip(seg, working) {
   // A sub-agent is a whole run, not a blob of output: its chip opens the agent
   // inspector instead of expanding inline (see agents.js).
   if (isAgentTool(name) && seg.id) return renderAgentChip(seg, working);
-  const target = seg.target || '';
+  // A shell step says what it's for, in words, even when Claude didn't (activity.js).
+  const target = isShellTool(name) ? shellStepLabel(seg) : (seg.target || '');
   const label = toolLabel(name) + (target ? ' · ' + target : '');
   const el = document.createElement('div');
   el.className = 'action-chip expandable ' + (working ? 'working' : 'done');

@@ -19,7 +19,7 @@ function button(visible = true) {
 function load(over = {}) {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'palette.js'), 'utf8');
   const els = {
-    compactBtn: button(), clearBtn: button(), branchBtn: button(), hintBtn: button(),
+    compactBtn: button(), clearBtn: button(), branchBtn: button(),
     activityBtn: button(false), tasksBtn: button(), artifactsBtn: button(), runBtn: button(false),
   };
   const ctx = Object.assign({

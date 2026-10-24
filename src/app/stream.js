@@ -649,14 +649,14 @@ function handleLiveEvent(live, msg) {
     if (live.typer) live.typer.push(msg.text);
   } else if (event === 'tool') {
     live.events.push(msg);
-    trackTool(live.activity, msg, active);
+    trackTool(live.activity, msg, active, live);
     // A sub-agent gets a run record of its own (before the chip is built, so the
     // chip can read its tally straight from it).
     if (isAgentTool(msg.name)) agentTaskSeen(live.threadId, msg);
     if (live.typer) live.typer.setTool(msg);
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
-    trackTool(live.activity, msg, active);          // updates the Activity panel
+    trackTool(live.activity, msg, active, live);    // updates the Activity panel
     // A step handed its result back: one soft breath of light at its chip.
     if (live.bubble && msg.id) lightBeat(live.bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`));
     agentResultSeen(msg);                           // a sub-agent handed its report back

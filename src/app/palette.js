@@ -43,7 +43,6 @@ function paletteItems() {
     [els.compactBtn, 'compact', 'palette.compact'],
     [els.clearBtn, 'trash', 'palette.clear'],
     [els.branchBtn, 'branch', 'palette.branch'],
-    [els.hintBtn, 'sparkle', 'palette.insight'],
     [els.activityBtn, 'terminal', 'palette.activity'],
     [els.tasksBtn, 'todo', 'palette.tasks'],
     [els.artifactsBtn, 'artifact', 'palette.artifacts'],

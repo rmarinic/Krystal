@@ -152,7 +152,6 @@ fn main() {
             commands::detect_run_command,
             commands::run_app,
             commands::stop_run,
-            commands::hint_thread,
             commands::init_analyze,
             commands::init_draft,
             commands::init_save,

@@ -861,7 +861,6 @@ async fn dispatch<R: Runtime>(
         "compact_thread" => {
             commands::compact_thread(st(), arg_str(a, "id"), Channel::new(|_| Ok(()))).await
         }
-        "hint_thread" => commands::hint_thread(st(), arg_str(a, "id")).await,
 
         /* ---- per-chat settings ---- */
         "set_model" => commands::set_model(st(), arg_str(a, "id"), arg_str(a, "model")),

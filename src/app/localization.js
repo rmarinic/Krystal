@@ -31,10 +31,6 @@ function updateLangBtn() {
 
 function relocalizeDynamic() {
   buildPickers();                          // re-translate model/mode (keeps selection)
-  // The Insight button's label can lose its data-i18n span after use — refresh it.
-  if (!els.hintBtn.disabled) {
-    els.hintBtn.innerHTML = INSIGHT_SVG + `<span data-i18n="hint.label">${tr('hint.label')}</span>`;
-  }
   if (!state.project) { renderProjects(); return; }
   if (state.view === 'saved') refreshSaved();
   else renderSidebar();                    // threads / search use cached data
