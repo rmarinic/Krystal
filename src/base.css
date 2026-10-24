@@ -133,6 +133,7 @@ aside.sidebar {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;       /* a hovered row's 2px nudge must never grow a side scrollbar */
 }
 
 .sidebar-header {

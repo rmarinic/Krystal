@@ -218,10 +218,15 @@ body.fonts-ready .logo-k { opacity: 1; transition: opacity .35s ease; }
  * folder is the same on every row of a project — the header already says it —
  * so a chat row leaves it out (search results keep their own "in …" line). */
 .sidebar-list li[data-tid] > a { display: flex; flex-direction: column; }
-.sidebar-list li[data-tid] .sum { order: -1; }
+.sidebar-list li[data-tid] .sum,
+.sidebar-list li[data-tid] .rename-input { order: -1; }   /* renaming edits the title in place */
 .sidebar-list li[data-tid] .time { margin: 2px 0 0; }
 .sidebar-list li[data-tid] .cwd { display: none; }
-.sidebar-list li[data-tid]:hover .sum { padding-right: 46px; }   /* room for rename / delete */
+/* Rename / delete sit at the end of the short time line, not beside the title:
+ * a title that made room for them on hover re-wrapped onto a second line and
+ * the row jumped. Down here they cover nothing and nothing reflows. */
+.sidebar-list li[data-tid] .del,
+.sidebar-list li[data-tid] .rename { top: auto; bottom: 6px; }
 .sidebar-list .del {
   position: absolute;
   top: 8px; right: 8px;
