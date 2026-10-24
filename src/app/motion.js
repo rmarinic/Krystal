@@ -93,6 +93,8 @@ function glideMark(list, active) {
   }
   if (!mark.isConnected) { list.prepend(mark); void mark.offsetWidth; }
   const first = !mark._placed;
+  if (!first && mark._y !== active.offsetTop) replayClass(mark, 'moving', 420);   // the bar stretches on its way
+  mark._y = active.offsetTop;
   if (first) mark.classList.add('instant');
   mark.style.transform = `translateY(${active.offsetTop}px)`;
   mark.style.height = active.offsetHeight + 'px';

@@ -13,8 +13,7 @@
 .sidebar-list { position: relative; }        /* rows measure offsetTop against it */
 .sidebar-list .glide-mark {   /* beats `.sidebar-list li { position: relative }` */
   position: absolute; left: 0; right: 0; top: 0; z-index: 0; pointer-events: none;
-  border-radius: var(--radius-sm); background: var(--bg-card);
-  border: 1px solid rgba(108,199,142,0.35); box-shadow: inset 3px 0 0 var(--accent-2);
+  border-radius: var(--radius-sm); background: rgba(108,199,142,0.12);
   transition: transform .38s var(--ease-out), height .38s var(--ease-out);
 }
 .sidebar-list .glide-mark.instant { transition: none; }
@@ -22,6 +21,11 @@
 .sidebar-list.gliding li.current > a:hover {
   background: transparent; border-color: transparent; box-shadow: none; transform: none;
 }
+.sidebar-list.gliding li.current > a::before { display: none; }   /* the mark carries the bar */
+/* On its way to another row the bar stretches, then settles — the way Windows'
+   own navigation mark travels. */
+.sidebar-list .glide-mark.moving::before { animation: glide-bar .38s var(--ease-out); }
+@keyframes glide-bar { 40% { transform: scaleY(1.9); } }
 
 /* ---- Rolling numbers (rollNumber): one column per digit ---- */
 .roll-d {
@@ -146,6 +150,7 @@
 ::view-transition-new(root) { animation-duration: .3s; }
 
 @media (prefers-reduced-motion: reduce) {
+  .sidebar-list .glide-mark.moving::before { animation: none; }
   .sidebar-list .glide-mark, .roll-col, .task-text, .composer-row textarea.exhale { transition: none; }
   .msg.user .bubble.landed-in, .send-btn.launch .ic-send, .send-btn.land .ic-send,
   .action-chip.thinking .chip-status, .action-chip.thinking .chip-label,

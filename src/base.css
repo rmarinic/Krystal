@@ -203,16 +203,27 @@ aside.sidebar {
   transition: background .15s ease, border-color .15s ease,
               transform .15s ease, box-shadow .22s ease;
 }
-.sidebar-list a:hover,
 .archive-list a:hover {
   background: var(--bg-card);
   border-color: var(--border);
   transform: translateX(3px);
 }
-.sidebar-list .current a {
-  background: var(--bg-card);
-  border-color: rgba(108,199,142,0.35);
-  box-shadow: inset 3px 0 0 var(--accent-2);
+/* Chat rows. Which one is open must read at a glance, even while moving fast,
+   so selection has a channel of its own and nothing else borrows it: a tinted
+   fill, a short accent bar on the left (Windows 11's navigation mark) and the
+   brightest title in the list. A row's *state* — a reply running, a draft, a
+   turn waiting on you — is only ever its dot. Hover is a faint lift, no border. */
+.sidebar-list a:hover { background: rgba(255,255,255,0.04); transform: translateX(2px); }
+.sidebar-list li[data-tid] .sum { color: var(--fg-muted); transition: color .15s ease; }
+.sidebar-list li[data-tid] > a:hover .sum,
+.sidebar-list li.current .sum { color: var(--fg); }
+.sidebar-list li.current .time { color: var(--accent-3); }
+.sidebar-list .current a { background: rgba(108,199,142,0.12); }
+.sidebar-list .current a::before,
+.sidebar-list .glide-mark::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: 3px; height: 18px; margin-top: -9px; border-radius: 3px;
+  background: var(--accent-2);
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-list a:hover, .archive-list a:hover { transform: none; }

@@ -3343,7 +3343,6 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
   box-shadow: 0 0 0 0 rgba(108,199,142,0.5);
   animation: live-pulse 1.6s ease-out infinite;
 }
-.sidebar-list li.streaming > a { border-color: rgba(108,199,142,0.28); }
 @keyframes live-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); opacity: 1; }
   70%  { box-shadow: 0 0 0 5px rgba(108,199,142,0); opacity: .65; }
@@ -3352,7 +3351,6 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 /* …and one stopped on a permission prompt (Ask mode) is waiting on you: the
    same mark, in amber. */
 .sidebar-list li.needs-you .live-dot { background: var(--warn); animation-name: live-pulse-warn; }
-.sidebar-list li.needs-you > a { border-color: var(--warn-bd); }
 @keyframes live-pulse-warn {
   0%   { box-shadow: 0 0 0 0 rgba(226,155,80,0.5); opacity: 1; }
   70%  { box-shadow: 0 0 0 5px rgba(226,155,80,0); opacity: .65; }
@@ -3365,7 +3363,6 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
   font-size: 10px; line-height: 1; color: var(--accent-3);
   opacity: .85; animation: draft-in .22s ease;
 }
-.sidebar-list li.has-draft > a { border-color: rgba(143,224,170,0.22); }
 @keyframes draft-in {
   from { opacity: 0; transform: scale(.6); }
   to   { opacity: .85; transform: scale(1); }
