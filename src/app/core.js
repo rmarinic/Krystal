@@ -9,7 +9,7 @@
  *
  * Load order (see index.html):
  *   core → icons → motion → light → titlebar → sidebar → chat → projects → starters → controls → activity → agents → search →
- *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
+ *   messages → livemd → stream → permissions → mentions → skills → attachments → queue → wizard →
  *   localization → settings → header → remote → tasks → git → links → logo →
  *   notifications → palette → hotkeys → boot
  *

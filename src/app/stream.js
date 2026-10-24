@@ -270,14 +270,13 @@ function glideFeed() {
 
 /* Typewriter: decouples network arrival from rendering. Tokens are buffered
  * and revealed at a smooth, adaptive cadence (always ~one breath behind the
- * stream) with a blinking caret. Markdown + syntax highlighting are applied
- * once at the end — never per token — which is what kills the lag. */
+ * stream) with a blinking caret. */
 /* Renders one assistant turn as an ordered sequence of blocks — text blocks and
  * action chips, each on its own line — built up live as the stream arrives.
- *   • text streams with a typewriter caret, then is rendered to markdown once
- *     the block closes (a tool action or the end of the turn closes it);
- *   • each tool action becomes a chip that SPINS while it's the live action and
- *     settles to a dot once the next thing happens;
+ *   • text is formatted as it streams (livemd.js: finished blocks render once,
+ *     the one being written re-renders each frame), and the whole block is
+ *     rendered once more when it closes (a tool action or the end of the turn);
+ *   • each tool action becomes a chip that SPINS until its own result is back;
  *   • the same segment shapes are persisted server-side, so a reload rebuilds
  *     this exact transcript via renderSegments(). */
 function makeTyper(bubble) {
@@ -286,7 +285,8 @@ function makeTyper(bubble) {
   let textEl = null;       // DOM node of the open (streaming) text block, or null
   let chipEl = null;       // DOM node of the current working tool chip, or null
   let thinkEl = null;      // DOM node of the transient "thinking" indicator
-  let caretEl = null;      // the open text block's caret; revealed text goes before it
+  let caretEl = null;      // the open text block's caret, after the last thing written
+  let liveMd = null;       // the open text block's live markdown (livemd.js)
   let finished = false;
   let quietEnd = false;    // the turn was stopped — no "landed" flourish
   let finalText = null;    // canonical text, used only as a no-stream fallback
@@ -321,25 +321,14 @@ function makeTyper(bubble) {
     caretEl.className = 'caret';
     textEl.appendChild(caretEl);
     bubble.appendChild(textEl);
+    liveMd = makeLiveMarkdown(textEl, caretEl);
     shown = ''; pending = '';
   }
 
-  /* Append newly revealed text in front of the caret. Each frame's stretch is
-   * its own span that fades in (`.tw`), so nothing already on screen is
-   * repainted; a replay (`still`) folds into the previous plain span instead,
-   * so catching up on a long answer doesn't leave thousands of them. */
-  function appendText(t, still) {
-    if (!textEl || !t) return;
-    const html = escapeHtml(t).replace(/\n/g, '<br>');
-    const prev = caretEl.previousSibling;
-    if (still && prev && prev.nodeName === 'SPAN' && !prev.className) {
-      prev.insertAdjacentHTML('beforeend', html);
-      return;
-    }
-    const s = document.createElement('span');
-    if (!still) s.className = 'tw';
-    s.innerHTML = html;
-    textEl.insertBefore(s, caretEl);
+  /* Bring the open block up to date with what has been revealed. `still`: a
+   * replay catching up, which appears at once rather than fading in. */
+  function paintText(still) {
+    if (textEl && liveMd) liveMd.update(shown, !still);
   }
 
   function closeTextBlock() {
@@ -354,6 +343,7 @@ function makeTyper(bubble) {
     }
     textEl = null;
     caretEl = null;
+    liveMd = null;
   }
 
   function frame(now) {
@@ -367,7 +357,7 @@ function makeTyper(bubble) {
       const chunk = pending.slice(0, n);
       shown += chunk;
       pending = pending.slice(n);
-      appendText(chunk);
+      paintText();
       lightWords(n);   // the words being revealed feed the lamp (light.js)
     }
     if ((finished || errMsg) && !pending) {
@@ -417,7 +407,7 @@ function makeTyper(bubble) {
       if (!textEl) openTextBlock();   // text after a chip starts a fresh block
       if (instant) {                  // replay path: reveal buffered backlog without re-typing
         shown += t;
-        appendText(t, true);
+        paintText(true);
         maybeFollow();
       } else {
         pending += t;
