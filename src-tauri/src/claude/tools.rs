@@ -77,7 +77,34 @@ pub(super) fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<
             return (Some(p.to_string()), None);
         }
     }
+    // Loading a deferred tool's schema. `select:A,B` names the tools outright;
+    // anything else is a keyword search over them.
+    if name == "ToolSearch" {
+        if let Some(q) = str_of("query") {
+            return (Some(q.to_string()), Some(tool_search_target(q)));
+        }
+    }
     (None, None)
+}
+
+/// The chip label for a ToolSearch query: the tools a `select:` names, by their
+/// short name (an MCP tool's `mcp__server__name` reads as just `name`), or the
+/// keywords of a search.
+fn tool_search_target(query: &str) -> String {
+    let Some(list) = query.strip_prefix("select:") else {
+        return take_chars(query, 28);
+    };
+    let names: Vec<&str> = list
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| n.rsplit("__").next().unwrap_or(n))
+        .collect();
+    match names.as_slice() {
+        [] => take_chars(query, 28),
+        [one] => take_chars(one, 28),
+        [first, rest @ ..] => format!("{} +{}", take_chars(first, 22), rest.len()),
+    }
 }
 
 /// Curated rich detail for change-making tools: the before/after of an edit, or
@@ -119,15 +146,26 @@ pub(super) fn tool_change(name: &str, input: &Value) -> Option<Vec<(&'static str
 
 /// Flatten a tool_result's `content` (a string, or an array of text blocks)
 /// into plain text — the shell/sub-agent output we surface in the Activity panel.
+/// ToolSearch answers with `tool_reference` blocks instead of text; each becomes
+/// a line naming the tool it loaded, so its chip says what was found.
 pub(super) fn tool_result_text(c: Option<&Value>) -> String {
     match c {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(a)) => {
             let mut out = String::new();
+            let mut tools = Vec::new();
             for b in a {
                 if let Some(t) = b.get("text").and_then(|v| v.as_str()) {
                     out.push_str(t);
+                } else if let Some(t) = b.get("tool_name").and_then(|v| v.as_str()) {
+                    tools.push(t);
                 }
+            }
+            if !tools.is_empty() {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(&tools.join("\n"));
             }
             out
         }
@@ -162,5 +200,27 @@ mod tests {
         assert_eq!(target.as_deref(), Some("npm test"));
         let (_, target) = tool_detail("Bash", &json!({ "command": "npm test", "description": "  " }));
         assert_eq!(target.as_deref(), Some("npm test"));
+    }
+
+    #[test]
+    fn a_tool_search_chip_names_the_tools_it_loaded() {
+        // The call: `select:` names the tools, MCP ones by their short name.
+        let (detail, target) = tool_detail("ToolSearch", &json!({ "query": "select:WebFetch", "max_results": 1 }));
+        assert_eq!(detail.as_deref(), Some("select:WebFetch"));
+        assert_eq!(target.as_deref(), Some("WebFetch"));
+        let q = "select:mcp__claude_ai_Atlassian_MCP__getJiraIssue,mcp__claude_ai_Atlassian_MCP__createJiraIssue,TaskStop";
+        let (_, target) = tool_detail("ToolSearch", &json!({ "query": q }));
+        assert_eq!(target.as_deref(), Some("getJiraIssue +2"));
+        let (_, target) = tool_detail("ToolSearch", &json!({ "query": "notebook jupyter" }));
+        assert_eq!(target.as_deref(), Some("notebook jupyter"));
+        // The result: tool_reference blocks, not text — one line per tool.
+        let content = json!([
+            { "type": "tool_reference", "tool_name": "WebFetch" },
+            { "type": "tool_reference", "tool_name": "WebSearch" },
+        ]);
+        assert_eq!(tool_result_text(Some(&content)), "WebFetch\nWebSearch");
+        // Plain text results are untouched.
+        let content = json!([{ "type": "text", "text": "a" }, { "type": "text", "text": "b" }]);
+        assert_eq!(tool_result_text(Some(&content)), "ab");
     }
 }
