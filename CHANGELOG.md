@@ -4,6 +4,11 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.34.0
+- **Find in chat.** Press Ctrl+F to search the open chat. Every match is highlighted. Enter (or F3) goes to the next one and Shift+Enter to the previous, and Esc closes the search. It ignores capitals and accents, so "sazetak" finds "Sažetak", and it keeps up with a reply that's still being written.
+- **The face follows the work.** While Claude runs steps, the crystal reacts to each new one: its eyes scan along while Claude reads or searches, it squints while Claude edits a file, its eyes widen when a command starts, and it glances up when work goes to a helper. Its eyes drift over the work while a step runs, and now and then it looks up as if wondering what the step will turn up.
+- **More reliable under the hood.** Several of Krystal's largest files were split into smaller pieces, each with one job, so new features are easier to add and less likely to break something else.
+
 ## v0.33.0
 - **Krystal has a face.** The big K in the logo is now a little crystal that reacts to what's going on. It watches you type, hops when you send, looks up while Claude thinks, nods each time a step finishes and moves its mouth as the reply is written. It smiles when the reply lands. It turns amber and holds still while Claude waits for your OK, turns red if something failed, glances at the bell when another chat has news, and dozes off if you leave it alone for a few minutes. Now and then it blinks or changes its smile, like a face does. Hover over it, or click it. With Extra effects off, it shows its mood without moving.
 - **Your real usage limits.** The usage meter now shows the same numbers as Claude's own usage settings: the 5-hour session, the week, and each model's weekly share. It stays current as you chat. The estimate, and the form for calibrating it, are gone.
