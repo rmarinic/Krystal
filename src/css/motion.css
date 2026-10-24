@@ -96,14 +96,36 @@
 .action-chip.just-done .chip-tick { animation: tick-draw .36s var(--ease-out) both; }
 @keyframes tick-draw { from { stroke-dashoffset: 11; } to { stroke-dashoffset: 0; } }
 
-/* Reply landed: one soft light sweep across the card, and its edge settles. */
-.msg.assistant .bubble.landed {
-  background-image: linear-gradient(100deg, transparent 38%, rgba(143,224,170,0.07) 50%, transparent 62%);
-  background-size: 250% 100%; background-repeat: no-repeat;
+/* Reply landed: one soft band of light passes across it, left to right. A reply
+   has no card, so the light must have no edges: painted as the reply's own
+   background, the band stopped in straight lines at a box nobody can see. So it
+   lives on a layer that reaches a little past the reply, still, with all four
+   edges faded out by a mask, and only the band moves inside it. That's why it
+   animates background-position rather than transform: moving the layer would
+   move its mask too and carry the band off the reply, where the chat column
+   cuts it instead. One element, 1.2s, once per reply. It passes *over* the
+   reply, brightening (screen) rather than covering: behind it, a code block's
+   solid background hid the light in a sharp rectangle. */
+.msg.assistant .bubble.landed { position: relative; isolation: isolate; }
+.msg.assistant .bubble.landed::after {
+  content: ''; position: absolute; z-index: 1; pointer-events: none;
+  inset: -18px -24px; mix-blend-mode: screen;
+  background: linear-gradient(100deg, transparent 38%, rgba(143,224,170,0.018) 42%,
+    rgba(143,224,170,0.052) 46%, rgba(143,224,170,0.07) 50%,
+    rgba(143,224,170,0.052) 54%, rgba(143,224,170,0.018) 58%, transparent 62%)
+    no-repeat 100% 0 / 250% 100%;
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent, #000 min(72px, 50%), #000 max(calc(100% - 72px), 50%), transparent),
+    linear-gradient(transparent, #000 min(44px, 50%), #000 max(calc(100% - 44px), 50%), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(90deg, transparent, #000 min(72px, 50%), #000 max(calc(100% - 72px), 50%), transparent),
+    linear-gradient(transparent, #000 min(44px, 50%), #000 max(calc(100% - 44px), 50%), transparent);
+  mask-composite: intersect;
   animation: reply-landed 1.2s var(--ease-out) both;
 }
 @keyframes reply-landed {
-  from { background-position: 100% 0; border-color: rgba(108,199,142,0.45); }
+  from { background-position: 100% 0; }
   to   { background-position: 0 0; }
 }
 
@@ -154,8 +176,9 @@
   .sidebar-list .glide-mark, .roll-col, .task-text, .composer-row textarea.exhale { transition: none; }
   .msg.user .bubble.landed-in, .send-btn.launch .ic-send, .send-btn.land .ic-send,
   .action-chip.thinking .chip-status, .action-chip.thinking .chip-label,
-  .seg-text.streaming .tw, .action-chip.just-done .chip-tick, .msg.assistant .bubble.landed,
+  .seg-text.streaming .tw, .action-chip.just-done .chip-tick,
   .task-item.just-done .task-check, .task-item.just-done .task-check svg path { animation: none; }
+  .msg.assistant .bubble.landed::after { display: none; }   /* a still band would only be a smear */
   .project-card .project-open::before, .project-card .project-open::after { transition: none; }
   .head-btn:hover:not(:disabled), .action-chip.expandable:not(.open):hover,
   .turn-changes:hover, .suggest-chip:hover { translate: none; }
