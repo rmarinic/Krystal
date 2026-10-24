@@ -62,12 +62,6 @@ function paletteItems() {
   return out;
 }
 
-/* Fold case and diacritics so typing without them still matches (đ has no
- * decomposition, so it is mapped by hand). */
-function paletteFold(s) {
-  return String(s).toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
-
 /* Does `query` match `label`? null if not; else a score (lower is better) and
  * the label as HTML with the matched letters marked. */
 function paletteMatch(label, query) {
@@ -77,8 +71,8 @@ function paletteMatch(label, query) {
   const chars = [...label];
   let L = '';
   const owner = [];
-  chars.forEach((c, k) => { const f = paletteFold(c); L += f; for (let i = 0; i < f.length; i++) owner.push(k); });
-  const Q = paletteFold(query).replace(/\s+/g, ' ');
+  chars.forEach((c, k) => { const f = foldText(c); L += f; for (let i = 0; i < f.length; i++) owner.push(k); });
+  const Q = foldText(query).replace(/\s+/g, ' ');
   const hit = new Set();
   let from = 0, last = -1, gaps = 0, first = -1;
   for (const ch of Q) {

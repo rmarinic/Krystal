@@ -42,6 +42,13 @@ function replayClass(el, cls, ms) {
   if (ms) setTimeout(() => el.classList.remove(cls), ms);
 }
 
+/* Fold case and diacritics so typing without them still matches — the command
+ * palette and Find in chat both compare through this (đ has no
+ * decomposition, so it is mapped by hand). */
+function foldText(s) {
+  return String(s).toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function basename(p) { return p.split(/[\\/]/).pop(); }
 function timeLabel(iso) {
   if (!iso) return '';

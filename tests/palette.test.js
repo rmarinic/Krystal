@@ -17,7 +17,9 @@ function button(visible = true) {
 }
 
 function load(over = {}) {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'palette.js'), 'utf8');
+  // foldText lives in utils.js (shared with Find in chat); load the real one.
+  const utils = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'utils.js'), 'utf8');
+  const src = utils + '\n' + fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'palette.js'), 'utf8');
   const els = {
     compactBtn: button(), clearBtn: button(), branchBtn: button(),
     activityBtn: button(false), tasksBtn: button(), artifactsBtn: button(), runBtn: button(false),
@@ -38,7 +40,7 @@ function load(over = {}) {
     window: { I18N: { getLang: () => 'en', setLang() {} } },
     console,
   }, over);
-  const P = vm.runInNewContext(`${src}\n;({ paletteMatch, paletteFold, paletteItems })`, ctx, { filename: 'palette.js' });
+  const P = vm.runInNewContext(`${src}\n;({ paletteMatch, foldText, paletteItems })`, ctx, { filename: 'palette.js' });
   return { P, ctx, els };
 }
 
@@ -64,7 +66,7 @@ check('case and diacritics are ignored, both ways', () => {
   eq(!!P.paletteMatch('Sažmi ovaj razgovor', 'sazmi'), true, 'typed without the caron');
   eq(!!P.paletteMatch('Đurđevak', 'durd'), true, 'đ, which has no decomposition');
   eq(!!P.paletteMatch('Release notes', 'RELEASE'), true);
-  eq(P.paletteFold('Čćžšđ'), 'cczsd');
+  eq(P.foldText('Čćžšđ'), 'cczsd');
 });
 
 check('the matched letters are marked on the label as written', () => {
