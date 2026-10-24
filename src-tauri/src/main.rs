@@ -12,6 +12,7 @@ mod models;
 mod server;
 mod session;
 mod skills;
+mod util;
 
 use commands::AppState;
 use tauri::Manager;

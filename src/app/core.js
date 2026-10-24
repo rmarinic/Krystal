@@ -59,6 +59,7 @@ const LOCAL_ONLY_COMMANDS = new Set([
   'open_external', 'open_webview', 'exe_path', 'app_version', 'notify',
   'reveal_path', 'open_path',   // a chip's Show in folder / Open act on this PC's files
   'install_claude', 'update_claude', 'update_claude_npm', 'open_login',
+  'start_login', 'submit_login_code', 'cancel_login',
   'set_discord_enabled', 'discord_set_project', 'discord_set_share_name',
   'remote_start', 'remote_stop', 'remote_status',
   'remote_firewall_status', 'remote_firewall_allow',
@@ -373,9 +374,10 @@ const api = {
   // phone server runs compact as a plain call (a Channel would send this to its
   // streaming endpoint), so a remote compact just waits.
   compact(id, onProgress) {
-    if (remote.active || !onProgress) return invoke('compact_thread', { id });
+    if (remote.active) return invoke('compact_thread', { id });
+    // The command requires its channel, so one goes along even when nobody listens.
     const onEvent = new Channel();
-    onEvent.onmessage = onProgress;
+    onEvent.onmessage = onProgress || (() => {});
     return invoke('compact_thread', { id, onEvent });
   },
   runShell(threadId, command) { return invoke('run_shell', { threadId, command }); },
@@ -458,6 +460,37 @@ const api = {
  * picked up late, once the CLI reports agent progress for it (see agents.js). */
 const AGENT_TOOLS = new Set(['Agent', 'Task']);
 const isAgentTool = (name) => AGENT_TOOLS.has(name);
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* Close a modal overlay with its exit animation: add `.closing` (CSS plays the
+ * fade/scale-out), then hide and run an optional cleanup once it's done. */
+function closeOverlay(overlay, after) {
+  if (!overlay || overlay.hidden) { if (after) after(); return; }
+  overlay.classList.add('closing');
+  setTimeout(() => {
+    overlay.hidden = true;
+    overlay.classList.remove('closing');
+    if (after) after();
+  }, 190);
+}
+/* Show an overlay, cancelling any in-flight close animation. */
+function openOverlay(overlay) {
+  overlay.classList.remove('closing');
+  overlay.hidden = false;
+}
+
+/* Replay a one-shot CSS animation on an element (restart-safe): drop the class,
+ * force a reflow, re-add it. Used for tab/status crossfades and small pulses. */
+function replayClass(el, cls, ms) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  if (ms) setTimeout(() => el.classList.remove(cls), ms);
+}
 
 function basename(p) { return p.split(/[\\/]/).pop(); }
 function timeLabel(iso) {

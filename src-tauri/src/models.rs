@@ -153,11 +153,11 @@ pub fn model_name(id: &str) -> &str {
 }
 
 /* ----------------------------- orchestrator ------------------------------ */
-/// Orchestrator mode runs a premium model as a supervisor that delegates the
-/// heavy lifting to cheaper "worker" sub-agents (via the Task tool), keeping the
-/// expensive model's tokens for planning and synthesis. The sub-agent model is
-/// either a concrete id or `auto`, in which case the orchestrator picks the
-/// cheapest sufficient tier per task.
+// Orchestrator mode runs a premium model as a supervisor that delegates the
+// heavy lifting to cheaper "worker" sub-agents (via the Task tool), keeping the
+// expensive model's tokens for planning and synthesis. The sub-agent model is
+// either a concrete id or `auto`, in which case the orchestrator picks the
+// cheapest sufficient tier per task.
 
 /// Sentinel: let the orchestrator choose a worker tier automatically.
 pub const SUB_MODEL_AUTO: &str = "auto";

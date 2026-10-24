@@ -56,6 +56,14 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// The database. A command that panicked while holding the lock poisons the
+    /// mutex; the connection itself is still fine (SQLite rolled back whatever
+    /// was half-done), so carry on with it rather than failing every command
+    /// for the rest of the session.
+    pub fn db(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn sys_prompt(&self) -> String {
         claude::capability_prompt(self.caps, &self.ui_lang())
     }
@@ -477,9 +485,7 @@ pub fn open_webview(app: tauri::AppHandle, url: String) -> CmdResult {
 /// version on every launch" loop instead of looping forever. Empty if unknown.
 #[tauri::command]
 pub fn exe_path() -> String {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    crate::util::exe_path().unwrap_or_default()
 }
 
 /// The app's own version (compile-time, kept in sync with tauri.conf.json by the
@@ -554,7 +560,7 @@ pub fn save_attachment(state: State<'_, AppState>, name: String, data_base64: St
 /// Reduce a suggested filename to a safe leaf: strip any directory parts and keep
 /// only sane characters, so a hostile clipboard name can't escape the folder.
 fn sanitize_filename(name: &str) -> String {
-    let leaf = name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(name);
+    let leaf = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let cleaned: String = leaf
         .chars()
         .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
@@ -624,7 +630,7 @@ fn base64_encode(data: &[u8]) -> String {
 
 #[tauri::command]
 pub fn list_threads(state: State<'_, AppState>, project: Option<String>) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "threads": db::list_threads(&conn, project.as_deref()) })
 }
 
@@ -633,7 +639,7 @@ pub fn get_thread(state: State<'_, AppState>, id: String) -> CmdResult {
     // Clone the catalogue out first so we never hold the models lock across the
     // DB work below.
     let catalog = state.models.lock().unwrap().clone();
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let mut thread = db::get_thread(&conn, &id).ok_or("not found")?;
     // Self-heal a stored model id that has dropped out of the live catalogue, so
     // the picker never shows a dead id and future sends never target a vanished
@@ -656,7 +662,7 @@ pub fn create_thread(state: State<'_, AppState>, cwd: String) -> CmdResult {
     // Default a new chat to the live catalogue's preferred model (not a hardcoded
     // id), so a fresh chat never opens pointing at a superseded model.
     let default_model = models::default_id(&state.models.lock().unwrap());
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let thread = db::create(&conn, &cwd, &default_model).ok_or("could not create thread")?;
     db::touch_project(&conn, &cwd); // keep the project list ordered by recent use
     Ok(thread)
@@ -668,7 +674,7 @@ pub fn create_thread(state: State<'_, AppState>, cwd: String) -> CmdResult {
 /// context. The original is left untouched. Returns the new thread.
 #[tauri::command]
 pub fn branch_thread(state: State<'_, AppState>, id: String) -> CmdResult {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let thread = db::branch(&conn, &id).ok_or("could not branch this chat")?;
     if let Some(cwd) = thread.get("cwd").and_then(|c| c.as_str()) {
         db::touch_project(&conn, cwd); // keep the project list ordered by recent use
@@ -680,7 +686,7 @@ pub fn branch_thread(state: State<'_, AppState>, id: String) -> CmdResult {
 
 #[tauri::command]
 pub fn list_projects(state: State<'_, AppState>) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "projects": db::list_projects(&conn) })
 }
 
@@ -689,13 +695,13 @@ pub fn create_project(state: State<'_, AppState>, path: String) -> CmdResult {
     if path.trim().is_empty() {
         return Err("path required".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::create_project(&conn, &path).ok_or_else(|| "could not create project".into())
 }
 
 #[tauri::command]
 pub fn select_project(state: State<'_, AppState>, id: String) -> CmdResult {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::select_project(&conn, &id).ok_or_else(|| "not found".into())
 }
 
@@ -715,7 +721,7 @@ pub async fn move_project(state: State<'_, AppState>, id: String, path: String) 
     // Locks taken one at a time, never nested (the run panel holds them the other
     // way round).
     let old = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::project_path(&conn, &id).ok_or_else(|| "not-found".to_string())?
     };
     // A live RUN belongs to the folder it was started in — its process is keyed by
@@ -726,7 +732,7 @@ pub async fn move_project(state: State<'_, AppState>, id: String, path: String) 
     }
     // Scoped so the DB lock is released before the await below.
     let project = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         if old != path && db::project_path_taken(&conn, &path) {
             return Err("folder-taken".into());
         }
@@ -749,7 +755,7 @@ pub async fn move_project(state: State<'_, AppState>, id: String, path: String) 
 
 #[tauri::command]
 pub fn delete_project(state: State<'_, AppState>, id: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::delete_project(&conn, &id);
     json!({ "ok": true })
 }
@@ -758,7 +764,7 @@ pub fn delete_project(state: State<'_, AppState>, id: String) -> Value {
 pub async fn delete_thread(state: State<'_, AppState>, id: String) -> CmdResult {
     state.sessions.retire(&id).await;
     {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::remove(&conn, &id);
     }
     Ok(json!({ "ok": true }))
@@ -769,7 +775,7 @@ pub fn set_model(state: State<'_, AppState>, id: String, model: String) -> CmdRe
     if !state.model_known(&model) {
         return Err("unknown model".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_model(&conn, &id, &model);
     Ok(json!({ "model": model }))
 }
@@ -779,7 +785,7 @@ pub fn set_mode(state: State<'_, AppState>, id: String, mode: String) -> CmdResu
     if !models::is_valid_mode(&mode) {
         return Err("unknown mode".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_mode(&conn, &id, &mode);
     Ok(json!({ "mode": mode }))
 }
@@ -792,7 +798,7 @@ pub fn set_effort(state: State<'_, AppState>, id: String, effort: String) -> Cmd
     if !models::is_valid_effort(&effort) {
         return Err("unknown effort".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_effort(&conn, &id, &effort);
     Ok(json!({ "effort": effort }))
 }
@@ -818,7 +824,7 @@ pub fn set_orchestration(
     if sub_model != models::SUB_MODEL_AUTO && !state.model_known(&sub_model) {
         return Err("unknown sub-agent model".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_orchestration(&conn, &id, enabled, &sub_model);
     Ok(json!({ "orch": enabled, "orchSub": sub_model }))
 }
@@ -830,7 +836,7 @@ pub async fn clear_thread(state: State<'_, AppState>, id: String) -> CmdResult {
     // a genuinely fresh one.
     state.sessions.retire(&id).await;
     {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::clear(&conn, &id);
     }
     Ok(json!({ "ok": true }))
@@ -845,7 +851,7 @@ pub fn rename_thread(state: State<'_, AppState>, id: String, title: String) -> C
         return Err("empty title".into());
     }
     let title: String = title.chars().take(120).collect();
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_title(&conn, &id, &title);
     Ok(json!({ "title": title }))
 }
@@ -855,20 +861,20 @@ pub fn rename_thread(state: State<'_, AppState>, id: String, title: String) -> C
 #[tauri::command]
 pub fn search_messages(state: State<'_, AppState>, q: String, project: Option<String>) -> Value {
     let q = q.trim();
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let results = if q.is_empty() { vec![] } else { db::search(&conn, q, project.as_deref()) };
     json!({ "results": results })
 }
 
 #[tauri::command]
 pub fn list_favorites(state: State<'_, AppState>, project: Option<String>) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "favorites": db::list_favorites(&conn, project.as_deref()) })
 }
 
 #[tauri::command]
 pub fn toggle_favorite(state: State<'_, AppState>, message_id: i64) -> CmdResult {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::toggle_favorite(&conn, message_id).ok_or_else(|| "not found".into())
 }
 
@@ -877,7 +883,7 @@ pub fn toggle_favorite(state: State<'_, AppState>, message_id: i64) -> CmdResult
 /// this as tidying the transcript, not as erasing context.
 #[tauri::command]
 pub fn delete_message(state: State<'_, AppState>, message_id: i64) -> CmdResult {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let thread_id = db::delete_message(&conn, message_id).ok_or("not found")?;
     Ok(json!({ "ok": true, "threadId": thread_id }))
 }
@@ -888,7 +894,7 @@ pub fn delete_message(state: State<'_, AppState>, message_id: i64) -> CmdResult 
 
 #[tauri::command]
 pub fn list_tasks(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "tasks": db::list_tasks(&conn, &project) })
 }
 
@@ -900,7 +906,7 @@ pub fn add_task(state: State<'_, AppState>, project: String, title: String, note
     }
     let title: String = title.chars().take(300).collect();
     let note = note.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::add_task(&conn, &project, &title, note.as_deref()).ok_or_else(|| "could not add task".into())
 }
 
@@ -917,27 +923,27 @@ pub fn update_task(state: State<'_, AppState>, id: i64, title: Option<String>, d
         }
         None => None,
     };
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::update_task(&conn, id, title.as_deref(), done).ok_or_else(|| "not found".into())
 }
 
 #[tauri::command]
 pub fn delete_task(state: State<'_, AppState>, id: i64) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::delete_task(&conn, id);
     json!({ "ok": true })
 }
 
 #[tauri::command]
 pub fn clear_done_tasks(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let n = db::clear_done_tasks(&conn, &project);
     json!({ "cleared": n })
 }
 
 #[tauri::command]
 pub fn task_count(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "open": db::open_task_count(&conn, &project) })
 }
 
@@ -1101,7 +1107,7 @@ pub async fn rewind_files(
         return Err("busy".into());
     }
     let mut meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &thread_id)
     }
     .ok_or("unknown thread")?;
@@ -1152,7 +1158,7 @@ pub async fn chat(
 
     // Snapshot the thread (owned) so we hold no DB lock across the stream.
     let mut meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &thread_id)
     }
     .ok_or("unknown thread")?;
@@ -1167,7 +1173,7 @@ pub async fn chat(
         models::effective_id(&catalog, &meta.model)
     };
     if effective_model != meta.model {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::set_model(&conn, &thread_id, &effective_model);
         meta.model = effective_model;
     }
@@ -1183,7 +1189,7 @@ pub async fn chat(
 
     // Pull in any chats the user #-referenced as background context.
     let references = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         build_reference_context(&conn, &refs, &thread_id)
     };
 
@@ -1208,7 +1214,7 @@ pub async fn chat(
     );
     // A one-time compact seed is folded into this prompt, then cleared.
     if seed.is_some() {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::set_seed(&conn, &thread_id, None);
     }
 
@@ -1279,7 +1285,7 @@ fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
     // retires the warm process and the next message starts a session that can
     // (or can no longer) see it.
     let extra_dirs = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::project_dir_paths(&conn, &meta.cwd)
     };
 
@@ -1350,7 +1356,7 @@ async fn chat_turn(
         if res.artifacts.is_empty() {
             return;
         }
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         for a in &res.artifacts {
             let get = |k: &str| a.get(k).and_then(|v| v.as_str()).unwrap_or("");
             db::save_artifact(
@@ -1375,7 +1381,7 @@ async fn chat_turn(
     // changes be undone later (see `rewind_files`).
     let ckpt = uuid::Uuid::new_v4().to_string();
     let user_msg_id = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::begin_turn(&conn, &thread_id, &text, &files, &ckpt)
     };
     let _ = on_event.send(json!({ "type": "saved", "userId": user_msg_id, "ckpt": ckpt }));
@@ -1384,7 +1390,7 @@ async fn chat_turn(
     // interrupted reply is still there to come back to instead of vanishing.
     let mut assistant_msg_id: Option<i64> = None;
     let mut on_partial = |text: &str, segments: &[Value]| {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         assistant_msg_id = Some(db::save_partial(
             &conn,
             &thread_id,
@@ -1402,7 +1408,7 @@ async fn chat_turn(
         Ok(s) => s,
         Err(e) => {
             {
-                let conn = state.db.lock().unwrap();
+                let conn = state.db();
                 db::abort_turn(&conn, user_msg_id, None);
             }
             sync_tasks();
@@ -1443,7 +1449,7 @@ async fn chat_turn(
             // A session that failed mid-turn is not trustworthy for the next one.
             state.sessions.retire(&thread_id).await;
             {
-                let conn = state.db.lock().unwrap();
+                let conn = state.db();
                 db::abort_turn(&conn, user_msg_id, assistant_msg_id);
             }
             sync_tasks();
@@ -1456,7 +1462,7 @@ async fn chat_turn(
     // message the user typed still stays; only the empty answer is dropped.
     if res.final_text.is_empty() && res.is_error {
         {
-            let conn = state.db.lock().unwrap();
+            let conn = state.db();
             db::abort_turn(&conn, user_msg_id, assistant_msg_id);
         }
         sync_tasks();
@@ -1466,7 +1472,7 @@ async fn chat_turn(
 
     let session_id = res.session_id.clone().or_else(|| meta.session_id.clone());
     let (usage, fallback_title, assistant_id, updated_at) = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::finish_turn(
             &conn,
             &thread_id,
@@ -1516,7 +1522,7 @@ async fn chat_turn(
             // The chat may have been renamed by hand while this was out; a name
             // somebody typed always beats one that was guessed.
             let untouched = {
-                let conn = state.db.lock().unwrap();
+                let conn = state.db();
                 let still_fallback =
                     db::get_meta(&conn, &thread_id).and_then(|m| m.title).as_deref() == Some(fallback_title.as_str());
                 if still_fallback {
@@ -2217,7 +2223,7 @@ pub async fn compact_thread(
     on_event: Channel<Value>,
 ) -> CmdResult {
     let meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &id)
     }
     .ok_or("not found")?;
@@ -2240,7 +2246,7 @@ pub async fn compact_thread(
         claude::run_claude_text_live(&state.claude_bin(), &args, &meta.cwd, COMPACT_PROMPT, Some(&on_event))
             .await?;
     {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::compact(&conn, &id, &text);
     }
     Ok(json!({ "ok": true, "summary": text }))
@@ -2256,14 +2262,14 @@ pub async fn run_shell(state: State<'_, AppState>, thread_id: String, command: S
         return Err("empty command".into());
     }
     let cwd = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &thread_id)
             .map(|m| m.cwd)
             .unwrap_or_default()
     };
     let (output, code) = claude::run_shell_capture(&trimmed, &cwd).await?;
     let saved = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::add_shell_run(&conn, &thread_id, &trimmed, &output, code)
     };
     Ok(json!({
@@ -2285,7 +2291,7 @@ pub async fn run_shell(state: State<'_, AppState>, thread_id: String, command: S
 #[tauri::command]
 pub fn get_run_config(state: State<'_, AppState>, project: String) -> Value {
     let command = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_run_command(&conn, &project)
     };
     let running = state.run_procs.lock().unwrap().contains_key(&project);
@@ -2295,7 +2301,7 @@ pub fn get_run_config(state: State<'_, AppState>, project: String) -> Value {
 /// Save (or clear) a project's run command.
 #[tauri::command]
 pub fn set_run_config(state: State<'_, AppState>, project: String, command: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::set_run_command(&conn, &project, command.trim());
     json!({ "ok": true })
 }
@@ -2334,7 +2340,7 @@ pub async fn run_app(
 ) -> CmdResult {
     // Resolve the command: an explicit one (persisted for next time), else stored.
     let command = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         match command.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
             Some(c) => {
                 db::set_run_command(&conn, &project, &c);
@@ -2528,7 +2534,7 @@ Return ONLY the markdown content."###
 #[tauri::command]
 pub async fn init_analyze(state: State<'_, AppState>, id: String, brief: Option<String>) -> CmdResult {
     let meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &id)
     }
     .ok_or("not found")?;
@@ -2562,7 +2568,7 @@ pub async fn init_draft(
     brief: Option<String>,
 ) -> CmdResult {
     let meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &id)
     }
     .ok_or("not found")?;
@@ -2586,7 +2592,7 @@ pub fn init_save(state: State<'_, AppState>, id: String, markdown: String) -> Cm
         return Err("nothing to save".into());
     }
     let meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &id)
     }
     .ok_or("not found")?;
@@ -2607,7 +2613,7 @@ pub fn init_save(state: State<'_, AppState>, id: String, markdown: String) -> Cm
 #[tauri::command]
 pub fn read_claude_md(state: State<'_, AppState>, id: String) -> CmdResult {
     let meta = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         db::get_meta(&conn, &id)
     }
     .ok_or("not found")?;
@@ -2619,7 +2625,7 @@ pub fn read_claude_md(state: State<'_, AppState>, id: String) -> CmdResult {
 }
 
 /* --------------------------------- pins ---------------------------------- */
-/// Files pinned to the side of the chat for quick reference. See `src/app/pins.js`.
+// Files pinned to the side of the chat for quick reference. See `src/app/pins.js`.
 
 /// A pinned file is read fresh every time it's opened — the point is to check
 /// what a file says *right now* (a task list Claude just ticked something off,
@@ -2629,7 +2635,7 @@ const PIN_MAX_BYTES: usize = 400 * 1024;
 
 #[tauri::command]
 pub fn list_pins(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "pins": db::list_pins(&conn, &project) })
 }
 
@@ -2642,14 +2648,14 @@ pub fn add_pin(state: State<'_, AppState>, project: String, path: String) -> Cmd
     if !std::path::Path::new(&path).is_file() {
         return Err("not-a-file".into());
     }
-    let label = base_name_of(&path);
-    let conn = state.db.lock().unwrap();
+    let label = crate::util::base_name(&path);
+    let conn = state.db();
     Ok(json!({ "pins": db::add_pin(&conn, &project, &path, &label) }))
 }
 
 #[tauri::command]
 pub fn remove_pin(state: State<'_, AppState>, project: String, id: i64) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::remove_pin(&conn, id);
     json!({ "pins": db::list_pins(&conn, &project) })
 }
@@ -2661,7 +2667,7 @@ pub fn remove_pin(state: State<'_, AppState>, project: String, id: i64) -> Value
 
 #[tauri::command]
 pub fn list_artifacts(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "artifacts": db::list_artifacts(&conn, &project) })
 }
 
@@ -2674,13 +2680,13 @@ pub fn get_artifact(
     art_id: String,
     version: Option<i64>,
 ) -> CmdResult {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::get_artifact(&conn, &project, &art_id, version).ok_or_else(|| "no such artifact".into())
 }
 
 #[tauri::command]
 pub fn delete_artifact(state: State<'_, AppState>, project: String, art_id: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::delete_artifact(&conn, &project, &art_id);
     json!({ "artifacts": db::list_artifacts(&conn, &project) })
 }
@@ -2721,7 +2727,7 @@ fn artifact_bytes(
     if let Some(r) = rendered.filter(|r| !r.trim().is_empty()) {
         return Ok(r);
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     let art = db::get_artifact(&conn, project, art_id, version).ok_or("no such artifact")?;
     Ok(art.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string())
 }
@@ -2740,7 +2746,7 @@ pub fn open_artifact_externally(
     ext: Option<String>,
 ) -> CmdResult {
     let stored_ext = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db();
         let art = db::get_artifact(&conn, &project, &art_id, version).ok_or("no such artifact")?;
         artifacts::ext_for(art.get("kind").and_then(|v| v.as_str()).unwrap_or("text/html"))
     };
@@ -2774,7 +2780,7 @@ pub fn list_skills(project: Option<String>) -> Value {
 
 #[tauri::command]
 pub fn list_project_dirs(state: State<'_, AppState>, project: String) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     json!({ "dirs": db::list_project_dirs(&conn, &project) })
 }
 
@@ -2793,13 +2799,13 @@ pub fn add_project_dir(state: State<'_, AppState>, project: String, path: String
     if is_within(&path, &project) {
         return Err("already-included".into());
     }
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     Ok(json!({ "dirs": db::add_project_dir(&conn, &project, &path) }))
 }
 
 #[tauri::command]
 pub fn remove_project_dir(state: State<'_, AppState>, project: String, id: i64) -> Value {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db();
     db::remove_project_dir(&conn, id);
     json!({ "dirs": db::list_project_dirs(&conn, &project) })
 }
@@ -2819,7 +2825,7 @@ fn is_within(path: &str, root: &str) -> bool {
 #[tauri::command]
 pub fn read_pinned_file(path: String) -> Value {
     let p = std::path::Path::new(&path);
-    let name = base_name_of(&path);
+    let name = crate::util::base_name(&path);
     if !p.is_file() {
         return json!({ "exists": false, "name": name, "path": path });
     }
@@ -2955,18 +2961,13 @@ fn project_key(path: &str) -> String {
     format!("{h:016x}")
 }
 
-fn base_name_of(path: &str) -> String {
-    let t = path.trim_end_matches(['/', '\\']);
-    let n = t.rsplit(['/', '\\']).next().unwrap_or(t);
-    if n.is_empty() { path.to_string() } else { n.to_string() }
-}
 
 const TASK_SNAPSHOT_LEGEND: &str =
     "<!-- HOW TO EDIT (saved back into the app automatically after your reply):\n     • toggle done: change [ ] to [x] or back\n     • rename / re-note: edit the text after the (id:N) marker\n     • add a task: add a new line  - [ ] My new task — optional note\n     • delete a task: remove its whole line\n     Keep the (id:N) marker on existing tasks — it's how edits are matched.\n     KEEP THIS CURRENT: when your work finishes one of these tasks, tick it off\n     here in the same reply — you don't need to be asked. Never invent tasks or\n     reorder the list on your own, and don't tick off what isn't really done. -->";
 
 /// Render the project's tasks as the markdown Claude reads/edits.
 fn render_task_markdown(project: &str, tasks: &[Value]) -> String {
-    let mut md = format!("# Task list — {}\n\n{}\n\n", base_name_of(project), TASK_SNAPSHOT_LEGEND);
+    let mut md = format!("# Task list — {}\n\n{}\n\n", crate::util::base_name(project), TASK_SNAPSHOT_LEGEND);
     for t in tasks {
         let id = t.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
         let done = t.get("done").and_then(|d| d.as_bool()).unwrap_or(false);

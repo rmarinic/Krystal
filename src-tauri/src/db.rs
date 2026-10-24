@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 use crate::models::{DEFAULT_EFFORT, DEFAULT_MODE, DEFAULT_MODEL};
+use crate::util::base_name;
 
 /// Lightweight thread metadata used by the chat/action code paths.
 #[allow(dead_code)] // id/title are kept for completeness even if unused by callers
@@ -207,13 +208,6 @@ pub fn migrate_legacy_store(new_dir: &Path, new_db: &Path) {
         Ok(_) => println!("  migrated existing chats from {}", old_db.display()),
         Err(e) => eprintln!("  could not migrate legacy database: {e}"),
     }
-}
-
-/// Folder display name = the last path segment (handles trailing slashes).
-fn base_name(path: &str) -> String {
-    let trimmed = path.trim_end_matches(['/', '\\']);
-    let name = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
-    if name.is_empty() { path.to_string() } else { name.to_string() }
 }
 
 /// Ensure every distinct folder that already has chats shows up as a project,
@@ -1206,12 +1200,10 @@ pub fn get_run_command(conn: &Connection, project: &str) -> Option<String> {
     .filter(|s| !s.trim().is_empty())
 }
 
-/// Set (or overwrite) a project's run command.
 /* ---------------------------------- pins --------------------------------- */
 /// Files the user has pinned to the side of the chat for quick reference — a
 /// task list, a brief, notes. Scoped to a project, ordered oldest-first so the
 /// rail doesn't reshuffle itself as pins come and go.
-
 pub fn list_pins(conn: &Connection, project: &str) -> Vec<Value> {
     let mut out = Vec::new();
     if let Ok(mut stmt) = conn.prepare(
@@ -1245,8 +1237,8 @@ pub fn remove_pin(conn: &Connection, id: i64) {
 }
 
 /* -------------------------------- artifacts ------------------------------- */
-/// The self-contained documents Claude builds in the artifact panel. Stored per
-/// project (like pins), one row per version.
+// The self-contained documents Claude builds in the artifact panel. Stored per
+// project (like pins), one row per version.
 
 /// Record a new state of an artifact.
 ///
@@ -1377,7 +1369,6 @@ pub fn delete_artifact(conn: &Connection, project: &str, art_id: &str) {
 /// shared assets folder, a second repo, the notes you keep somewhere else. Each
 /// one reaches the CLI as `--add-dir`, so this is a project-level permission
 /// list rather than a bookmark list. Oldest-first, like pins.
-
 pub fn list_project_dirs(conn: &Connection, project: &str) -> Vec<Value> {
     let mut out = Vec::new();
     if let Ok(mut stmt) =
@@ -1413,6 +1404,7 @@ pub fn project_dir_paths(conn: &Connection, project: &str) -> Vec<String> {
         .collect()
 }
 
+/// Set (or overwrite) a project's run command.
 pub fn set_run_command(conn: &Connection, project: &str, command: &str) {
     let t = now();
     let _ = conn.execute(

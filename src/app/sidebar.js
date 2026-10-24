@@ -188,35 +188,3 @@ function renderResults(emptyMsg) {
     els.threadList.appendChild(li);
   }
 }
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-/* Close a modal overlay with its exit animation: add `.closing` (CSS plays the
- * fade/scale-out), then hide and run an optional cleanup once it's done. */
-function closeOverlay(overlay, after) {
-  if (!overlay || overlay.hidden) { if (after) after(); return; }
-  overlay.classList.add('closing');
-  setTimeout(() => {
-    overlay.hidden = true;
-    overlay.classList.remove('closing');
-    if (after) after();
-  }, 190);
-}
-/* Show an overlay, cancelling any in-flight close animation. */
-function openOverlay(overlay) {
-  overlay.classList.remove('closing');
-  overlay.hidden = false;
-}
-
-/* Replay a one-shot CSS animation on an element (restart-safe): drop the class,
- * force a reflow, re-add it. Used for tab/status crossfades and small pulses. */
-function replayClass(el, cls, ms) {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
-  if (ms) setTimeout(() => el.classList.remove(cls), ms);
-}
-

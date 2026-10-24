@@ -910,25 +910,6 @@ async fn handle_control(
     }
 }
 
-/// Flags that only make sense on a live chat turn, layered on top of `base_args`.
-/// The internal one-off calls (naming a chat, drafting tasks, the Initialize
-/// wizard) deliberately skip these: they are short, single-shot and disposable.
-///
-/// * `--effort` — reasoning depth (see `models::EFFORTS`). The biggest quality
-///   lever after the model itself, and the one terminal Claude Code users have
-///   had all along.
-/// * `--fallback-model` — an overloaded primary model degrades to the next tier
-///   instead of failing the turn outright. Print-mode only, which is all we run.
-/// * `--autocompact auto` — let the CLI compact a conversation that outgrows its
-///   window, natively and mid-turn. Krystal's own Compact button still exists for
-///   when the *user* wants a reset; this is the safety net underneath it.
-/// * `--forward-subagent-text` — a sub-agent's own words come through the stream
-///   too, not just the tools it reaches for, so the agent inspector can show what
-///   a worker is saying rather than only a list of file names.
-/// * `--prompt-suggestions` — asks the CLI to predict a sensible next message and
-///   emit it as a `prompt_suggestion` event. It only fires once a conversation has
-///   some history, and only when the model has a confident guess, so treat it as
-///   a bonus rather than something the UI can count on.
 /// Let a chat reach folders outside the project (`--add-dir`). A project is one
 /// folder by default, which is the right default and the wrong limit: assets,
 /// notes and a second repo routinely live somewhere else, and without this the
@@ -969,6 +950,25 @@ pub fn apply_artifact_tool(args: &mut Vec<String>, config: &std::path::Path) {
 /// which is the part a tool schema can't express on its own.
 pub const ARTIFACT_NOTE: &str = "ARTIFACTS. You have an artifact tool (mcp__krystal__artifact). Krystal shows an artifact in a panel beside the conversation, and the user can open it, keep it, or send the file to someone else — so it is the right home for anything that is a finished *thing* rather than an explanation: a page, a chart, a diagram, a poster, a report, a small app. Prefer it over a fenced code block whenever the user would plausibly want to look at the result rather than read the source, and over writing a file whenever the thing is for the user rather than for the project's codebase. Revise an existing artifact (same id) instead of making a near-duplicate. Everyday coding work — editing the project's own source files — still belongs in the repo, not in an artifact.";
 
+/// Flags that only make sense on a live chat turn, layered on top of `base_args`.
+/// The internal one-off calls (naming a chat, drafting tasks, the Initialize
+/// wizard) deliberately skip these: they are short, single-shot and disposable.
+///
+/// * `--effort` — reasoning depth (see `models::EFFORTS`). The biggest quality
+///   lever after the model itself, and the one terminal Claude Code users have
+///   had all along.
+/// * `--fallback-model` — an overloaded primary model degrades to the next tier
+///   instead of failing the turn outright. Print-mode only, which is all we run.
+/// * `--autocompact auto` — let the CLI compact a conversation that outgrows its
+///   window, natively and mid-turn. Krystal's own Compact button still exists for
+///   when the *user* wants a reset; this is the safety net underneath it.
+/// * `--forward-subagent-text` — a sub-agent's own words come through the stream
+///   too, not just the tools it reaches for, so the agent inspector can show what
+///   a worker is saying rather than only a list of file names.
+/// * `--prompt-suggestions` — asks the CLI to predict a sensible next message and
+///   emit it as a `prompt_suggestion` event. It only fires once a conversation has
+///   some history, and only when the model has a confident guess, so treat it as
+///   a bonus rather than something the UI can count on.
 pub fn apply_chat_flags(
     args: &mut Vec<String>,
     effort: &str,
@@ -1264,10 +1264,6 @@ fn take_chars(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-fn base_name(p: &str) -> String {
-    p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(p).to_string()
-}
-
 /// The tools that run a shell command. On Windows Claude reaches for PowerShell
 /// as often as Bash, so anything said about "the shell" means both.
 pub fn is_shell_tool(name: &str) -> bool {
@@ -1282,7 +1278,7 @@ fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<String>) {
     }
     let str_of = |k: &str| input.get(k).and_then(|v| v.as_str());
     if let Some(path) = str_of("file_path").or_else(|| str_of("path")).or_else(|| str_of("notebook_path")) {
-        return (Some(path.to_string()), Some(base_name(path)));
+        return (Some(path.to_string()), Some(crate::util::base_name(path)));
     }
     // A shell run is labelled by what it is *for* — Claude's own one-line
     // description of it, when it gave one — and the command itself is the
@@ -2122,7 +2118,7 @@ fn emit_orchestration_summary(result: &mut ChatResult, channel: &Channel<Value>)
     if worker_tokens == 0 {
         return;
     }
-    workers.sort_by(|a, b| b.1.cmp(&a.1)); // heaviest worker first
+    workers.sort_by_key(|w| std::cmp::Reverse(w.1)); // heaviest worker first
     let total = orch_tokens + worker_tokens;
     let worker_pct = ((worker_tokens as f64 / total as f64) * 100.0).round() as u64;
 
@@ -2570,7 +2566,7 @@ fn route_event(
 fn clean_title(raw: &str) -> String {
     let line = raw.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
     let line = line.trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '*');
-    let line = line.trim_end_matches(|c: char| matches!(c, '.' | '!' | '?' | ':' | ';' | ','));
+    let line = line.trim_end_matches(['.', '!', '?', ':', ';', ',']);
     let line = line.trim();
     let chars: Vec<char> = line.chars().collect();
     if chars.len() > 48 {

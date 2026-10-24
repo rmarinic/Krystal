@@ -291,11 +291,6 @@ fn from_elsewhere(peer: std::net::IpAddr, local: std::net::IpAddr) -> bool {
 /// the previous one instead of piling duplicates up.
 const FIREWALL_RULE: &str = "Krystal Remote";
 
-/// This executable's full path — what a firewall rule is keyed by.
-fn exe_path() -> Option<String> {
-    std::env::current_exe().ok()?.to_str().map(str::to_string)
-}
-
 /// Run a command with no console window and hand back its stdout, or `None` if
 /// it could not be run at all (which is different from "it ran and said no").
 #[cfg(target_os = "windows")]
@@ -321,7 +316,7 @@ fn quiet_output(program: &str, args: &[&str]) -> Option<String> {
 /// the rule Krystal writes itself covers every profile.
 #[cfg(target_os = "windows")]
 fn firewall_allows_us() -> Option<bool> {
-    let exe = exe_path()?.to_lowercase();
+    let exe = crate::util::exe_path()?.to_lowercase();
     let dump = quiet_output(
         "netsh",
         &["advfirewall", "firewall", "show", "rule", "name=all", "dir=in", "verbose"],
@@ -342,7 +337,7 @@ pub fn firewall_status() -> Value {
         // `null` when the check could not run — the UI says nothing rather than
         // accusing a firewall that may be innocent.
         "allowed": firewall_allows_us(),
-        "exe": exe_path(),
+        "exe": crate::util::exe_path(),
     })
 }
 
@@ -380,7 +375,7 @@ fn write_firewall_script(exe: &str) -> Result<std::path::PathBuf, String> {
 #[cfg(target_os = "windows")]
 pub fn firewall_allow() -> Result<Value, String> {
     use std::os::windows::process::CommandExt;
-    let exe = exe_path().ok_or("could not work out where Krystal is installed")?;
+    let exe = crate::util::exe_path().ok_or("could not work out where Krystal is installed")?;
     let script = write_firewall_script(&exe)?;
     // Refusing the UAC prompt makes `Start-Process` throw, and what PowerShell
     // then exits with is its own business; catch it and say 1 ourselves.
@@ -1326,7 +1321,7 @@ mod tests {
         let project = dir.0.join("a project").to_string_lossy().to_string();
         {
             let state = app.state::<AppState>();
-            let conn = state.db.lock().unwrap();
+            let conn = state.db();
             crate::db::create_project(&conn, &project).expect("seed a project");
         }
 
@@ -1402,7 +1397,7 @@ mod tests {
         let project = dir.0.join("a project").to_string_lossy().to_string();
         {
             let state = app.state::<AppState>();
-            let conn = state.db.lock().unwrap();
+            let conn = state.db();
             crate::db::create_project(&conn, &project).expect("seed a project");
         }
 
