@@ -4,6 +4,18 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.31.0
+- **Replies format themselves as they're written.** Bold, headings, lists and code appear formatted while Claude is still typing, instead of showing `**` and `##` until a paragraph is finished. Code blocks are coloured the moment they close.
+- **A light that follows the work.** The soft glow behind the chat now answers what's happening instead of pulsing on its own. It sits behind the line Claude is writing, brightens as the words come, gives a small flash when a step finishes, turns amber and still while Claude waits for your OK, and fades out when the reply is done. While nothing is happening, nothing moves. It can be switched off with Extra effects.
+- **Krystal draws its own window frame.** The Windows title bar is gone, so the app is one clean surface. Minimise, maximise and close sit at the top right, and you drag the window by any empty part of a header. Double-click a header to maximise. (Win+Z and dragging a window to a screen edge still snap it.)
+- **The taskbar shows what's going on.** Krystal's taskbar button shows a moving bar while Claude works, turns amber when it's waiting for you, and turns red if a reply failed while you were in another app.
+- **"New reply below".** If you've scrolled up while Claude is answering, a small button above the message box takes you back down. Each chat also reopens where you left it.
+- **Starting points.** A new chat offers four ready-made openings: Write, Research, Data and Code. Pick one and it fills in a first message with blanks for you to complete. Tab jumps to the next blank.
+- **A clearer chat list.** The open chat is highlighted, a chat Claude is working in says **Working** (green) or **Needs you** (amber) where its time would be, and chats with nothing going on step back.
+- **Steps you can follow, and open.** Open a step under a reply to see where it leads: a web page Claude read is a link, a web search lists the pages it found, and a file gets **Show in folder** and **Open**. Opening never runs anything; scripts open in Notepad. A slow step shows a running clock, steps that run side by side each show their own progress, and a command's step is labelled by what Claude said it was for.
+- **Fixed: commands opened as empty helper-agent windows.** Every command Claude ran could turn into a blank agent window. Helper agents also kept only part of their timeline. Both now show exactly what they did.
+- **Waiting that moves with the work.** Compact, Clear and the updates (Claude Code's and Krystal's own) no longer bob an icon and sweep a loop over a bar stuck at 88%. The bar now follows real progress: the summary as it is written, the download as it arrives. The light behind the icon brightens each time something actually happens. A line under the bar says how far along it is and how long it's been.
+
 ## v0.30.0
 - **A fresh look.** Krystal now reads more like a document and less like a terminal. Text is set in a clean, modern font (the code-style font stays for code, file paths and numbers), and both fonts now come with the app, so it looks the same offline and starts faster.
 - **Calmer conversations.** Claude's replies sit straight on the page instead of in boxes, and your own messages are compact bubbles on the right, so who said what is clear at a glance. Saving or deleting a message shows its buttons when you hover over it.
