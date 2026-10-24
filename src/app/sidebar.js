@@ -57,11 +57,16 @@ function renderSidebar() {
     // When it last saw activity — “Today · 14:23”, “Yesterday · 09:10”, “4 days ago”.
     const days = dayDiff(t.updatedAt);
     const fresh = days !== null && days <= 0 ? ' today' : '';
+    // A chat with a turn running says so where its time would be — the one
+    // thing that sets ACTIVE apart from INACTIVE at a glance, whichever is open.
+    const stamp = streaming
+      ? `<span class="row-state">${escapeHtml(tr(asking ? 'sidebar.needsYou' : 'sidebar.working'))}</span>`
+      : stampLabel(t.updatedAt);
     const stampTitle = t.updatedAt
       ? ` title="${escapeHtml(new Date(t.updatedAt).toLocaleString(window.I18N ? window.I18N.getLang() : []))}"` : '';
     li.innerHTML = `
       <a>
-        <span class="time${fresh}"${stampTitle}>${stampLabel(t.updatedAt)}${liveDot}${draftDot}${queueDot}</span>
+        <span class="time${fresh}"${stampTitle}>${stamp}${liveDot}${draftDot}${queueDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
