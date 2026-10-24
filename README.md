@@ -201,7 +201,7 @@ WebView2 (src/)                       Rust (src-tauri/src/)
                                         claude/       flags, prompts, event parsing ──► claude CLI
                                         artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
                                         db/           krystal.db (SQLite)
-                                        server.rs     opt-in LAN server for phone / remote (HTTP + SSE)
+                                        server/       opt-in LAN server for phone / remote (HTTP + SSE)
                                         catalog.rs    live model list
   updater.js ── checks ─────────────►  GitHub Releases (signed latest.json)
 ```
@@ -260,7 +260,7 @@ closes.
 | `src-tauri/src/session/` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db/` | SQLite store, one file per concern (threads, turns, projects, tasks, pins, artifacts, …) |
-| `src-tauri/src/server.rs`, `src-tauri/src/webui/` | remote access server and phone UI |
+| `src-tauri/src/server/`, `src-tauri/src/webui/` | remote access server and phone UI |
 | `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
 | `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |
 | `src-tauri/src/util.rs` | the few helpers several modules share |

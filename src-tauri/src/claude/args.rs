@@ -41,7 +41,7 @@ pub fn base_args(model: &str, sys_prompt: &str) -> Vec<String> {
 /// CLI draws that prompt itself; headless it has nobody to ask and would simply
 /// refuse — unless a *host* answers, which is what `--permission-prompt-tool
 /// stdio` sets up: each prompt arrives as a `control_request` on stdout and is
-/// answered on stdin (see `permission_prompt` and `session.rs`). The CLI still
+/// answered on stdin (see `permission_prompt` and `session/`). The CLI still
 /// decides *what* needs asking, so the user's own allow/deny rules in
 /// `.claude/settings*.json` apply here exactly as they do in a terminal.
 ///
@@ -87,7 +87,7 @@ pub fn apply_extra_dirs(args: &mut Vec<String>, dirs: &[String]) {
 
 /// Turn a chat invocation into a *session*: messages arrive as JSON lines on
 /// stdin instead of one prompt followed by EOF, so the process serves every turn
-/// of the chat rather than exiting after the first (see `session.rs`).
+/// of the chat rather than exiting after the first (see `session/`).
 pub fn apply_session_flags(args: &mut Vec<String>) {
     args.push("--input-format".into());
     args.push("stream-json".into());

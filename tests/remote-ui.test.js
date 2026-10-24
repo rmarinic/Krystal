@@ -56,9 +56,9 @@ check('every element the script looks up exists in the markup', () => {
 
 check('the markup only loads assets the server actually serves', () => {
   const served = new Set(['app.css', 'app.js', 'vendor/marked.js', 'vendor/purify.js']);
-  const server = read('src-tauri', 'src', 'server.rs');
+  const server = read('src-tauri', 'src', 'server', 'http.rs');
   for (const asset of served) {
-    if (!server.includes(`"/${asset}"`)) throw new Error(`server.rs does not route /${asset}`);
+    if (!server.includes(`"/${asset}"`)) throw new Error(`server/http.rs does not route /${asset}`);
   }
   const refs = [...all(/<script[^>]+src="([^"]+)"/g, html), ...all(/<link[^>]+href="(app[^"]+)"/g, html)];
   const stray = refs.filter((r) => !served.has(r));
@@ -198,7 +198,7 @@ function frontendCommands() {
 }
 
 function hostCommands() {
-  const server = read('src-tauri', 'src', 'server.rs');
+  const server = read('src-tauri', 'src', 'server', 'bridge.rs');
   const from = server.indexOf('async fn dispatch');
   const to = server.indexOf('fn is_streaming_command');
   const body = server.slice(from, to);
@@ -215,7 +215,7 @@ check('every command the app can send remotely is handled by the host', () => {
   const sendable = [...used].filter((c) => !localOnly.has(c));
   eq(sendable.length > 40, true, `expected the full api surface, saw ${sendable.length}`);
   const orphans = sendable.filter((c) => !handled.has(c) && !streaming.has(c));
-  eq(orphans.join(', '), '', 'commands the frontend proxies but server.rs will refuse');
+  eq(orphans.join(', '), '', 'commands the frontend proxies but server/bridge.rs will refuse');
 });
 
 check('the host exposes nothing the app treats as local-only', () => {

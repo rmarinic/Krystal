@@ -78,7 +78,7 @@ pub struct TurnRequest<'a> {
     pub own_dirs: &'a [PathBuf],
 }
 
-/// Run one turn on a warm session (see `session.rs`).
+/// Run one turn on a warm session (see `session/`).
 ///
 /// The old shape of this function was "spawn a process, read until it exits".
 /// A session outlives the turn, so the loop now ends where the *turn* ends — at

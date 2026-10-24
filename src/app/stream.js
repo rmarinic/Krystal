@@ -5,7 +5,7 @@
 /* Stop the active thread's in-flight turn, in two escalating steps.
  *
  * The first press is polite: the backend asks the CLI to abandon the turn (the
- * chat keeps its warm process — see session.rs), which comes back as an errored
+ * chat keeps its warm process — see session/), which comes back as an errored
  * `result` and ends it. We mark `stopped` so that error event is treated as a
  * clean stop, not a failure.
  *

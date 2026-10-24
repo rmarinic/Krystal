@@ -1,6 +1,6 @@
 //! Tauri command handlers — the IPC surface the frontend talks to. Every
 //! command is also reachable from a phone or another Krystal through
-//! `server.rs`'s `dispatch` (see the four-place rule in CLAUDE.md).
+//! `server/bridge.rs`'s `dispatch` (see the four-place rule in CLAUDE.md).
 //!
 //! One file per concern; each `pub use`s up here, so callers keep writing
 //! `commands::foo` and `main.rs`'s `generate_handler!` finds every command where
@@ -88,9 +88,9 @@ pub struct AppState {
     /// (`--prompt-suggestions`). Pushed down from the Settings panel; on by
     /// default. Costs a small extra generation per turn, hence the switch.
     pub suggestions: std::sync::Mutex<bool>,
-    /// Warm `claude` processes, one per chat (see `session.rs`).
+    /// Warm `claude` processes, one per chat (see `session/`).
     pub sessions: session::Pool,
-    /// Remote access — the LAN HTTP server (see `server.rs`). Off until started.
+    /// Remote access — the LAN HTTP server (see `server/`). Off until started.
     pub remote: crate::server::RemoteServer,
 }
 

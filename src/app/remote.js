@@ -4,7 +4,7 @@
    Two halves of the same idea, because Krystal is both ends of it:
 
    HOSTING  — the switch in Settings → Remote (and the sidebar button) starts the
-              LAN server in src-tauri/src/server.rs and shows the address and the
+              LAN server in src-tauri/src/server/ and shows the address and the
               six-digit pairing code. Anything on the network can then connect: a
               phone's browser gets the touch UI, another Krystal gets the command
               bridge. Also here: mirroring, so a turn someone starts over there
@@ -248,7 +248,7 @@ function paintReach(row) {
 /* --------------------------- mirroring a turn ---------------------------- */
 /* A connected client and this window are two views of one app, so a turn started
  * over there has to show up here as it happens — not the next time the chat is
- * reopened. The backend forwards the turn's events (see EV_TURN in server.rs),
+ * reopened. The backend forwards the turn's events (see EV_TURN in server/mod.rs),
  * and we replay them through the SAME live-turn machinery a message typed into
  * this window goes through: build the liveTurn `send()` would have built, then
  * hand every event to `handleLiveEvent`. Nothing downstream — the typewriter,

@@ -57,7 +57,7 @@ pub fn capability_prompt(caps: Caps, ui_lang: &str) -> String {
 ",
     );
 
-    // The process now survives between turns (see session.rs), so the old reason
+    // The process now survives between turns (see session/), so the old reason
     // for this rule — "your process is about to exit" — is no longer true. The rule
     // itself still is, for a different reason: Krystal renders exactly one reply per
     // message and stops listening at the turn's `result` event, so anything that

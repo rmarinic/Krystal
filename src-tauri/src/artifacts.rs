@@ -180,7 +180,7 @@ pub fn read_current(dir: &Path, id: &str) -> Option<(String, String, String)> {
 ///
 /// The path is stable per project because it is part of the session key: a
 /// config file whose name changed from turn to turn would retire the warm
-/// `claude` process on every single message (see `session.rs`). The file is only
+/// `claude` process on every single message (see `session/`). The file is only
 /// rewritten when its contents actually change, for the same reason.
 pub fn ensure_mcp_config(data_dir: &Path, project_key: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;

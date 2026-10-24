@@ -54,7 +54,7 @@ const remote = {
  * They act on the computer you are sitting at — this window's links, this
  * copy's Discord presence, this install of Claude Code, this machine's own
  * remote-access server — so proxying them would fire them on the wrong box.
- * The host enforces its own matching allowlist (see `dispatch` in server.rs);
+ * The host enforces its own matching allowlist (see `dispatch` in server/bridge.rs);
  * this list is what stops the call from ever leaving in the first place. */
 const LOCAL_ONLY_COMMANDS = new Set([
   'open_external', 'open_webview', 'exe_path', 'app_version', 'notify',
@@ -334,7 +334,7 @@ const CTX_WARN_FRAC = 0.60;   // amber
 const CTX_HIGH_FRAC = 0.85;   // red
 const DEFAULT_WINDOW = 1000000;
 
-/* The port remote access listens on (DEFAULT_PORT in src-tauri/src/server.rs).
+/* The port remote access listens on (DEFAULT_PORT in src-tauri/src/server/mod.rs).
  * Only used to fill in an address typed without one. */
 const REMOTE_DEFAULT_PORT = 7420;
 

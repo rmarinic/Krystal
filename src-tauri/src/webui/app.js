@@ -1,8 +1,8 @@
-/* app.js — the phone client for Krystal (served by src-tauri/src/server.rs).
+/* app.js — the phone client for Krystal (served by src-tauri/src/server/).
  *
  * Deliberately small and self-contained: one file, no build step, no framework —
  * the same rules the desktop frontend plays by. It speaks the HTTP/SSE API in
- * server.rs, which fronts the very same backend commands the desktop window
+ * server/, which fronts the very same backend commands the desktop window
  * calls, so a chat started on the phone and one started on the computer are the
  * same chat in the same database.
  *

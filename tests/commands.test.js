@@ -3,7 +3,7 @@
  *
  *   src-tauri/src/*.rs   the #[tauri::command] fn and its parameters
  *   main.rs              its entry in generate_handler!
- *   server.rs `dispatch` the hand-written bridge a phone or another Krystal
+ *   server/bridge.rs `dispatch` the hand-written bridge a phone or another Krystal
  *                        reaches it through, which reads each argument by name
  *   src/app/*.js         the invoke('cmd', { … }) calls, whose keys Tauri maps
  *                        onto the parameters (snake_case → camelCase)
@@ -92,12 +92,12 @@ function registeredCommands() {
   return splitTop(balanced(src, start, { open: '[', close: ']' })).map((p) => p.split('::').pop());
 }
 
-/* server.rs `dispatch`: [{ name, calls, keys }] for each arm. */
+/* server/bridge.rs `dispatch`: [{ name, calls, keys }] for each arm. */
 function dispatchArms() {
-  const src = read(path.join(rsDir, 'server.rs'));
+  const src = read(path.join(rsDir, 'server', 'bridge.rs'));
   const from = src.indexOf('let out = match cmd {');
   const to = src.indexOf('_ => return None', from);
-  assert.ok(from > 0 && to > from, "can't find the match in server.rs dispatch");
+  assert.ok(from > 0 && to > from, "can't find the match in server/bridge.rs dispatch");
   const body = src.slice(from, to);
   const heads = [...body.matchAll(/^\s+"(\w+)" =>/gm)];
   return heads.map((h, n) => {
@@ -111,11 +111,11 @@ function dispatchArms() {
   });
 }
 
-/* server.rs `is_streaming_command`: the commands reached over /api/stream. */
+/* server/bridge.rs `is_streaming_command`: the commands reached over /api/stream. */
 function streamingCommands() {
-  const src = read(path.join(rsDir, 'server.rs'));
+  const src = read(path.join(rsDir, 'server', 'bridge.rs'));
   const m = src.match(/fn is_streaming_command[\s\S]*?matches!\(cmd,([^)]*)\)/);
-  assert.ok(m, "can't find is_streaming_command in server.rs");
+  assert.ok(m, "can't find is_streaming_command in server/bridge.rs");
   return [...m[1].matchAll(/"(\w+)"/g)].map((x) => x[1]);
 }
 
@@ -215,7 +215,7 @@ check('every command is either bridged for remote callers or marked local-only',
   const bridged = new Set([...arms.map((a) => a.name), ...streaming, ...localOnly]);
   const neither = registered.filter((c) => !bridged.has(c));
   assert.deepStrictEqual(neither, [], 'a remote desktop calling these gets "command not available remotely" — '
-    + 'add a dispatch arm in server.rs, or list them in LOCAL_ONLY_COMMANDS (core.js)');
+    + 'add a dispatch arm in server/bridge.rs, or list them in LOCAL_ONLY_COMMANDS (core.js)');
 });
 
 check('nothing is both bridged and local-only', () => {
