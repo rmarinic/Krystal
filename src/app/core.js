@@ -8,7 +8,7 @@
  * mirrors the original top-to-bottom order; boot.js (the entry point) loads last.
  *
  * Load order (see index.html):
- *   core → icons → motion → light → sidebar → chat → projects → controls → activity → agents → search →
+ *   core → icons → motion → light → titlebar → sidebar → chat → projects → controls → activity → agents → search →
  *   messages → stream → permissions → mentions → skills → attachments → queue → wizard →
  *   localization → settings → header → remote → tasks → git → links → logo →
  *   notifications → palette → hotkeys → boot

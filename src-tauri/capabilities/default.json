@@ -1,10 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the Krystal main window: core IPC + native dialog + self-update.",
+  "description": "Capabilities for the Krystal main window: core IPC + native dialog + self-update + its own window controls (the native title bar is off).",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",

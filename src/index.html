@@ -19,6 +19,14 @@
 
 </head>
 <body class="app">
+  <!-- The window's own controls (the Windows title bar is switched off — see
+       app/titlebar.js). They float at the end of the header row; empty header
+       space drags the window. Hidden outside Tauri. -->
+  <div class="win-controls" id="win-controls" hidden>
+    <button class="wc-btn" id="wc-min" type="button"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5h8"/></svg></button>
+    <button class="wc-btn" id="wc-max" type="button"><svg class="wc-ico-max" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5"/></svg><svg class="wc-ico-restore" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="3" width="6" height="6" rx="1.2"/><path d="M3.2 1h4.3A1.5 1.5 0 0 1 9 2.5v4.3"/></svg></button>
+    <button class="wc-btn wc-close" id="wc-close" type="button"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></button>
+  </div>
 
   <!-- Shown only while this window is driving another Krystal (see app/remote.js).
        It is the first child of <body> so the app grid gives it a row of its own
@@ -598,6 +606,7 @@
   <script defer src="app/icons.js"></script>
   <script defer src="app/motion.js"></script>
   <script defer src="app/light.js"></script>
+  <script defer src="app/titlebar.js"></script>
   <script defer src="app/sidebar.js"></script>
   <script defer src="app/chat.js"></script>
   <script defer src="app/projects.js"></script>
