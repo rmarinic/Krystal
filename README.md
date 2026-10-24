@@ -99,7 +99,9 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   through every match. Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S lists every
   shortcut.
 - **Usage at a glance.** A context ring shows how full the chat is, and beside it your plan's
-  limits: the 5-hour session, the week, and each model's weekly share.
+  limits: the 5-hour session, the week, and each model's weekly share. When the session or the
+  week passes 80%, the ring wears a small amber mark (red from 95%) and a notification slides in;
+  open the ring to see which limit is the close one.
 
 ### The app itself
 - **Guided first run.** Krystal checks for Claude Code, installs it if it's missing, and walks

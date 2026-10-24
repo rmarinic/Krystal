@@ -132,6 +132,19 @@
 .ctx-ring.lvl-high .ctx-arc { stroke: #e07a5a; }
 .ctx-ring.lvl-warn .ctx-pct { color: #e0c35a; }
 .ctx-ring.lvl-high .ctx-pct { color: #e07a5a; }
+/* Claude usage near its limit (app/usage.js): a small "!" on the ring's
+ * shoulder, amber from 80%, red from 95%. Pops in once when it appears or
+ * rises, then holds still. */
+.ctx-ring { position: relative; }
+.ctx-alert {
+  position: absolute; top: -1px; left: 17px; width: 12px; height: 12px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; font-weight: 700; line-height: 1;
+  color: #0a0f0b; background: #e0c35a;
+}
+.ctx-alert.lvl-high { background: #e07a5a; }
+.ctx-alert.pop { animation: ctx-alert-pop .5s cubic-bezier(.3,1.6,.5,1); }
+@keyframes ctx-alert-pop { from { transform: scale(0); } to { transform: scale(1); } }
 .ctx-pop {
   position: absolute; right: 0; bottom: calc(100% + 12px); z-index: 30;
   width: 300px; padding: 12px 14px; border-radius: 12px;
@@ -149,6 +162,7 @@
 @media (prefers-reduced-motion: reduce) {
   .head-menu, .ctx-pop { transition: opacity .12s ease; transform: none; }
   .ctx-arc { transition: none; }
+  .ctx-alert.pop { animation: none; }
 }
 
 /* ---- Context meter (conversation size — inside the ring's popover) ---- */

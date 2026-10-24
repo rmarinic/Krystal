@@ -13,7 +13,7 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
-function load() {
+function load(extra) {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'usage.js'), 'utf8');
   const ctx = {
     els: {}, state: {},
@@ -21,9 +21,12 @@ function load() {
     escapeHtml: (s) => String(s),
     icon: (n) => `[${n}]`,
     showTip: () => {},
+    motionOK: () => false,
+    replayClass: () => {},
     window: { I18N: { getLang: () => 'en' } },
     settingsTab: null, settingsPanelEl: null,
     console, Date, Math,
+    ...extra,
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
@@ -82,6 +85,72 @@ test('session reset is a countdown, a weekly one a day and time', () => {
   assert.ok(u.windowResetText(endpoint[0]).startsWith('usage.resetIn'));
   assert.ok(u.windowResetText(endpoint[1]).startsWith('usage.resetAt'));
   assert.strictEqual(u.windowResetText({ kind: 'weekly', resetsAt: null }), '');
+});
+
+test('alert: the worse of session and week, and which ones are close', () => {
+  const s = (pct, severity) => ({ kind: 'session', pct, resetsAt: now + 3600, severity });
+  const wk = (pct, severity) => ({ kind: 'weekly', pct, resetsAt: now + 86400, severity });
+  assert.strictEqual(u.usageAlert(s(40), wk(60)).level, '');
+  assert.strictEqual(u.usageAlert(null, null).level, '');
+  const a = u.usageAlert(s(85), wk(60));
+  assert.strictEqual(a.level, 'warn');
+  assert.strictEqual(a.hot.map((w) => w.kind).join(), 'session');
+  assert.strictEqual(u.usageAlert(s(85), wk(97)).level, 'high');
+  assert.strictEqual(u.usageAlert(s(10), wk(20, 'limited')).level, 'high');
+  // A session past its reset is empty again, so it no longer warns.
+  assert.strictEqual(u.usageAlert({ kind: 'session', pct: 99, resetsAt: now - 5 }, wk(10)).level, '');
+});
+
+// A stand-in for the ring button: enough DOM for paintUsageMark.
+function fakeRing() {
+  const kids = [];
+  const btn = {
+    appendChild: (el) => { kids.push(el); el.remove = () => kids.splice(kids.indexOf(el), 1); },
+    querySelector: (sel) => kids.find((k) => sel === '.' + k.className.split(' ')[0]) || null,
+    kids,
+  };
+  return btn;
+}
+function fakeDocument() {
+  return { createElement: () => ({ className: '', dataset: {}, textContent: '', title: '' }) };
+}
+
+test('the ring carries a mark only while a limit is close, coloured by the worse', () => {
+  const btn = fakeRing();
+  const r = load({ ctxRing: { btn }, document: fakeDocument() });
+  r.usageFromTurn([{ kind: 'session', pct: 50, resetsAt: now + 3600 }]);
+  assert.strictEqual(btn.kids.length, 0);
+  r.usageFromTurn([{ kind: 'session', pct: 86, resetsAt: now + 3600 }]);
+  assert.strictEqual(btn.kids.length, 1);
+  assert.strictEqual(btn.kids[0].className, 'ctx-alert lvl-warn');
+  assert.ok(btn.kids[0].title.includes('usage.5h.label 86%'));
+  r.usageFromTurn([{ kind: 'weekly', pct: 96, resetsAt: now + 86400 }]);
+  assert.strictEqual(btn.kids.length, 1);
+  assert.strictEqual(btn.kids[0].className, 'ctx-alert lvl-high');
+  r.usageFromTurn([
+    { kind: 'session', pct: 3, resetsAt: now + 3600 },
+    { kind: 'weekly', pct: 40, resetsAt: now + 86400 },
+  ]);
+  assert.strictEqual(btn.kids.length, 0);
+});
+
+test('crossing into warning raises a toast once, and a tip when toasts are off', () => {
+  const notices = [], tips = [];
+  let toasts = true;
+  const r = load({
+    showNotice: (n) => { if (!toasts) return false; notices.push(n); return true; },
+    showTip: (t) => tips.push(t),
+  });
+  r.usageFromTurn([{ kind: 'session', pct: 82, resetsAt: now + 3600 }]);
+  r.usageFromTurn([{ kind: 'session', pct: 83, resetsAt: now + 3600 }]);
+  assert.strictEqual(notices.length, 1);
+  assert.strictEqual(notices[0].tone, 'warn');
+  assert.strictEqual(notices[0].run, r.openUsageSettings);
+  toasts = false;
+  r.usageFromTurn([{ kind: 'session', pct: 96, resetsAt: now + 3600 }]);
+  assert.strictEqual(notices.length, 1);
+  assert.strictEqual(tips.length, 1);
+  assert.strictEqual(tips[0].cls, 'high');
 });
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }

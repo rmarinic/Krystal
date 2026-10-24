@@ -7,8 +7,10 @@
  * reset time passes — and every turn's `rate_limit` event (stream.js) brings
  * the server's latest session and weekly figures in between. A window a turn
  * doesn't mention (a model's own weekly share) keeps what the endpoint said.
- * Surfaces: a glanceable header chip, the Settings → Usage tab, and a gentle
- * side-tip when a window nears its limit. */
+ * Surfaces: a glanceable chip in the context ring's popover, a mark on the ring
+ * itself while the session or the week nears its limit (so you see it without
+ * opening anything), the Settings → Usage tab, and a toast when a window
+ * crosses into warning. */
 
 const USAGE_POLL_MS = 5 * 60000;    // ask the endpoint this often while the window is visible
 const USAGE_THROTTLE_MS = 60000;    // …and never more often than this, unless asked
@@ -61,6 +63,14 @@ function usageLevel(f, severity) {
   return f == null ? '' : f >= USAGE_HIGH ? 'high' : f >= USAGE_WARN ? 'warn' : 'ok';
 }
 function windowLevel(w) { return usageLevel(windowFrac(w), w && w.severity); }
+
+// Which of the two limits that matter — the session and the week — are near
+// running out, and the worse of their levels ('' when neither is).
+function usageAlert(s, wk) {
+  const hot = [s, wk].filter((w) => w && (windowLevel(w) === 'warn' || windowLevel(w) === 'high'));
+  const level = hot.some((w) => windowLevel(w) === 'high') ? 'high' : hot.length ? 'warn' : '';
+  return { level, hot };
+}
 
 function fmtPct(f) { return f == null ? '—' : Math.min(100, Math.round(f * 100)) + '%'; }
 function fmtResetIn(secs) {
@@ -136,6 +146,7 @@ function usageFromTurn(windows) {
 // Re-paint every place usage is shown (cheap; safe to call often).
 function refreshUsageSurfaces() {
   renderUsageChip();
+  paintUsageMark();
   if (settingsTab === 'usage' && !els.settingsOverlay.hidden && settingsPanelEl) {
     renderUsagePanel(settingsPanelEl);
   }
@@ -178,15 +189,38 @@ function renderUsageChip() {
   if (!chip) return;
   const s = usageWindow('session'), wk = usageWindow('weekly');
   if (!s && !wk) { chip.hidden = true; return; }
-  const worst = [s, wk].map(windowLevel).includes('high') ? 'high'
-    : [s, wk].map(windowLevel).includes('warn') ? 'warn' : 'ok';
   chip.hidden = false;
-  chip.className = 'usage-chip lvl-' + worst;
+  chip.className = 'usage-chip lvl-' + (usageAlert(s, wk).level || 'ok');
   chip.title = tr('usage.chipTitle');
+  // Each half wears its own level, so you can tell which limit is the close one.
+  const seg = (w, k) =>
+    `<span class="uc-seg lvl-${windowLevel(w) || 'ok'}"><span class="uc-k">${escapeHtml(tr(k))}</span> ${fmtPct(windowFrac(w))}</span>`;
   chip.innerHTML =
     `<span class="uc-ico" aria-hidden="true">${icon('zap')}</span>` +
-    `<span class="uc-seg"><span class="uc-k">${escapeHtml(tr('usage.5hShort'))}</span> ${fmtPct(windowFrac(s))}</span>` +
-    `<span class="uc-seg"><span class="uc-k">${escapeHtml(tr('usage.wkShort'))}</span> ${fmtPct(windowFrac(wk))}</span>`;
+    seg(s, 'usage.5hShort') + seg(wk, 'usage.wkShort');
+}
+
+/* The mark on the context ring: a small "!" at the ring's shoulder while the
+ * session or the week is at 80% or more — amber, red from 95% or once refused.
+ * It answers the figure changing, not a timer: it pops in once when it appears
+ * or rises a level, and otherwise sits still. Opening the ring shows which. */
+function paintUsageMark() {
+  const btn = typeof ctxRing !== 'undefined' && ctxRing.btn;
+  if (!btn) return;
+  const { level, hot } = usageAlert(usageWindow('session'), usageWindow('weekly'));
+  let mark = btn.querySelector('.ctx-alert');
+  if (!level) { if (mark) mark.remove(); return; }
+  const rose = !mark || (mark.dataset.lvl === 'warn' && level === 'high');
+  if (!mark) {
+    mark = document.createElement('span');
+    btn.appendChild(mark);
+  }
+  mark.className = 'ctx-alert lvl-' + level;
+  mark.dataset.lvl = level;
+  mark.textContent = '!';
+  const what = hot.map((w) => `${windowLabel(w)} ${fmtPct(windowFrac(w))}`).join(' · ');
+  mark.title = tr('usage.markTitle', { what });
+  if (rose && motionOK()) replayClass(mark, 'pop', 600);
 }
 
 // "Updated 3 min ago", for the panel's foot.
@@ -237,10 +271,18 @@ function warnWindow(tag, w, warnKey, highKey) {
   const k = tag + ':' + lvl;
   if (usageWarned[k]) return;
   usageWarned[k] = true;
+  const body = tr(lvl === 'high' ? highKey : warnKey, { pct: fmtPct(f), reset: windowResetText(w) });
+  // A toast under the bell, like any other news; a side-tip when toasts are off.
+  const shown = typeof showNotice === 'function' && showNotice({
+    id: 'usage-' + tag, tone: lvl, icon: '!',
+    kind: tr('usage.warnLabel'), html: body, where: tr('usage.toastOpen'),
+    run: openUsageSettings,
+  });
+  if (shown) return;
   showTip({
     key: 'usage-' + tag, cls: lvl, icon: 'zap',
     label: tr('usage.warnLabel'),
-    body: tr(lvl === 'high' ? highKey : warnKey, { pct: fmtPct(f), reset: windowResetText(w) }),
+    body,
     actions: [{ text: tr('usage.warnDismiss'), ghost: true, run: (close) => close() }],
   });
 }

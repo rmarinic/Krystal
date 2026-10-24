@@ -306,15 +306,45 @@ function closeNotifPanel() {
 /* --------------------------------- toasts --------------------------------- */
 
 function showToast(n) {
+  toastCard(n.id, notifBody(n), n.kind === 'ask' ? TOAST_ASK_MS : TOAST_MS);
+}
+
+/* A toast that isn't about a chat — today, the plan's usage nearing a limit. It
+ * slides in like the others but leaves no row in the bell: there is no chat to
+ * open, and the mark on the context ring stays for as long as it holds (usage.js).
+ * One per `id` — a newer one replaces it. Returns false when toasts are off or
+ * the bell's panel is open, so the caller can say it another way. */
+function showNotice({ id, tone, icon, kind, html, where, run }) {
+  if (!els.toasts || !settingOn('toasts') || !els.notifPop.hidden) return false;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'notif-open tone-' + tone;
+  b.innerHTML =
+    `<span class="notif-ico" aria-hidden="true">${escapeHtml(icon)}</span>` +
+    '<span class="notif-text">' +
+      `<span class="notif-kind">${escapeHtml(kind)}</span>` +
+      `<span class="notif-snip notif-notice">${html}</span>` +
+      (where ? `<span class="notif-where">${escapeHtml(where)}</span>` : '') +
+    '</span>';
+  const close = toastCard('notice:' + id, b, TOAST_MS);
+  b.onclick = () => { close(); if (run) run(); };
+  return true;
+}
+
+/* The toast itself: `body` in a card that slides in under the bell, drains, and
+ * leaves. Returns its close(). */
+function toastCard(id, body, ms) {
   const host = els.toasts;
-  if (!host) return;
+  if (!host) return () => {};
+  const same = toastClosers.get(id);
+  if (same) same();
   // Newest on top; past the limit the oldest leaves early.
   const open = [...toastClosers.values()];
   if (open.length >= TOAST_MAX) open[0]();
 
   const card = document.createElement('div');
   card.className = 'toast';
-  card.appendChild(notifBody(n));
+  card.appendChild(body);
   const x = document.createElement('button');
   x.type = 'button';
   x.className = 'notif-x';
@@ -326,7 +356,6 @@ function showToast(n) {
   bar.className = 'toast-bar';
   card.appendChild(bar);
 
-  const ms = n.kind === 'ask' ? TOAST_ASK_MS : TOAST_MS;
   bar.style.animationDuration = ms + 'ms';
   let timer = null;
   let closed = false;
@@ -336,7 +365,7 @@ function showToast(n) {
     if (closed) return;
     closed = true;
     clearTimeout(timer);
-    toastClosers.delete(n.id);
+    if (toastClosers.get(id) === close) toastClosers.delete(id);
     card.style.height = card.offsetHeight + 'px';
     void card.offsetWidth;
     card.classList.add('out');
@@ -354,10 +383,11 @@ function showToast(n) {
   });
   x.onclick = close;   // hides the toast only — the bell still has it
 
-  toastClosers.set(n.id, close);
+  toastClosers.set(id, close);
   host.prepend(card);
   requestAnimationFrame(() => { card.classList.add('show'); bar.classList.add('draining'); });
   arm();
+  return close;
 }
 
 /* ------------------------- projects with work going ----------------------- */

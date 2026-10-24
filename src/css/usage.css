@@ -40,8 +40,11 @@
 .usage-chip .uc-ico { font-size: 11px; line-height: 1; }
 .usage-chip .uc-seg { display: inline-flex; align-items: baseline; gap: 4px; font-family: var(--mono); }
 .usage-chip .uc-k { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-dim); }
-.usage-chip.lvl-warn { border-color: rgba(224,195,90,0.45); color: #e0c35a; }
-.usage-chip.lvl-high { border-color: rgba(224,122,90,0.5); color: #e07a5a; }
+.usage-chip.lvl-warn { border-color: rgba(224,195,90,0.45); }
+.usage-chip.lvl-high { border-color: rgba(224,122,90,0.5); }
+/* Each half in its own colour, so the close limit is the one that stands out. */
+.usage-chip .uc-seg.lvl-warn, .usage-chip .uc-seg.lvl-warn .uc-k { color: #e0c35a; }
+.usage-chip .uc-seg.lvl-high, .usage-chip .uc-seg.lvl-high .uc-k { color: #e07a5a; }
 
 /* ---- Settings → Usage tab ---- */
 .usage-panel { display: flex; flex-direction: column; gap: 14px; }
