@@ -93,6 +93,8 @@ fn main() {
             commands::cancel_login,
             commands::open_login,
             commands::open_external,
+            commands::reveal_path,
+            commands::open_path,
             commands::notify,
             commands::open_webview,
             commands::list_projects,

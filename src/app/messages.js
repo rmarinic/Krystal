@@ -340,17 +340,135 @@ function loadChipImages(chip) {
   });
 }
 
+/* How the chip's Open button treats a file. Opening hands a file to its default
+ * program, which for a script or a binary means running it — so scripts open in
+ * Notepad and binaries get no Open at all. This only picks the label; the
+ * backend's `open_kind` (commands.rs) holds the same rule and is what enforces it. */
+const OPEN_AS_TEXT_RE = /\.(ps1|psm1|psd1|bat|cmd|js|jse|vbs|vbe|wsf|wsh|py|pyw|sh|reg|hta)$/i;
+const OPEN_NEVER_RE = /\.(exe|com|scr|pif|msi|msp|msix|appx|dll|sys|ocx|cpl|lnk|url|jar|msc|application|appref-ms|gadget|settingcontent-ms)$/i;
+function chipOpenKind(path) {
+  const p = String(path || '').trim();
+  if (OPEN_AS_TEXT_RE.test(p)) return 'text';
+  if (OPEN_NEVER_RE.test(p)) return 'never';
+  return 'default';
+}
+
+/* The pages a web search came back with. Its output carries them as
+ * `Links: [{"title":…,"url":…}, …]` — possibly more than once, and possibly cut
+ * off by the output cap — so each pair is matched on its own rather than the
+ * array parsed whole. Only http(s) links, each once. */
+function webSearchLinks(output) {
+  const re = /\{"title":"((?:[^"\\]|\\.)*)","url":"((?:[^"\\]|\\.)*)"\}/g;
+  const seen = new Set();
+  const out = [];
+  let m;
+  while ((m = re.exec(String(output || '')))) {
+    let title, url;
+    try { title = JSON.parse(`"${m[1]}"`); url = JSON.parse(`"${m[2]}"`); } catch { continue; }
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ title: title || url, url });
+  }
+  return out;
+}
+
+/* A file the chip's tool touched: its path, then Show in folder and Open, so
+ * the user can go and look at it themselves. */
+function chipFileLine(path) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chip-file';
+  const d = document.createElement('div');
+  d.className = 'chip-detail-line';
+  d.textContent = path;
+  wrap.appendChild(d);
+  const acts = document.createElement('div');
+  acts.className = 'chip-acts';
+  const btn = (iconName, label, title, run) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip-act';
+    b.innerHTML = `${icon(iconName)}<span>${escapeHtml(label)}</span>`;
+    if (title) b.title = title;
+    b.onclick = (e) => { e.stopPropagation(); run(); };
+    acts.appendChild(b);
+  };
+  btn('folder', tr('chip.reveal'), '', () => chipReveal(path));
+  const kind = chipOpenKind(path);
+  if (kind === 'text') btn('file', tr('chip.openText'), tr('chip.openTextTitle'), () => chipOpen(path));
+  else if (kind === 'default') btn('file', tr('chip.open'), '', () => chipOpen(path));
+  wrap.appendChild(acts);
+  return wrap;
+}
+
+function chipOpenFailed(e) {
+  showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('chip.openFail'),
+    body: escapeHtml(String((e && e.message) || e)) });
+}
+// The file has been moved or deleted since Claude touched it.
+function chipFileGone(bodyKey) {
+  showTip({ key: 'status', icon: 'folder', label: tr('chip.fileGoneLabel'), body: escapeHtml(tr(bodyKey)) });
+}
+function chipReveal(path) {
+  api.revealPath(path).then((r) => { if (r && r.gone) chipFileGone('chip.fileGoneFolder'); })
+    .catch(chipOpenFailed);
+}
+function chipOpen(path) {
+  api.openPath(path).then((r) => { if (r && r.gone) chipFileGone('chip.fileGone'); })
+    .catch(chipOpenFailed);
+}
+
+/* A link out of a chip. A plain <a href>, so links.js routes it by the user's
+ * link setting (ask / browser / in-app) like any link in a reply. */
+function chipLink(url, text) {
+  const a = document.createElement('a');
+  a.className = 'chip-link';
+  a.href = url;
+  a.textContent = text;
+  a.title = url;
+  return a;
+}
+
 /* Populate a chip's details from its segment: the full target/command, a diff
- * for edits, the written content, then the tool's captured output. */
+ * for edits, the written content, then the tool's captured output. A file the
+ * tool touched gets Show in folder / Open; a page it fetched, or the results it
+ * searched up, are links. */
 function fillChipDetails(details, seg) {
   details.innerHTML = '';
   let any = false;
-  if (seg.detail) {
+  if (seg.detail && FILE_TOOLS.has(seg.name)) {
+    details.appendChild(chipFileLine(seg.detail));
+    any = true;
+  } else if (seg.detail && seg.name === 'WebFetch' && /^https?:\/\//i.test(seg.detail)) {
+    const d = document.createElement('div');
+    d.className = 'chip-detail-line';
+    d.appendChild(chipLink(seg.detail, seg.detail));
+    details.appendChild(d);
+    any = true;
+  } else if (seg.detail) {
     const d = document.createElement('div');
     d.className = 'chip-detail-line';
     d.textContent = (seg.name === 'Bash' ? '$ ' : '') + seg.detail;
     details.appendChild(d);
     any = true;
+  }
+  const found = seg.name === 'WebSearch' ? webSearchLinks(seg.output) : [];
+  if (found.length) {
+    const head = document.createElement('div');
+    head.className = 'chip-out-head';
+    head.textContent = tr('chip.results');
+    details.appendChild(head);
+    const list = document.createElement('ol');
+    list.className = 'chip-links';
+    for (const l of found) {
+      const li = document.createElement('li');
+      li.appendChild(chipLink(l.url, l.title));
+      const host = document.createElement('span');
+      host.className = 'chip-link-host';
+      host.textContent = l.url.replace(/^https?:\/\//i, '').split('/')[0];
+      li.appendChild(host);
+      list.appendChild(li);
+    }
+    details.appendChild(list);
   }
   // If this action touched an image file, preview it inline.
   if (FILE_TOOLS.has(seg.name) && isImagePath(seg.detail)) {

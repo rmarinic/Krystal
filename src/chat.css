@@ -558,6 +558,42 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 }
 .action-chip .chip-pending { font-size: 11.5px; color: var(--fg-dim); font-style: italic; }
 
+/* A file the tool touched: its path, then Show in folder / Open. */
+.action-chip .chip-file { display: flex; flex-direction: column; gap: 6px; }
+.action-chip .chip-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.action-chip .chip-act {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 0; border-radius: 999px; cursor: pointer;
+  font-family: var(--sans); font-size: 11.5px; color: var(--fg-muted);
+  background: rgba(255,255,255,0.05);
+  transition: color .15s ease, background-color .15s ease;
+}
+.action-chip .chip-act .ui-ico { width: 13px; height: 13px; }
+.action-chip .chip-act:hover { color: var(--accent-3); background: rgba(108,199,142,0.10); }
+
+/* A page the tool fetched, or the pages a search came back with. */
+.action-chip .chip-link {
+  color: var(--accent-3); text-decoration: none; word-break: break-all;
+  transition: color .15s ease;
+}
+.action-chip .chip-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Doubled up to outrank the reply's own list rules (.msg.assistant .bubble ol). */
+.action-chip .chip-links, .msg.assistant .bubble .action-chip .chip-links {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 5px;
+  font-family: var(--sans); font-size: 12px; line-height: 1.45;
+}
+.action-chip .chip-links li, .msg.assistant .bubble .action-chip .chip-links li { margin: 0; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.action-chip .chip-links .chip-link {
+  word-break: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.action-chip .chip-link-host {
+  flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-chip .chip-act, .action-chip .chip-link { transition: none; }
+}
+
 /* A sub-agent's chip: it doesn't expand inline (a whole run doesn't fit in a
  * pill) — it opens the agent inspector, and carries a live tally meanwhile. */
 .action-chip.agent-chip .chip-tally {

@@ -1458,7 +1458,7 @@ mod tests {
 
         // Commands that act on the machine you are sitting at are not proxied,
         // however well-formed the request is.
-        for cmd in ["open_external", "discord_set_project", "remote_start", "exe_path"] {
+        for cmd in ["open_external", "reveal_path", "open_path", "discord_set_project", "remote_start", "exe_path"] {
             let res = http
                 .post(format!("{base}/api/invoke"))
                 .bearer_auth(&token)

@@ -57,6 +57,7 @@ const remote = {
  * this list is what stops the call from ever leaving in the first place. */
 const LOCAL_ONLY_COMMANDS = new Set([
   'open_external', 'open_webview', 'exe_path', 'app_version', 'notify',
+  'reveal_path', 'open_path',   // a chip's Show in folder / Open act on this PC's files
   'install_claude', 'update_claude', 'update_claude_npm', 'open_login',
   'set_discord_enabled', 'discord_set_project', 'discord_set_share_name',
   'remote_start', 'remote_stop', 'remote_status',
@@ -412,6 +413,8 @@ const api = {
   ciRuns(cwd) { return invoke('ci_runs', { cwd }); },
   ciRun(cwd, id) { return invoke('ci_run', { cwd, id }); },
   openExternal(url) { return invoke('open_external', { url }); },
+  revealPath(path) { return invoke('reveal_path', { path }); },
+  openPath(path) { return invoke('open_path', { path }); },
   notify(title, body) { return invoke('notify', { title, body }); },
   rewindFiles(threadId, ckpt, dryRun) { return invoke('rewind_files', { threadId, ckpt, dryRun }); },
   openWebview(url) { return invoke('open_webview', { url }); },
