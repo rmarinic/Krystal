@@ -4,6 +4,15 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.30.0
+- **A fresh look.** Krystal now reads more like a document and less like a terminal. Text is set in a clean, modern font (the code-style font stays for code, file paths and numbers), and both fonts now come with the app, so it looks the same offline and starts faster.
+- **Calmer conversations.** Claude's replies sit straight on the page instead of in boxes, and your own messages are compact bubbles on the right, so who said what is clear at a glance. Saving or deleting a message shows its buttons when you hover over it.
+- **One set of icons.** The emoji scattered through the app are replaced by one matching set of simple line icons.
+- **A floating message box.** The box you type in floats over the conversation, with the mode, effort, Branch, Compact and Clear buttons inside it. How full the conversation is shows as a small ring next to Compact and Clear; click it for the details and your Claude usage.
+- **A tidier header.** The top of a chat now shows just its name, the model and the bell. Edit instructions, Settings and Language moved into the **⋯** menu.
+- **New: Ctrl+K.** Type a few letters to jump to any chat or project, run an action (new chat, compact, tasks…) or open a setting. It ignores accents, so "sazmi" finds "Sažmi", and it can also search every message for what you typed.
+- **Smoother and more satisfying.** Buttons give a little when you press them, the sent message lifts out of the box into the conversation, replies flow in softly, finished steps tick themselves off, counts roll to their new value, and the open chat's highlight glides between chats. If Windows' animation effects are switched off, all of this is too.
+
 ## v0.29.0
 - **New: keyboard shortcuts.** Get around Krystal without the mouse — every shortcut is Ctrl plus a key the left hand reaches without moving, so they work one-handed and on small keyboards without arrow keys:
   - **Ctrl+Q / Ctrl+E** — back and forward through the chats you've opened, like a browser, even across projects. The mouse's back and forward buttons do the same.
