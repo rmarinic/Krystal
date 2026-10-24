@@ -4,6 +4,13 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.32.0
+- **Copy any message.** Every message, yours or Claude's, has a copy button next to delete when you hover over it. A reply copies just what Claude wrote, without the steps in between, and a task in the Tasks list can be copied too.
+- **A calmer sidebar.** The sidebar is now a panel of its own, floating beside the chat. Activity, Tasks, Artifacts and Remote at the bottom are quiet rows like the chat list above them, with plain counts, and nothing in them pulses anymore. The Insight button is gone.
+- **A steadier chat list.** Hovering over a chat no longer adds a sideways scrollbar, and a long title no longer jumps onto a second line to make room for rename and delete.
+- **`$` commands while Claude is answering.** Typing `$` to run a command now works even while Claude is still in the middle of a reply. The command runs beside Claude, so there is nothing to wait for.
+- **More reliable under the hood.** A large tidy-up of Krystal's own code, with new automatic checks, so new features break less often. Along the way: one failed action can no longer stop chats from being saved for the rest of the session, and while connected to another computer, signing in to Claude Code now always happens on this one.
+
 ## v0.31.0
 - **Replies format themselves as they're written.** Bold, headings, lists and code appear formatted while Claude is still typing, instead of showing `**` and `##` until a paragraph is finished. Code blocks are coloured the moment they close.
 - **A light that follows the work.** The soft glow behind the chat now answers what's happening instead of pulsing on its own. It sits behind the line Claude is writing, brightens as the words come, gives a small flash when a step finishes, turns amber and still while Claude waits for your OK, and fades out when the reply is done. While nothing is happening, nothing moves. It can be switched off with Extra effects.
