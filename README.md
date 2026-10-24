@@ -187,7 +187,7 @@ WebView2 (src/)                       Rust (src-tauri/src/)
             ◄── Channel (stream) ─────  session.rs    one warm `claude` process per chat
                                           │             (stream-json in / out)
                                           ▼
-                                        claude.rs     flags, prompts, event parsing ──► claude CLI
+                                        claude/       flags, prompts, event parsing ──► claude CLI
                                         artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
                                         db.rs         krystal.db (SQLite)
                                         server.rs     opt-in LAN server for phone / remote (HTTP + SSE)
@@ -245,7 +245,7 @@ closes.
 | `src/fonts/`, `src/vendor/` | bundled fonts and libraries (offline) |
 | `src-tauri/src/main.rs` | bootstrap: environment, DB, commands, plugins |
 | `src-tauri/src/commands/` | every IPC command, one file per concern (`mod.rs` holds `AppState`) |
-| `src-tauri/src/claude.rs` | CLI flags, prompts, stream-json → UI events |
+| `src-tauri/src/claude/` | finding/installing the CLI, its flags and prompts, stream-json → UI events (one file per concern) |
 | `src-tauri/src/session.rs` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db.rs` | SQLite store |

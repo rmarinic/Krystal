@@ -17,7 +17,7 @@
 //!   the only thing that applies an `update` (an `old_str`/`new_str` patch), and
 //!   it writes the resolved artifact to disk under `KRYSTAL_ARTIFACT_DIR`.
 //! * **Krystal** never talks to that process. It doesn't need to: the tool call
-//!   arrives in the stream-json event feed it already parses (see `claude.rs`),
+//!   arrives in the stream-json event feed it already parses (see `claude/events.rs`),
 //!   and the resolved content is on disk by the time the tool's result comes
 //!   back. So there is exactly one implementation of the patch logic, and no IPC
 //!   bridge to a grandchild process.

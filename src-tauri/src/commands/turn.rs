@@ -351,22 +351,18 @@ async fn chat_turn(
         state.data_dir.join("attachments"),
     ];
 
-    let turn = claude::run_turn(
-        &session,
-        &prompt,
-        &ckpt,
-        &on_event,
-        &state.running,
-        &thread_id,
-        meta.orch,
-        artifact_cfg
-            .as_ref()
-            .map(|_| artifacts::store_dir(&state.data_dir, &artifact_key))
-            .as_deref(),
-        &own_dirs,
-        &mut on_partial,
-    )
-    .await;
+    let artifact_dir = artifact_cfg
+        .as_ref()
+        .map(|_| artifacts::store_dir(&state.data_dir, &artifact_key));
+    let req = claude::TurnRequest {
+        prompt: &prompt,
+        turn_uuid: &ckpt,
+        thread_id: &thread_id,
+        orchestrating: meta.orch,
+        artifact_dir: artifact_dir.as_deref(),
+        own_dirs: &own_dirs,
+    };
+    let turn = claude::run_turn(&session, &req, &on_event, &state.running, &mut on_partial).await;
     drop(on_partial);                    // releases the borrow on `assistant_msg_id`
 
     let res = match turn {

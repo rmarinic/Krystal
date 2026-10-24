@@ -98,7 +98,7 @@ function permissionTitle(p) {
 }
 
 /* What the "always" button would do, in words. The CLI proposes the rule itself
- * (see `permission_always` in claude.rs); we only describe it, so the button says
+ * (see `permission_always` in claude/permissions.rs); we only describe it, so the button says
  * what it is agreeing to — the terminal's "Yes, and don't ask again for …".
  * Returns null when the CLI offered nothing to make permanent. */
 function permissionAlways(p) {
