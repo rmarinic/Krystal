@@ -269,13 +269,26 @@ async function checkClaudeCodeUpdate() {
   });
 }
 
+/* A line of the updater's log becomes the overlay's caption, and the light
+ * answers it: the log is the only sign of life an update gives. */
+let procLineAt = 0;
+function procLogLine(line) {
+  els.procSub.textContent = line;
+  // npm can print a burst of lines: fade the caption in for a new one, not for
+  // every line of a burst.
+  if (Date.now() - procLineAt > 400) replayClass(els.procSub, 'swap', 260);
+  procLineAt = Date.now();
+  procKick();
+}
+
 /* Run `claude update` with the polished progress overlay, streaming the updater's
  * latest log line as the sub-caption. Reuses the compact/clear overlay helpers. */
 async function runClaudeCodeUpdate() {
-  showProgressOverlay({ glyph: 'upgrade', title: tr('claudeUpd.overlayTitle'), sub: tr('claudeUpd.overlaySub') });
+  showProgressOverlay({ glyph: 'upgrade', title: tr('claudeUpd.overlayTitle'), sub: tr('claudeUpd.overlaySub'),
+    crawl: { cap: 0.85, tau: 20 } });
   const channel = new Channel();
   channel.onmessage = (msg) => {
-    if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
+    if (msg && msg.type === 'log' && msg.line) procLogLine(msg.line);
   };
   try {
     const res = await api.updateClaude(channel);
@@ -312,10 +325,11 @@ async function runClaudeCodeUpdate() {
 /* The fallback behind that offer: install Claude Code straight from npm, with the
  * same overlay and the same live sub-caption as the in-place update. */
 async function runClaudeCodeNpmInstall() {
-  showProgressOverlay({ glyph: 'package', title: tr('claudeUpd.npmOverlayTitle'), sub: tr('claudeUpd.npmOverlaySub') });
+  showProgressOverlay({ glyph: 'package', title: tr('claudeUpd.npmOverlayTitle'), sub: tr('claudeUpd.npmOverlaySub'),
+    crawl: { cap: 0.85, tau: 20 } });
   const channel = new Channel();
   channel.onmessage = (msg) => {
-    if (msg && msg.type === 'log' && msg.line) els.procSub.textContent = msg.line;
+    if (msg && msg.type === 'log' && msg.line) procLogLine(msg.line);
   };
   try {
     const res = await api.updateClaudeNpm(channel);

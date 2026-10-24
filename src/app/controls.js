@@ -204,50 +204,90 @@ function startModelRefresh() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshModelsLive(); });
 }
 
-/* Full-screen "working" overlay used by Compact & Clear — a satisfying little
- * indicator with a progress bar that creeps forward while the backend works,
- * then snaps to 100% and flashes a done message before fading out. */
-let procCreep = null;
-function showProgressOverlay({ glyph, title, sub }) {
-  clearInterval(procCreep);
+/* Full-screen "working" overlay used by Compact, Clear and Update Claude Code.
+ * The bar and the light behind the icon are a work light (worklight.js): they
+ * move with what the work reports (`procProgress`, `procKick`) and only creep
+ * on time while nothing has been reported yet. A done message, then it fades
+ * out. Under the bar sits a quiet meta line: what's been done, and for how long
+ * once it's taken a while (the same idea as a slow chip's clock). */
+const PROC_CLOCK_AFTER_MS = 3000;
+let procLight = null;
+let procClock = null;
+let procStarted = 0;
+let procNote = '';
+function procMetaPaint() {
+  const secs = Math.floor((Date.now() - procStarted) / 1000);
+  const clock = Date.now() - procStarted >= PROC_CLOCK_AFTER_MS
+    ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : '';
+  els.procMeta.textContent = [procNote, clock].filter(Boolean).join(' · ');
+}
+/* `crawl`: how far (and how slowly) the bar may creep before any progress is
+ * reported — short work gets a quick crawl, long work a patient one. */
+function showProgressOverlay({ glyph, title, sub, crawl }) {
   els.procGlyph.innerHTML = iconOrText(glyph);
   els.procTitle.textContent = title;
   els.procSub.textContent = sub;
   els.procOverlay.classList.remove('closing', 'is-done');
   els.procOverlay.hidden = false;
-  els.procBarFill.style.transition = 'none';
-  els.procBarFill.style.width = '0%';
-  // Ease toward ~88% on a decelerating curve so it always feels like progress
-  // even though the real duration is unknown.
-  void els.procBarFill.offsetWidth;
-  els.procBarFill.style.transition = 'width .4s ease';
-  let pct = 0;
-  procCreep = setInterval(() => {
-    pct += Math.max(0.5, (88 - pct) * 0.12);
-    els.procBarFill.style.width = Math.min(88, pct) + '%';
-  }, 180);
+  procLight = procLight || workLight(els.procOverlay, els.procBarFill);
+  procLight.start(crawl || { cap: 0.5, tau: 8 });
+  procNote = '';
+  procStarted = Date.now();
+  procMetaPaint();
+  clearInterval(procClock);
+  procClock = setInterval(procMetaPaint, 1000);
 }
+/* Real progress (0..1), with an optional note for the meta line. */
+function procProgress(frac, note) {
+  if (!procLight || els.procOverlay.hidden) return;
+  procLight.progress(frac);
+  procLight.kick();
+  if (note != null && note !== procNote) { procNote = note; procMetaPaint(); }
+}
+/* Something real happened that can't be measured (a log line): the light answers it. */
+function procKick() { if (procLight && !els.procOverlay.hidden) procLight.kick(); }
 function finishProgressOverlay(doneTitle) {
-  clearInterval(procCreep); procCreep = null;
-  els.procBarFill.style.width = '100%';
+  clearInterval(procClock); procClock = null;
+  if (procLight) procLight.done();
   els.procOverlay.classList.add('is-done');
   if (doneTitle) els.procTitle.textContent = doneTitle;
   setTimeout(() => {
     els.procOverlay.classList.add('closing');
-    setTimeout(() => { els.procOverlay.hidden = true; els.procOverlay.classList.remove('closing', 'is-done'); }, 320);
+    setTimeout(() => {
+      els.procOverlay.hidden = true;
+      els.procOverlay.classList.remove('closing', 'is-done');
+      if (procLight) procLight.stop();
+    }, 320);
   }, 620);
 }
 function hideProgressOverlay() {
-  clearInterval(procCreep); procCreep = null;
+  clearInterval(procClock); procClock = null;
+  if (procLight) procLight.stop();
   els.procOverlay.hidden = true;
   els.procOverlay.classList.remove('closing', 'is-done');
+}
+
+/* How far a compact has got, from the summary's characters so far. The first
+ * stretch of the bar is the CLI reading the conversation back (no output yet,
+ * covered by the crawl); the rest fills as the summary is written, on a curve
+ * that slows with length since nobody knows how long the summary will be. */
+const COMPACT_READ_SHARE = 0.14;
+const COMPACT_TYPICAL_CHARS = 1800;
+function compactProgress(chars) {
+  return COMPACT_READ_SHARE + (0.95 - COMPACT_READ_SHARE) * (1 - Math.exp(-chars / COMPACT_TYPICAL_CHARS));
+}
+function compactNote(p) {
+  if (!p || !p.chars) return tr('compact.overlayReading');
+  const n = Number(p.chars).toLocaleString(window.I18N.getLang() === 'hr' ? 'hr-HR' : 'en-US');
+  return tr('compact.overlayWriting', { n });
 }
 
 async function doClear(close) {
   if (close) close();
   if (!state.activeId) return;
   if (!confirm(tr('clear.confirm'))) return;
-  showProgressOverlay({ glyph: 'trash', title: tr('clear.overlayTitle'), sub: tr('clear.overlaySub') });
+  showProgressOverlay({ glyph: 'trash', title: tr('clear.overlayTitle'), sub: tr('clear.overlaySub'),
+    crawl: { cap: 0.7, tau: 0.6 } });
   try {
     await api.clear(state.activeId);
     state.tipLevelShown = null;
@@ -267,9 +307,14 @@ async function doCompact(close) {
   if (!state.activeId || state.streaming) return;
   els.compactBtn.disabled = true;
   els.compactBtn.textContent = tr('compact.tidying');
-  showProgressOverlay({ glyph: 'compact', title: tr('compact.overlayTitle'), sub: tr('compact.overlaySub') });
+  showProgressOverlay({ glyph: 'compact', title: tr('compact.overlayTitle'), sub: tr('compact.overlaySub'),
+    crawl: { cap: COMPACT_READ_SHARE, tau: 5 } });
+  procProgress(0, compactNote(null));
   try {
-    const r = await api.compact(state.activeId);
+    const r = await api.compact(state.activeId, (p) => {
+      if (p && p.chars) procProgress(compactProgress(p.chars), compactNote(p));
+      else procKick();                 // still thinking: no text yet, but work
+    });
     if (r.error) throw new Error(r.error);
     state.tipLevelShown = null;
     await openThread(state.activeId);

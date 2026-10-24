@@ -857,7 +857,10 @@ async fn dispatch<R: Runtime>(
         "delete_thread" => commands::delete_thread(st(), arg_str(a, "id")).await,
         "rename_thread" => commands::rename_thread(st(), arg_str(a, "id"), arg_str(a, "title")),
         "clear_thread" => commands::clear_thread(st(), arg_str(a, "id")).await,
-        "compact_thread" => commands::compact_thread(st(), arg_str(a, "id")).await,
+        // Its progress feeds the desktop's overlay; a remote caller just waits.
+        "compact_thread" => {
+            commands::compact_thread(st(), arg_str(a, "id"), Channel::new(|_| Ok(()))).await
+        }
         "hint_thread" => commands::hint_thread(st(), arg_str(a, "id")).await,
 
         /* ---- per-chat settings ---- */

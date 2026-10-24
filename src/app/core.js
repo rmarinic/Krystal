@@ -278,6 +278,7 @@ const els = {
   procTitle: $('#proc-title'),
   procSub: $('#proc-sub'),
   procBarFill: $('#proc-bar-fill'),
+  procMeta: $('#proc-meta'),
   emptyNewChat: $('#empty-new-chat'),
   emptyInit: $('#empty-init'),
   usageChip: $('#usage-chip'),
@@ -369,7 +370,15 @@ const api = {
   setSuggestions(enabled) { return invoke('set_suggestions', { enabled }); },
   setOrchestration(id, enabled, subModel) { return invoke('set_orchestration', { id, enabled, subModel }); },
   clear(id) { return invoke('clear_thread', { id }); },
-  compact(id) { return invoke('compact_thread', { id }); },
+  // `onProgress({ chars, thought })` as the summary is written. Only locally: the
+  // phone server runs compact as a plain call (a Channel would send this to its
+  // streaming endpoint), so a remote compact just waits.
+  compact(id, onProgress) {
+    if (remote.active || !onProgress) return invoke('compact_thread', { id });
+    const onEvent = new Channel();
+    onEvent.onmessage = onProgress;
+    return invoke('compact_thread', { id, onEvent });
+  },
   runShell(threadId, command) { return invoke('run_shell', { threadId, command }); },
   getRunConfig(project) { return invoke('get_run_config', { project }); },
   setRunConfig(project, command) { return invoke('set_run_config', { project, command }); },

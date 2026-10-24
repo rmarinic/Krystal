@@ -45,6 +45,8 @@
 
   const $ = (id) => document.getElementById(id);
   const el = {};
+  let light = null;                 // the download's work light (worklight.js)
+  const UNSIZED_MB_SCALE = 40;      // MB at which an unsized download's bar is ~60% along
   function cache() {
     el.overlay   = $('update-overlay');
     el.title     = $('update-title');
@@ -156,8 +158,12 @@
     el.progress.hidden = false;
     el.status.hidden = false;
     el.status.textContent = tr('update.downloading');
-    el.fill.classList.add('indeterminate');
     el.progLabel.textContent = tr('update.preparing');
+    // The bar and the sparkle's light move with the download (worklight.js):
+    // each chunk that lands brightens it, the bytes set the fill. Until the
+    // first one, it only creeps a little.
+    if (!light && typeof workLight === 'function') light = workLight(el.overlay, el.fill);
+    if (light) light.start({ cap: 0.05, tau: 3 });
 
     let total = 0;
     let done = 0;
@@ -171,20 +177,23 @@
             break;
           case 'Progress':
             done += (ev.data && ev.data.chunkLength) || 0;
+            if (light) light.kick();
             if (total > 0) {
-              el.fill.classList.remove('indeterminate');
               const pct = Math.min(100, Math.round((done / total) * 100));
-              el.fill.style.width = pct + '%';
+              if (light) light.progress(done / total);
               el.progLabel.textContent = tr('update.progress', {
                 done: mb(done), total: mb(total), pct,
               });
             } else {
+              // No size given: fill on a curve that slows with what's arrived.
+              if (light) light.progress(0.9 * (1 - Math.exp(-done / UNSIZED_MB_SCALE / 1048576)));
               el.progLabel.textContent = tr('update.progressNoTotal', { done: mb(done) });
             }
             break;
           case 'Finished':
-            el.fill.classList.remove('indeterminate');
-            el.fill.style.width = '100%';
+            // The bar stays just short of the end — the installer still has to
+            // run — and the light holds its floor until the app restarts.
+            if (light) light.progress(1);
             // The plugin now applies the installer; we can't cancel past here.
             el.status.textContent = tr('update.installing');
             el.progLabel.textContent = '';
@@ -205,7 +214,7 @@
       // Surface the failure and let her dismiss / retry.
       el.progress.hidden = true;
       el.status.hidden = true;
-      el.fill.classList.remove('indeterminate');
+      if (light) light.stop();
       el.error.textContent = tr('update.failed', { err: String(err && err.message || err) });
       el.error.hidden = false;
       el.actions.hidden = false;

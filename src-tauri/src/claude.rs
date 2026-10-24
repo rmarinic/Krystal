@@ -2649,6 +2649,42 @@ pub async fn run_claude_text(
     cwd: &str,
     prompt: &str,
 ) -> Result<(String, Option<Value>), String> {
+    run_claude_text_live(bin, args, cwd, prompt, None).await
+}
+
+/// How often a one-off call reports how far its answer has got (`progress`).
+const TEXT_PROGRESS_MS: u128 = 120;
+
+/// What one stream event adds to a one-off call's answer: `(is_text, chars)` —
+/// text the answer is made of, or thinking on the way to it. `None` for
+/// anything else (tool calls, message bookkeeping).
+fn answer_delta(ev: &Value) -> Option<(bool, usize)> {
+    if ev.get("type")?.as_str()? != "stream_event" {
+        return None;
+    }
+    let e = ev.get("event")?;
+    if e.get("type")?.as_str()? != "content_block_delta" {
+        return None;
+    }
+    let d = e.get("delta")?;
+    match d.get("type")?.as_str()? {
+        "text_delta" => Some((true, d.get("text")?.as_str()?.chars().count())),
+        "thinking_delta" => Some((false, d.get("thinking")?.as_str()?.chars().count())),
+        _ => None,
+    }
+}
+
+/// `run_claude_text`, telling `progress` as the answer is written:
+/// `{ "chars": <answer so far>, "thought": <thinking so far> }`, at most every
+/// `TEXT_PROGRESS_MS`. It is what lets a wait move with the work instead of on
+/// a timer (the Compact overlay); the first delta goes out straight away.
+pub async fn run_claude_text_live(
+    bin: &str,
+    args: &[String],
+    cwd: &str,
+    prompt: &str,
+    progress: Option<&Channel<Value>>,
+) -> Result<(String, Option<Value>), String> {
     let (args, _sys_file) = spill_system_prompt(args);
     let mut child = claude_command(bin, &args, cwd)
         .spawn()
@@ -2672,6 +2708,8 @@ pub async fn run_claude_text(
 
     let mut text = String::new();
     let mut usage: Option<Value> = None;
+    let (mut written, mut thought) = (0usize, 0usize);
+    let mut last_progress: Option<std::time::Instant> = None;
     let mut lines = BufReader::new(stdout).lines();
     while let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? {
         let line = line.trim();
@@ -2682,6 +2720,18 @@ pub async fn run_claude_text(
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let (Some(ch), Some((is_text, n))) = (progress, answer_delta(&ev)) {
+            if is_text {
+                written += n;
+            } else {
+                thought += n;
+            }
+            if last_progress.map_or(true, |t| t.elapsed().as_millis() >= TEXT_PROGRESS_MS) {
+                let _ = ch.send(json!({ "chars": written, "thought": thought }));
+                last_progress = Some(std::time::Instant::now());
+            }
+            continue;
+        }
         if ev.get("type").and_then(|v| v.as_str()) == Some("result") {
             if let Some(r) = ev.get("result").and_then(|v| v.as_str()) {
                 // A signed-out CLI still "answers" — with its login notice. Fail
@@ -2778,6 +2828,20 @@ pub async fn run_shell_capture(command: &str, cwd: &str) -> Result<(String, i32)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn answer_delta_counts_text_and_thinking_only() {
+        let text = json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
+            "delta":{"type":"text_delta","text":"Sažetak"}}});
+        assert_eq!(answer_delta(&text), Some((true, 7)));
+        let think = json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,
+            "delta":{"type":"thinking_delta","thinking":"hmm"}}});
+        assert_eq!(answer_delta(&think), Some((false, 3)));
+        let tool = json!({"type":"stream_event","event":{"type":"content_block_delta","index":1,
+            "delta":{"type":"input_json_delta","partial_json":"{"}}});
+        assert_eq!(answer_delta(&tool), None);
+        assert_eq!(answer_delta(&json!({"type":"result","result":"x"})), None);
+    }
 
     #[test]
     fn title_excerpt_keeps_both_ends_of_a_long_reply() {

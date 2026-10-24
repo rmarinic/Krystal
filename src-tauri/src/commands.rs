@@ -2211,7 +2211,11 @@ pub fn claude_usage(weekly_reset: Option<f64>) -> Value {
 const COMPACT_PROMPT: &str = "Summarize our entire conversation so far into a tight but complete brief I can use to keep working with no loss of important context. Include: key facts, decisions made, current state of the work, open questions, and next steps. Use short bullet points. Do not greet or add commentary — just the brief.";
 
 #[tauri::command]
-pub async fn compact_thread(state: State<'_, AppState>, id: String) -> CmdResult {
+pub async fn compact_thread(
+    state: State<'_, AppState>,
+    id: String,
+    on_event: Channel<Value>,
+) -> CmdResult {
     let meta = {
         let conn = state.db.lock().unwrap();
         db::get_meta(&conn, &id)
@@ -2230,7 +2234,11 @@ pub async fn compact_thread(state: State<'_, AppState>, id: String) -> CmdResult
     // and it must not serve another turn.
     state.sessions.retire(&id).await;
 
-    let (text, _usage) = claude::run_claude_text(&state.claude_bin(), &args, &meta.cwd, COMPACT_PROMPT).await?;
+    // The summary's progress goes to the overlay as it is written, so the wait
+    // moves with the work (controls.js `doCompact`).
+    let (text, _usage) =
+        claude::run_claude_text_live(&state.claude_bin(), &args, &meta.cwd, COMPACT_PROMPT, Some(&on_event))
+            .await?;
     {
         let conn = state.db.lock().unwrap();
         db::compact(&conn, &id, &text);
