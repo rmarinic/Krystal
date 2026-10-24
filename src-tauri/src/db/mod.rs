@@ -502,20 +502,26 @@ mod tests {
         assert!(project_dir_paths(&conn, "/old/place").is_empty());
     }
 
+    /// Save one artifact state from chat `t1`, titled by its id.
+    fn art(conn: &Connection, project: &str, art_id: &str, kind: &str, content: &str, turn: i64) {
+        let w = ArtifactWrite { project, thread_id: "t1", art_id, title: art_id, kind, content, turn: Some(turn) };
+        save_artifact(conn, &w);
+    }
+
     #[test]
     fn an_artifact_gets_one_version_per_turn_however_often_it_is_patched() {
         let conn = db();
         // Turn one builds it, then patches it twice more while working.
-        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>a</h1>", Some(1));
-        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>b</h1>", Some(1));
-        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>c</h1>", Some(1));
+        art(&conn, "/p", "chart", "text/html", "<h1>a</h1>", 1);
+        art(&conn, "/p", "chart", "text/html", "<h1>b</h1>", 1);
+        art(&conn, "/p", "chart", "text/html", "<h1>c</h1>", 1);
         let v = get_artifact(&conn, "/p", "chart", None).unwrap();
         assert_eq!(v["version"], 1, "one turn is one version");
         assert_eq!(v["versions"], 1);
         assert_eq!(v["content"], "<h1>c</h1>", "and it holds where the turn ended up");
 
         // The next turn opens a new version, and the old one is still reachable.
-        save_artifact(&conn, "/p", "t1", "chart", "Chart", "text/html", "<h1>d</h1>", Some(2));
+        art(&conn, "/p", "chart", "text/html", "<h1>d</h1>", 2);
         let v = get_artifact(&conn, "/p", "chart", None).unwrap();
         assert_eq!(v["version"], 2);
         assert_eq!(v["versions"], 2);
@@ -525,10 +531,10 @@ mod tests {
     #[test]
     fn the_artifact_list_names_each_artifact_once_at_its_latest_version() {
         let conn = db();
-        save_artifact(&conn, "/p", "t1", "a", "A", "text/html", "1", Some(1));
-        save_artifact(&conn, "/p", "t1", "a", "A", "text/html", "2", Some(2));
-        save_artifact(&conn, "/p", "t1", "b", "B", "text/markdown", "x", Some(3));
-        save_artifact(&conn, "/other", "t9", "c", "C", "text/html", "y", Some(1));
+        art(&conn, "/p", "a", "text/html", "1", 1);
+        art(&conn, "/p", "a", "text/html", "2", 2);
+        art(&conn, "/p", "b", "text/markdown", "x", 3);
+        art(&conn, "/other", "c", "text/html", "y", 1);
 
         let list = list_artifacts(&conn, "/p");
         assert_eq!(list.len(), 2, "two artifacts, not four rows");
@@ -545,7 +551,7 @@ mod tests {
     #[test]
     fn moving_a_project_takes_its_artifacts_along() {
         let conn = db();
-        save_artifact(&conn, "/old/place", "t1", "poster", "Poster", "image/svg+xml", "<svg/>", Some(1));
+        art(&conn, "/old/place", "poster", "image/svg+xml", "<svg/>", 1);
         let id = id_of(&create_project(&conn, "/old/place").unwrap());
         move_project(&conn, &id, "/new/place").expect("should move");
 

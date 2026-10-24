@@ -287,13 +287,15 @@ async fn chat_turn(
             let get = |k: &str| a.get(k).and_then(|v| v.as_str()).unwrap_or("");
             db::save_artifact(
                 &conn,
-                &meta.cwd,
-                &thread_id,
-                get("artId"),
-                get("title"),
-                get("kind"),
-                get("content"),
-                Some(turn),
+                &db::ArtifactWrite {
+                    project: &meta.cwd,
+                    thread_id: &thread_id,
+                    art_id: get("artId"),
+                    title: get("title"),
+                    kind: get("kind"),
+                    content: get("content"),
+                    turn: Some(turn),
+                },
             );
         }
     };

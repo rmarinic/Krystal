@@ -6,6 +6,19 @@ use super::*;
 // The self-contained documents Claude builds in the artifact panel. Stored per
 // project (like pins), one row per version.
 
+/// One write to the artifact store: which artifact, from which chat, its content
+/// now, and the turn that wrote it.
+pub struct ArtifactWrite<'a> {
+    pub project: &'a str,
+    pub thread_id: &'a str,
+    pub art_id: &'a str,
+    pub title: &'a str,
+    pub kind: &'a str,
+    pub content: &'a str,
+    /// The id of the user message that started the turn (see `save_artifact`).
+    pub turn: Option<i64>,
+}
+
 /// Record a new state of an artifact.
 ///
 /// Within a single turn this OVERWRITES rather than piling up: Claude routinely
@@ -16,16 +29,8 @@ use super::*;
 /// version", which is what the one-off paths want.
 ///
 /// Returns the version number the content landed on.
-pub fn save_artifact(
-    conn: &Connection,
-    project: &str,
-    thread_id: &str,
-    art_id: &str,
-    title: &str,
-    kind: &str,
-    content: &str,
-    turn: Option<i64>,
-) -> i64 {
+pub fn save_artifact(conn: &Connection, w: &ArtifactWrite) -> i64 {
+    let ArtifactWrite { project, thread_id, art_id, title, kind, content, turn } = *w;
     let existing: Option<i64> = turn.and_then(|t| {
         conn.query_row(
             "SELECT version FROM artifacts WHERE project = ?1 AND art_id = ?2 AND turn = ?3",
