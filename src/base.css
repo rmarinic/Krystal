@@ -48,6 +48,7 @@
   --radius:     10px;
   --radius-sm:  6px;
   --sidebar-w:  280px;
+  --panel-gap:  10px;   /* the sidebar panel's inset from the window's edges */
   --read-w:     760px;   /* the reading column: transcript text and the composer dock */
 }
 
@@ -97,17 +98,23 @@ svg.icon-defs { display: none; }
  * Sidebar (.htmlcast/index.html — outer skeleton)
  * ============================================================ */
 
+/* A panel of its own, floating on the window's canvas: inset from the window's
+   edges with rounded corners, a tone lighter than the chat, and the same
+   material as the composer dock (a hairline of light at its edge, a soft
+   drop beneath), so the two things you hold read as one family. */
 aside.sidebar {
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--panel-gap);
+  height: calc(100vh - 2 * var(--panel-gap));
+  margin: var(--panel-gap) 0 var(--panel-gap) var(--panel-gap);
   /* The whole column is fixed-height; only the chat list inside scrolls, so the
      header, search and foot buttons (Insight/Activity/Tasks) stay pinned. */
   overflow: hidden;
-  /* A tone apart from the chat, painted by the window's canvas (chat.css
-     body.app), which eases it into the chat's tone instead of stopping. */
-  background: transparent;
-  padding: 22px 14px 24px;
+  background: var(--bg-elev);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px -16px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  padding: 20px 12px 18px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -261,6 +268,9 @@ aside.sidebar {
   aside.sidebar {
     position: static;
     height: auto;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
