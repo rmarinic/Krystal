@@ -7,11 +7,12 @@
  * files were concatenated back into a single app.js. So load order matters and
  * mirrors the original top-to-bottom order; boot.js (the entry point) loads last.
  *
- * Load order (see index.html):
- *   core → icons → motion → light → titlebar → sidebar → chat → projects → starters → controls → activity → agents → search →
- *   messages → livemd → stream → permissions → mentions → skills → attachments → queue → wizard →
- *   localization → settings → header → remote → tasks → git → links → logo →
- *   notifications → palette → hotkeys → boot
+ * Load order (see index.html; tests/boot.test.js loads them all in this order):
+ *   core → icons → motion → light → titlebar → sidebar → chat → projects → starters → controls →
+ *   describe → activity → agents → search → messages → review → artifacts → livemd →
+ *   composer → feed → typer → stream → permissions → mentions → skills → attachments → queue →
+ *   wizard → localization → settings → header → tasks → git → run → links → logo → usage →
+ *   orchestrator → pins → remote → notifications → palette → hotkeys → boot
  *
  * This file owns the bits everything else builds on: the Tauri IPC handles, the
  * `$` query helper, `tr` (i18n lookup), the `els` element map, `state`, the
@@ -534,7 +535,7 @@ function renderMarkdown(md) {
   return window.DOMPurify ? DOMPurify.sanitize(html) : html;
 }
 /* Jump the feed to the bottom. Remembers the landing position so the scroll
- * event it echoes can be told apart from a real user scroll (see stream.js). */
+ * event it echoes can be told apart from a real user scroll (see feed.js). */
 let feedAutoTop = -1;
 function scrollFeed() {
   els.feed.scrollTop = els.feed.scrollHeight;

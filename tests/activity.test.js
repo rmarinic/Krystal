@@ -1,4 +1,5 @@
-/* Tests for the Activity panel's reading of what Claude ran (src/app/activity.js):
+/* Tests for the Activity panel's reading of what Claude ran (src/app/describe.js
+ * and src/app/activity.js):
  * commands put into plain words when Claude gave no description, what kind of
  * step each is (which decides its icon and what folds away as looking-around),
  * steps grouped under the message that asked for them, and runs of
@@ -46,7 +47,9 @@ function loadActivity() {
   const exported = ['describeCommand', 'commandText', 'splitCommand', 'commandWords', 'activityTurns',
     'activitySteps', 'activityFromSegments', 'activityInfo', 'shellStepLabel', 'hasOwnDescription',
     'actPlural', 'CMD_KINDS'];
-  return vm.runInNewContext(`${read('src', 'app', 'activity.js')}\n;({ ${exported.join(', ')} })`, ctx, { filename: 'activity.js' });
+  // describe.js loads just before activity.js in index.html, as it does here.
+  const src = read('src', 'app', 'describe.js') + '\n' + read('src', 'app', 'activity.js');
+  return vm.runInNewContext(`${src}\n;({ ${exported.join(', ')} })`, ctx, { filename: 'describe.js+activity.js' });
 }
 
 const A = loadActivity();

@@ -15,7 +15,7 @@
  *
  * Nothing is raised for the chat on screen; you are already looking at it (and if
  * the window itself is in the background, the desktop notification covers that —
- * see `notifyAway` in stream.js).
+ * see `notifyAway` at the end of this file).
  *
  * Also here, because it answers the same question from the other side: the
  * project list marks every project that has a turn in flight right now. */
@@ -419,3 +419,18 @@ document.addEventListener('i18n:changed', () => {
   paintProjectActivity();
 });
 paintBell();
+
+/* -------------------------- desktop notifications ------------------------ */
+/* A reply that lands while you are in another window is easy to miss for an
+ * hour. So when a turn ends — or stops to ask permission — and Krystal isn't the
+ * window in front, the OS says so. Never while you are looking at the app: the
+ * in-app tips already cover a chat that is merely off screen. */
+
+function notifyAway(threadId, kind, body) {
+  if (!settingOn('notify')) return;
+  if (!document.hidden && document.hasFocus()) return;
+  const thread = (state.threads || []).find((t) => t.id === threadId);
+  const chat = (thread && thread.title) || tr('notify.chatFallback');
+  const text = String(body || '').replace(/\s+/g, ' ').trim();
+  api.notify(tr('notify.' + kind, { chat }), text).catch(() => {});
+}

@@ -125,7 +125,7 @@ function lightPaint(off) {
 }
 
 /* ------------------------------ the hooks ------------------------------- *
- * Called from stream.js. Each is cheap and safe to call with effects off. */
+ * Called from stream.js, typer.js and composer.js. Each is cheap and safe to call with effects off. */
 
 /* A turn is starting on screen. `from` is where the message left the composer:
  * the lamp starts there and rises to where the answer will appear. */

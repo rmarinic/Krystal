@@ -4355,7 +4355,7 @@ body.framed .modal-overlay { padding-top: 56px; }
   .wc-ico-max, body.win-max .wc-ico-restore { animation: none; }
 }
 
-/* ---- "New reply below" (app/stream.js) ----
+/* ---- "New reply below" (app/feed.js) ----
    A small pill floating above the composer while the reply carries on below
    where you've scrolled to — or has landed there. It rises in, fades out. */
 .reply-pill {
