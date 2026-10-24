@@ -3,16 +3,17 @@
 # K R Y S T A L
 **`// claude code`**
 
-### A native desktop home for Claude Code 💚
+### A native desktop home for Claude Code
 
-Talk to **Claude Code** over your own folders — code, documents, anything — in a fast,
-offline, beautifully dark little app. No terminal, no browser tab, no server. Just a window.
+Talk to **Claude Code** about your own folders (code, documents, research, data) in a calm,
+fast desktop app. No terminal, no browser tab, no server. Just a window.
 
 <br>
 
 ![Platform](https://img.shields.io/badge/platform-Windows-2b3a30?style=flat-square&logo=windows)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-6cc78e?style=flat-square&logo=tauri&logoColor=white)
 ![Backend](https://img.shields.io/badge/backend-Rust-2b3a30?style=flat-square&logo=rust)
+![Version](https://img.shields.io/github/v/release/rmarinic/Krystal?style=flat-square&color=6cc78e&label=release)
 ![Self-updating](https://img.shields.io/badge/updates-automatic-8fe0aa?style=flat-square)
 ![Languages](https://img.shields.io/badge/i18n-EN%20%2F%20HR-2b3a30?style=flat-square)
 
@@ -20,66 +21,113 @@ offline, beautifully dark little app. No terminal, no browser tab, no server. Ju
 
 ---
 
-## ✨ What is Krystal?
+## What is Krystal?
 
-Krystal is a desktop chat app for [Claude Code](https://claude.com/claude-code). You point it
-at a **project folder** and chat with Claude about what's inside — it can read, write, edit
-files and run commands right there, with a live view of everything it does. It's built to feel
-calm and friendly for everyday work, not just for developers: pick a folder, start a chat, go.
+Krystal is a desktop chat app for [Claude Code](https://claude.com/claude-code). Point it at a
+**project folder** and talk to Claude about what's inside. Claude can read, write and edit files
+and run commands right there, and you can watch every step as it happens. It's built to feel
+friendly for everyday work, not only for developers: writers, researchers and analysts get the
+same app as programmers. Pick a folder, start a chat, go.
 
-Under the hood it's a single native `.exe` — a Rust backend in an embedded WebView2 window,
-no `localhost`, no Node server, no browser. It launches instantly and works entirely offline
-(it only talks to Claude through the `claude` CLI you already have).
+Under the hood it's a single native `.exe`: a Rust backend driving an embedded WebView2 window.
+There's no `localhost`, no Node server and no browser. Krystal talks to Claude only through the
+`claude` CLI on your machine, so your chats stay on your machine.
 
-## 🌟 Highlights
+## Highlights
 
-- **📁 Projects** — each project is a folder. Every project keeps its own chats, model and
-  history. A polished picker greets you on launch; switch projects any time.
-- **💬 Multiple threads** — a sidebar of conversations, each remembering its Claude session,
-  model and working folder. Search across every chat and ★ save any reply.
-- **⚡ Live streaming** — answers and tool activity stream in with a typewriter feel; pop open
-  the **Activity** panel to watch shells and sub-agents work in real time.
-- **🧠 Pick the brain & the leash** — choose the model per chat (Opus / Sonnet / Haiku / Fable)
-  and a mode: **Auto** acts freely, **Ask** checks with you before it changes a file or runs a
-  command (Allow / Always allow / Deny, just like Claude Code in a terminal), **Plan** only
-  researches and proposes.
-- **🪄 Setup wizard** — Claude explores your folder, asks a few tailored questions, and writes a
-  `CLAUDE.md` project guide so it always knows the context.
-- **🧹 Stay sharp** — a context meter warns when a chat grows long; **Compact** keeps a summary
-  and trims the rest, **Clear** starts fresh.
-- **🔄 Updates itself** — Krystal checks for new versions on launch and updates with one click
-  (more below). Install once, stay current forever.
-- **🧰 Guided first-run setup** — on first launch Krystal checks for Claude Code, installs it for
-  you if it's missing, and walks you through signing in — no terminal knowledge required.
-- **🌍 Bilingual** — full English 🇬🇧 and Croatian 🇭🇷 interface, toggle any time.
-- **📝 Word-aware** — detects `pandoc` / `python-docx` and lets Claude work with `.docx` files
-  when they're available.
+### Conversations
+- **Projects and chats.** Every project is a folder with its own chats, tasks, pinned files and
+  artifacts. The project screen shows which projects are busy right now.
+- **Fast, warm sessions.** Each chat keeps its own Claude process running between messages, so
+  replies start quickly and Claude doesn't have to re-read the conversation every time.
+- **Replies that format themselves as they stream.** Markdown, code and tables take shape as
+  they're written, and each action Claude takes appears as a chip you can open: the command
+  and its output, the diff, the page it fetched, the file it touched.
+- **Queue the next message** while Claude is still working. Queued messages go out one at a
+  time, in order, and hold if you press Stop.
+- **Starting points.** Write / Research / Data / Code cards fill in a first message with blanks
+  you Tab through.
+- **Reference other chats with `#`**, run a **skill with `/`**, and **paste or drop** files and
+  screenshots straight into the message box.
+- **Branch** a conversation into a copy, **Compact** a long one into a summary, or **Clear** it.
+  Very long chats tidy their own context automatically.
+- **Nothing is lost.** Your message is saved the moment you send it and the answer as it's
+  written, so closing the app mid-reply keeps both.
 
-## 🚀 Install
+### Control
+- **Model, effort and mode, per chat.** Choose the model (the list stays current with
+  Anthropic's latest), how hard Claude thinks (Low to Max), and how much it may do on its own:
+  - **Full access** acts freely.
+  - **Auto** works on its own while Claude Code's classifier holds risky actions back.
+  - **Accept edits** changes files freely and asks before running commands.
+  - **Ask** stops for your yes before changing or running anything (Allow / Always / Deny).
+  - **Plan** only researches and proposes.
+- **See and undo what changed.** A reply that edited files leaves a "Changed files" strip. Open
+  it for line diffs, comment on any line (your comments go to Claude as one review), or **Undo**
+  to put the files back as they were before that message.
+- **Stop that really stops.** The first press asks Claude to put the work down and keeps the
+  session. A second press ends it, background sub-agents included.
 
-**Just want to use it?**
+### Built by Claude, beside the chat
+- **Artifacts.** Pages, charts, diagrams and reports open in a panel next to the conversation
+  instead of as code inside it. HTML runs for real in a sandbox, Mermaid diagrams are drawn
+  properly, and every version is kept. **Save a copy** gives you one self-contained file that
+  works anywhere.
+- **Sub-agents you can follow.** Each helper agent gets its own window with a live,
+  step-by-step timeline, its numbers and its final report. An **orchestrator mode** lets Claude
+  hand work to dedicated workers.
+
+### Around the work
+- **Tasks.** A to-do list per project, which Claude can draft from a description and keeps
+  current itself, ticking items off as the work lands.
+- **Pinned files.** A rail on the right edge of the chat for files you want to glance at.
+- **Git and GitHub Actions.** Branch picker, fetch / pull / push, and a build dot that shows the
+  latest workflow run. Open a failed run to read its log and hand it to Claude to fix.
+- **Run button.** Start the project's own run command and watch its output live.
+- **Notifications.** A bell collects what happened in chats you weren't looking at, and Windows
+  notifies you when a reply finishes or needs your permission while the app is in the background.
+- **Remote access.** Use Krystal from your phone's browser, or from another computer's Krystal,
+  over your own Wi-Fi. It's off until you turn it on, a new six-digit code is issued each time,
+  and Krystal checks the Windows Firewall and offers to fix it.
+- **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
+  search through every message). Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S
+  lists every shortcut.
+- **Usage at a glance.** A context ring shows how full the chat is, alongside your 5-hour and
+  weekly Claude subscription usage.
+
+### The app itself
+- **Guided first run.** Krystal checks for Claude Code, installs it if it's missing, and walks
+  you through signing in. No terminal knowledge required.
+- **Setup wizard.** Claude explores your folder, asks a few tailored questions and writes a
+  `CLAUDE.md` guide so it always knows the project.
+- **Calm, fluid design.** A document-like layout with its own window frame, one set of line
+  icons, and motion that answers what's happening (then rests). Bundled fonts, so it looks the
+  same offline. All motion respects Windows' "reduce animations" setting.
+- **Bilingual.** Full English and Croatian interface, switchable any time.
+- **Updates itself** (see below).
+
+## Install
 
 1. Go to the [**latest release**](https://github.com/rmarinic/Krystal/releases/latest).
 2. Download `Krystal_x.y.z_x64-setup.exe` and run it.
-3. Launch Krystal from the Start menu. 🎉
+3. Launch Krystal from the Start menu.
 
-That's the only manual download you'll ever do — from then on Krystal **updates itself**.
+That's the only download you'll ever do by hand. From then on Krystal **updates itself**.
 
-> **Requirements:** none to get started — Krystal installs **Claude Code** for you on first run
-> and guides you through signing in. (Already have the [`claude` CLI](https://claude.com/claude-code)?
-> Krystal finds it automatically; override the path with the `CLAUDE_BIN` env var.) WebView2 ships
-> with Windows 10/11.
+> **Requirements:** Windows 10/11 (WebView2 ships with it). Krystal installs **Claude Code** for
+> you on first run and guides you through signing in. Already have the
+> [`claude` CLI](https://claude.com/claude-code)? Krystal finds it automatically, or you can
+> point it at one with the `CLAUDE_BIN` environment variable. Optional: the GitHub CLI (`gh`)
+> for the build status, `git` for the branch tools.
 
-## 🔄 Automatic updates
+## Automatic updates
 
-Krystal keeps itself current — no reinstalling, no sending files around.
+- On every launch Krystal quietly checks GitHub for a newer signed release.
+- If there is one, a screen shows what's new (straight from the [changelog](CHANGELOG.md)) with
+  **Install now** and **Later**.
+- Install now shows the download's progress, then installs and relaunches into the new version.
 
-- On every launch it quietly checks GitHub for a newer signed release.
-- If one exists, a friendly screen appears: **“A new version of Krystal is available ✨”**.
-- Click **Install now** and a live progress bar shows the download; Krystal then installs and
-  relaunches into the new version. Prefer to wait? **Later** dismisses it until next launch.
-
-Every update is **cryptographically signed** — Krystal refuses to install anything that isn't
+Every update is **cryptographically signed**. Krystal refuses to install anything that isn't
 signed with the project's private key, so the update channel can't be tampered with.
 
 <details>
@@ -87,95 +135,128 @@ signed with the project's private key, so the update channel can't be tampered w
 
 <br>
 
-Releases are fully automated by [GitHub Actions](.github/workflows/release.yml). To ship one:
+Releases are automated by [GitHub Actions](.github/workflows/release.yml). Add the version's
+notes to the top of `CHANGELOG.md` (they appear in the in-app update prompt), then:
 
 ```bat
-release.bat 0.2.0
+release.bat 0.31.0
 ```
 
 That bumps the version in `package.json`, `tauri.conf.json` and `Cargo.toml`, commits, tags
-`v0.2.0` and pushes. The tag triggers the workflow, which builds + signs the installer on a
+`v0.31.0` and pushes. The tag triggers the workflow, which builds and signs the installer on a
 Windows runner and publishes a GitHub Release with the installer and a signed `latest.json`
-manifest. Installed apps pick it up on their next launch.
+manifest. Installed copies pick it up on their next launch.
 
-**One-time setup** — add two repo secrets (Settings → Secrets and variables → Actions):
+**One-time setup:** add two repo secrets (Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 |--------|-------|
 | `TAURI_SIGNING_PRIVATE_KEY` | contents of your `~/.tauri/krystal_updater.key` |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty if you set none) |
 
-Keep the private key safe — losing it means you can no longer sign updates.
+Keep the private key safe. Lose it and you can no longer sign updates.
 
 </details>
 
-## 🛠️ Build from source
+## Build from source
+
+You need the [Rust toolchain](https://rustup.rs) with the MSVC build tools (the standard
+Rust-on-Windows setup) and Node.js for the Tauri CLI.
 
 ```sh
-# dev — compile and open the window (hot-ish reload)
+# dev: compile and open the window
 cd src-tauri
-cargo run
+cargo run              # or double-click run.bat
 
-# release — a standalone installer in src-tauri/target/release/bundle/
+# release: the installer in src-tauri/target/release/bundle/
 npm install            # once: pulls the Tauri CLI
 npm run build
+
+# frontend tests (plain Node, no dependencies)
+npm test
 ```
 
-Double-clickable `run.bat` (dev) and `build.bat` (release) are included too. Building needs the
-[Rust toolchain](https://rustup.rs) and the MSVC build tools (standard Rust-on-Windows setup).
+Rust unit tests run with `cargo test` inside `src-tauri/`.
 
-## 🧩 How it works
-
-```
-WebView2 (src/)  ──invoke()──►  Rust commands (src-tauri/)  ──spawn──►  claude -p …
-   index.html                     commands.rs                  (stream-json)
-   app.js        ──Channel──◄     chat()  ── streams tokens/tools back
-   updater.js    ──checks──►      GitHub Releases (signed latest.json)
-   *.css                          db.rs   ──────►  krystal.db (SQLite, rusqlite)
-                                  dialog plugin ─►  native folder picker
-```
-
-The frontend is plain HTML/CSS/JS (vendored `marked` + `DOMPurify` + `highlight.js`, so it
-renders offline) running in WebView2. It calls Rust `#[tauri::command]`s over Tauri IPC and
-receives streamed output over a `Channel`. Rust spawns the `claude` CLI, stores everything in a
-bundled SQLite database, and the updater plugin handles self-updates.
-
-## 💾 Where your data lives
+## How it works
 
 ```
-%APPDATA%\com.krystal.claudecode\krystal.db
+WebView2 (src/)                       Rust (src-tauri/src/)
+  index.html, *.css                     main.rs       bootstrap, plugins, commands
+  app/*.js  ── invoke() ─────────────►  commands.rs   every IPC command
+            ◄── Channel (stream) ─────  session.rs    one warm `claude` process per chat
+                                          │             (stream-json in / out)
+                                          ▼
+                                        claude.rs     flags, prompts, event parsing ──► claude CLI
+                                        artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
+                                        db.rs         krystal.db (SQLite)
+                                        server.rs     opt-in LAN server for phone / remote (HTTP + SSE)
+                                        catalog.rs    live model list
+  updater.js ── checks ─────────────►  GitHub Releases (signed latest.json)
 ```
 
-All threads and messages live in that single SQLite file — back it up or copy it to another
-machine to carry your chats with you (close the app first).
+The frontend is plain HTML/CSS/JS with **no framework and no bundler**: classic scripts in
+`src/app/` that share one global scope and load in a fixed order (see
+[`src/app/core.js`](src/app/core.js) for the map). `marked`, `DOMPurify`, `highlight.js` and
+`mermaid` are vendored, so everything renders offline.
 
-## 🔐 Safety
+Each chat is served by a persistent `claude --input-format stream-json` process. Messages go in
+as JSON lines on its stdin, and its stream-json output is turned into UI events and streamed to
+the window over a Tauri `Channel`. Permission prompts in Ask / Auto / Accept edits are handed to
+Krystal by the CLI and answered by you. Artifacts come from a small MCP server that is Krystal's
+own executable started in a different mode. Undo uses Claude Code's own file checkpointing.
 
-Claude runs with full Claude Code powers in the folder you choose — it can read, write, edit
-files and run shell commands there. That's the point: real work needs real access. **Only open
-projects on folders you trust Claude to touch.** To make it read-only, edit `base_args()` in
-`src-tauri/src/claude.rs` (drop the skip-permissions flag and add
-`--allowedTools Read Grep Glob WebSearch WebFetch`).
+For the full architecture, see [`CLAUDE.md`](CLAUDE.md).
 
-## 🗂️ Project layout
+## Where your data lives
+
+```
+%APPDATA%\com.krystal.claudecode\
+  krystal.db      projects, chats, messages, tasks, pins, artifacts (SQLite)
+  attachments\    pasted images
+  artifacts\      the current file of each artifact
+  task-lists\     the task snapshot Claude reads during a chat
+```
+
+To carry your chats to another machine, close the app and copy that folder (`krystal.db` holds
+everything that matters). Claude Code's own sessions live where they always do, in `~/.claude`.
+
+## Safety
+
+Claude works with real Claude Code powers in the folder you choose. How much it may do without
+asking is up to the **mode** you pick per chat, from **Full access** (nothing checked) through
+**Auto** and **Accept edits** to **Ask** (every change and command needs your yes) and **Plan**
+(no changes at all). Your own permission rules in `.claude/settings*.json` apply as they would
+in a terminal. **Only open projects on folders you trust Claude to work in.**
+
+Remote access is off by default. When it's on, it's reachable only on your local network,
+behind a one-time pairing code that locks after ten wrong guesses, and it stops when Krystal
+closes.
+
+## Project layout
 
 | path | role |
 |------|------|
-| `src/index.html` | app shell — picker, sidebar, chat pane, composer, update overlay |
-| `src/app.js` | frontend logic — talks to Rust via `invoke` + `Channel` |
-| `src/updater.js` | self-update flow (check → ask → download → relaunch) |
+| `src/index.html` | app shell, loads the scripts in order |
+| `src/app/*.js` | the frontend, one file per concern (chat, stream, messages, artifacts, …) |
 | `src/i18n.js` | English / Croatian strings |
-| `src/base.css`, `src/chat.css` | the dark, green-on-black theme |
-| `src-tauri/src/main.rs` | app bootstrap: probe env, open DB, register commands + plugins |
+| `src/onboarding.js`, `src/updater.js` | first-run setup, self-update flow |
+| `src/base.css`, `src/chat.css`, `src/motion.css` | the look and the motion layer |
+| `src/fonts/`, `src/vendor/` | bundled fonts and libraries (offline) |
+| `src-tauri/src/main.rs` | bootstrap: environment, DB, commands, plugins |
 | `src-tauri/src/commands.rs` | every IPC command |
-| `src-tauri/src/claude.rs` | spawn `claude`, stream stream-json, build prompts |
+| `src-tauri/src/claude.rs` | CLI flags, prompts, stream-json → UI events |
+| `src-tauri/src/session.rs` | warm per-chat `claude` processes, stop and rewind |
+| `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db.rs` | SQLite store |
-| `src-tauri/src/models.rs` | the model catalogue |
-| `src-tauri/tauri.conf.json` | window, bundle and updater config |
-| `.github/workflows/release.yml` | build + sign + publish on every `v*` tag |
+| `src-tauri/src/server.rs`, `src-tauri/src/webui/` | remote access server and phone UI |
+| `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
+| `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |
+| `tests/` | frontend tests (`npm test`) |
+| `.github/workflows/release.yml` | build, sign and publish on every `v*` tag |
 
 ---
 
 <div align="center">
-<sub>Built with 💚 using <a href="https://tauri.app">Tauri</a>, Rust and Claude Code.</sub>
+<sub>Built with <a href="https://tauri.app">Tauri</a>, Rust and Claude Code.</sub>
 </div>
