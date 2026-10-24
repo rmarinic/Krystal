@@ -45,6 +45,7 @@ function autosize() {
 }
 els.input.addEventListener('input', () => {
   autosize(); syncShellMode();
+  lightKey();                                   // the floor warms as you type (light.js)
   saveDraft(state.activeId, els.input.value);   // keep this chat's draft current
   if (typeof syncQueueBtn === 'function') syncQueueBtn();         // something to queue mid-turn?
   if (typeof onComposerInput === 'function') onComposerInput();   // # mention autocomplete
@@ -298,6 +299,7 @@ function makeTyper(bubble) {
       shown += chunk;
       pending = pending.slice(n);
       appendText(chunk);
+      lightWords(n);   // the words being revealed feed the lamp (light.js)
     }
     if ((finished || errMsg) && !pending) {
       closeTextBlock();
@@ -334,10 +336,12 @@ function makeTyper(bubble) {
 
   return {
     thinking() {
+      lightMode('thinking');
       if (!thinkEl && !textEl && !chipEl) { thinkEl = renderThinkingChip(); bubble.appendChild(thinkEl); }
       maybeFollow();
     },
     push(t, instant) {
+      lightMode('streaming');
       clearThinking();
       if (!textEl) openTextBlock();   // text after a chip starts a fresh block
       if (instant) {                  // replay path: reveal buffered backlog without re-typing
@@ -350,6 +354,7 @@ function makeTyper(bubble) {
       }
     },
     setTool(seg) {
+      lightMode('working');
       clearThinking();
       const name = seg.name || '';
       // Rich tools (AskUserQuestion, ExitPlanMode) arrive with their payload on
@@ -438,6 +443,7 @@ function syncComposer() {
  * (instant, no re-typing) when re-attaching after a thread switch. */
 function attachLiveTyper(live) {
   const aDiv = appendMessage('assistant', '', null);
+  lightAnchor(aDiv);   // before the replay, so a re-attached lamp appears in place
   const typer = makeTyper(aDiv.querySelector('.bubble'));
   live.bubble = aDiv;
   live.typer = typer;
@@ -464,6 +470,7 @@ function detachLiveTyper(live) {
   live.typer.stop();
   live.typer = null;
   live.bubble = null;
+  lightRest();
 }
 
 /* Single completion path for a live turn (done / error / exception). Idempotent.
@@ -480,6 +487,7 @@ function finishLive(live) {
   if (typeof permissionsTurnEnded === 'function') permissionsTurnEnded(live);   // nothing left to answer
   if (typeof paintProjectActivity === 'function') paintProjectActivity();       // its project may be idle now
   if (live.threadId === state.activeId) {
+    lightRest();    // the lamp cools down (light.js)
     syncComposer();
     refreshActivityPanel();
     refreshGit();   // Claude may have changed files this turn
@@ -580,6 +588,8 @@ function handleLiveEvent(live, msg) {
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active);          // updates the Activity panel
+    // A step handed its result back: one soft breath of light at its chip.
+    if (live.bubble && msg.id) lightBeat(live.bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`));
     agentResultSeen(msg);                           // a sub-agent handed its report back
     if (live.typer) live.typer.setToolResult(msg);  // and folds output into the chip
   } else if (event === 'done') {
@@ -771,6 +781,7 @@ async function startTurn(threadId, msg, opts = {}) {
   // assistant placeholder + typewriter, attached when this thread is on screen
   // (attachLiveTyper shows the "thinking" indicator while events is empty)
   if (onScreen) {
+    lightTurnBegan(opts.from);   // the lamp rises from where the message left
     attachLiveTyper(live);
     if (opts.follow) glideFeed(); else maybeFollow();
   }

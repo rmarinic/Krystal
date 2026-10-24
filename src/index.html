@@ -141,6 +141,16 @@
 
   <!-- ===================== Main: conversation ====================== -->
   <main class="chat">
+    <!-- The living light behind the conversation: a resting room tone, a lamp
+         that sits where Claude is writing (green, or amber while a turn waits on
+         you), the floor under the composer, and the beats a finished step lets
+         out. Painted by app/light.js; only shown with Extra effects on. -->
+    <div class="chat-light" id="chat-light" aria-hidden="true">
+      <i class="cl-room"></i>
+      <i class="cl-floor"></i>
+      <div class="cl-lamp"><i class="cl-spill g"></i><i class="cl-spill a"></i><i class="cl-core g"></i><i class="cl-core a"></i></div>
+      <i class="cl-grain"></i>
+    </div>
     <header class="chat-header" id="chat-header">
       <div class="chat-head-main">
         <div class="chat-head-text">
@@ -587,6 +597,7 @@
   <script defer src="app/core.js"></script>
   <script defer src="app/icons.js"></script>
   <script defer src="app/motion.js"></script>
+  <script defer src="app/light.js"></script>
   <script defer src="app/sidebar.js"></script>
   <script defer src="app/chat.js"></script>
   <script defer src="app/projects.js"></script>

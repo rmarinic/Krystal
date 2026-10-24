@@ -1182,20 +1182,18 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .composer-att .att-x:hover { color: #ff8a8a; }
 @keyframes att-in { from { opacity: 0; transform: translateY(3px) scale(.96); } to { opacity: 1; transform: none; } }
 
-/* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
-   hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
-/* overflow-x: clip contains the backlight halo within the chat pane (so it never
+/* overflow-x: clip keeps the living light within the chat pane (so it never
    bleeds onto the sidebar); overflow-y stays visible so header pickers / the
    mention popup can still overflow vertically. */
 .chat { position: relative; overflow-x: clip; }
 
-/* ---- Ambient "backlight" glow behind the chat ----
-   A panel the width of the message column, sitting DIRECTLY behind the messages
-   and emitting a soft green glow OUTWARD from its edges — as if something is lit
-   behind the chat. The halo bleeds into the side gutters (and softly top/bottom),
-   making the container's edges read as backlit, not a random cloud. Kept faint so
-   it's atmosphere; gated by Extra effects (body.fx-on) and calmed for reduced-motion.
-   Left out of the lift below on purpose: the drop-hint keeps its own z-index (40). */
+/* ---- Living light behind the chat (app/light.js) ----
+   No backlight panel: light comes from where the work is. A faint, still room
+   tone; a lamp that sits behind the line Claude is writing (light.js moves it and
+   sets its brightness — green, or amber while a turn waits on you); the floor
+   under the composer, warmed by typing; and the soft beats a finished step lets
+   out. Everything is an edgeless radial falloff, so there is never a line for the
+   eye to find. Gated by Extra effects (body.fx-on). */
 .chat > .feed, .chat > .composer {
   position: relative; z-index: 1;
 }
@@ -1205,35 +1203,46 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .chat > .chat-header {
   position: relative; z-index: 3;
 }
-.chat::before {
-  content: ""; position: absolute; z-index: 0; pointer-events: none;
-  /* centred vertical panel, ~the message column's width. The header and the
-     composer are see-through now, so it runs under both and glows behind the
-     whole column rather than stopping short at where their bars used to end. */
-  left: 50%; transform: translateX(-50%);
-  top: 16px; bottom: 16px;
-  width: min(860px, 86%);
-  border-radius: 26px;
-  /* faint inner fill (the panel itself reads as lit) + an outward green halo */
-  background: radial-gradient(120% 100% at 50% 50%,
-    rgba(108,199,142,0.07), rgba(108,199,142,0.02) 58%, transparent 78%);
-  box-shadow:
-    0 0 55px 3px rgba(108,199,142,0.18),
-    0 0 130px 22px rgba(108,199,142,0.11),
-    0 0 230px 60px rgba(108,199,142,0.05);
+.chat-light {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
   opacity: 0; transition: opacity .6s ease;
 }
-body.fx-on .chat::before { opacity: 1; animation: chat-glow 8.5s ease-in-out infinite; }
-/* Pulse the backlight's intensity only — the panel never moves or resizes. */
-@keyframes chat-glow {
-  0%, 100% { opacity: .5; }
-  50%      { opacity: 1; }
+body.fx-on .chat-light { opacity: 1; }
+.chat-light i, .cl-lamp { position: absolute; display: block; pointer-events: none; }
+.cl-room {
+  left: 50%; top: 46%; width: 1400px; height: 900px; transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgba(108,199,142,0.03), transparent);
+}
+.cl-lamp { left: 50%; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; }
+.cl-lamp i { border-radius: 50%; transform: translate(-50%, -50%); }
+.cl-core { width: min(950px, 92vw); height: 300px;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.17), rgba(108,199,142,0.06) 55%, transparent); }
+.cl-spill { width: 1900px; height: 560px;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.055), transparent); }
+.cl-core.a { opacity: 0;
+  background: radial-gradient(closest-side, rgba(226,155,80,0.15), rgba(226,155,80,0.05) 55%, transparent); }
+.cl-spill.a { opacity: 0;
+  background: radial-gradient(closest-side, rgba(226,155,80,0.05), transparent); }
+.cl-floor {
+  left: 50%; bottom: -150px; width: min(1140px, 100%); height: 340px; transform: translateX(-50%); opacity: 0;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.16), rgba(108,199,142,0.05) 55%, transparent);
+}
+.cl-beat {
+  left: 50%; width: 1250px; height: 150px; opacity: 0;
+  background: radial-gradient(closest-side, rgba(108,199,142,0.15), rgba(108,199,142,0.04) 60%, transparent);
+}
+/* A fine, still grain: it breaks up the banding a dark green gradient shows on
+   most screens, and gives the light a little texture, like haze. */
+.cl-grain {
+  inset: 0; opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 @media (prefers-reduced-motion: reduce) {
-  .chat::before { transition: none; }
-  body.fx-on .chat::before { animation: none; opacity: .6; }
+  .chat-light { transition: none; }
 }
 
+/* ---- Drag-and-drop hint: a soft overlay across the chat pane while files
+   hover the window. Fades/rises in; snaps out via a short opacity fade. ---- */
 .drop-hint {
   position: absolute; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;

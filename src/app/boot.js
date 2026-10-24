@@ -12,7 +12,7 @@ api.setUiLanguage(window.I18N.getLang()).catch(() => {});
 api.setSuggestions(settingOn('promptSuggestions')).catch(() => {});
 updateSettingsBtn();
 scheduleLogoLife();
-applyExtraEffects();   // reflect the Extra effects setting onto the chat glow at boot
+applyExtraEffects();   // reflect the Extra effects setting onto the chat light at boot
 api.discordSetShareName(settingOn('discordShareName')).catch(() => {});
 if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();
