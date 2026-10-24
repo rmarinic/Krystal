@@ -245,7 +245,7 @@ check("every invoke() argument is one of the command's parameters", () => {
 });
 
 // Channels are left out: a call bound for another Krystal drops its Channel on
-// purpose (`compact` in core.js), and the host's dispatch supplies its own.
+// purpose (`compact` in api.js), and the host's dispatch supplies its own.
 check('every invoke() passes the arguments its command requires', () => {
   const bad = [];
   for (const c of invokeCalls()) {

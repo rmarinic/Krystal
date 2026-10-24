@@ -186,6 +186,7 @@ const stripComments = (src) =>
 
 function frontendCommands() {
   const core = stripComments(read('src', 'app', 'core.js'));
+  const apiSrc = stripComments(read('src', 'app', 'api.js'));
   const stream = stripComments(read('src', 'app', 'stream.js'));
   const localOnly = new Set(
     all(/'([a-z_]+)'/g, core.slice(core.indexOf('LOCAL_ONLY_COMMANDS = new Set(['),
@@ -193,7 +194,8 @@ function frontendCommands() {
   );
   // Everything the app can ask a backend to do, from the `api` wrapper and from
   // the one direct call outside it.
-  const used = new Set([...all(/invoke\('([a-z_]+)'/g, core), ...all(/invoke\('([a-z_]+)'/g, stream)]);
+  const used = new Set([...all(/invoke\('([a-z_]+)'/g, core), ...all(/invoke\('([a-z_]+)'/g, apiSrc),
+                        ...all(/invoke\('([a-z_]+)'/g, stream)]);
   return { used, localOnly };
 }
 
