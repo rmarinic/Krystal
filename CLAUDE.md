@@ -78,12 +78,31 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - For **every new user-facing string, add both EN and HR** — never leave one locale behind.
 - Keep **Croatian output gender-neutral**. Always use UTF-8 so č/ć/ž/š/đ are preserved exactly.
 
-## Motion & animation
-- **Every new feature/UI element should carry the app's clean, polished, *subtle* motion** where it's appropriate (opens/closes, hovers, state changes, transitions) — never ship a raw cut where a small animation fits.
-- Match the established style: short durations (~.15–.35s), gentle spring/ease curves (e.g. `cubic-bezier(.2,.9,.3,1.25)`), small offsets — taste over flash. Reuse existing helpers/patterns (`replayClass`, `openOverlay`/`closeOverlay`, the `.panel-swap`/`.list-swap` crossfades, `prefers-reduced-motion` guards) rather than inventing new ones.
-- **Always add a `@media (prefers-reduced-motion: reduce)` fallback** for any non-trivial animation.
-- Default state should be the *resting* state: don't let an animation hook (e.g. an expandable panel) change an element's collapsed size/footprint when idle.
-- **Restraint — don't go overboard.** Animate **one** thing calmly (usually a size/position slide), not a stack of properties at once. Never morph an element's **shape** (e.g. `border-radius` pill→box) *during* a size change — it reads as a weird springing/ellipse; let shape and width **snap** instead. Reserve springy/overshoot curves for tiny accents (a star pop), never for an open/close — use a plain `ease` there. When unsure, do less.
+## Feel, motion & fluidity
+**Fluidity is the point of this app.** Every feature should feel satisfying, alive and fluid. That comes from motion that *answers something*, not from more motion. Before shipping any UI, check it against these principles.
+
+**Principles**
+1. **Alive means responsive, not looping.** Motion must answer something real: your input, a state change, Claude's actual work. A loop that runs regardless (a breathing glow, a heartbeat on a timer) is a screensaver: within a minute the eye learns it and it becomes wallpaper or an irritant. If an ambient effect is truly needed, its rhythm comes from real data (the typer's reveal rate feeds the chat lamp; a beat fires on a real `tool_result`), and when it needs variation, use aperiodic noise (incommensurate sines), never a visible cycle.
+2. **Rest is still.** When nothing is happening, nothing moves, and that is what gives motion its meaning. Stillness is also a signal: a turn waiting on you holds perfectly still (amber), and a finished turn *settles*. rAF loops run only while something is happening and stop at rest.
+3. **Local, not global.** Motion happens where the thing happens: at the chip that finished, at the line being written, at the button you pressed. Never animate the whole page for a small event.
+4. **Every action gets an immediate response, and every result lands.** A press sinks (motion.js), sending lifts the message out of the composer, a finished chip draws its check, a count rolls to its new value, a reply ends with one soft sweep. Something should change within ~100ms of any input, and completion should be *felt*: small micro-rewards, never a fanfare.
+5. **Continuity, no teleports.** Things travel from where they came from: the message flies from the composer, the lamp rises from it, a project card grows into the chat, a re-sorted row slides to its new place. If an element changes place, show the path.
+6. **Asymmetric timing.** Catch fast, release slow: respond to input in ~100–200ms, let things settle in ~0.6–2s (the lamp cools like a filament). Short (~.15–.35s) for UI transitions; long, gentle tails only for ambient decay.
+7. **Light is a source, never an outline.** No box-shadow halos around panels: a shadow starts at a crisp edge and the eye finds the box. Use edgeless radial falloffs from a believable source, and a fine still grain where dark gradients would band.
+8. **Meaning is consistent.** Green = working/alive, amber = needs you, red = failed. Motion and colour carry the same meaning everywhere (sidebar, project cards, bell, light).
+9. **Restraint.** Animate **one** property calmly (usually a size/position slide or opacity), not a stack. Never morph **shape** (`border-radius` pill→box) during a size change; let shape snap. Springy/overshoot curves only for tiny accents (a star pop, a press release), plain `ease` for open/close. Rate-limit repeats (parallel results must not stack beats). Low amplitude. When unsure, do less.
+
+**Craft**
+- Reuse the shared helpers before inventing: `motion.js` (`motionOK`, press feel, `flipCapture`, `glideMark`, `rollNumber`, `flyFromComposer`, `morphInto`), `light.js`, `replayClass`, `openOverlay`/`closeOverlay`, the `.panel-swap`/`.list-swap` crossfades.
+- Animate `transform`/`opacity` only; no layout-thrashing properties per frame; no always-on `backdrop-filter` over animated content.
+- The default state is the *resting* state: an animation hook must not change an element's idle size/footprint.
+- **Always provide a reduced-motion fallback** (`@media (prefers-reduced-motion: reduce)` / `motionOK()`) that keeps the *information* (state, colour, position) but drops the movement. Ambient touches are also gated on Extra effects (`body.fx-on`).
+- Keep the logic of a living effect in a pure, testable step (like `lightStep`) and test its states, including "comes to rest".
+
+**Process for anything that's about feel**
+- **Prototype first, as an artifact, before touching the app.** Simulate the *real flow* (e.g. "Play a turn": typing → send → thinking → tools → streaming → done → rest) with toggles per idea and a strength slider. A static mock can't show whether something responds, so judge it in motion.
+- Start quieter than you think. If a direction is rejected twice, stop iterating on it: step back, research how great products do it, and propose from principles.
+- Name the *why* in comments next to the effect (what it answers and why it rests), as `light.js` and `motion.js` do.
 
 ## Verification (before considering work done)
 - Make sure it compiles: `cargo build`.
@@ -105,7 +124,8 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - ✅ Keep Croatian gender-neutral and UTF-8 clean.
 - ✅ Verify with `cargo build` + `tauri build`.
 - ✅ Keep changes small and in-style.
-- ✅ Give new UI the app's subtle, polished motion (with a reduced-motion fallback) where appropriate.
+- ✅ Make every feature feel fluid: motion that answers something, lands, and comes to rest (see *Feel, motion & fluidity*), with a reduced-motion fallback.
+- ❌ No looping ambient animation that ignores what's happening, and no glow drawn as an outline around a box.
 - ❌ **Never restrict Claude to a curated toolset** — keep full tool freedom in the app.
 - ❌ Don't introduce a frontend framework or bundler.
 - ❌ Don't cut a release without explicit approval.
