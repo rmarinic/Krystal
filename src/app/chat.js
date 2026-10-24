@@ -108,6 +108,11 @@ async function openThread(id, focusMid) {
   const saved = live && live.savedFrom
     ? t.messages.filter((m) => m.id < live.savedFrom)
     : t.messages;
+  // A `$` command run while that turn was going isn't part of it — the live view
+  // doesn't paint it, so it goes back in after the live reply, where it ran.
+  const sideRuns = live && live.savedFrom
+    ? t.messages.filter((m) => m.id >= live.savedFrom && m.role === 'assistant' && isShellSegments(m.segments))
+    : [];
 
   hydrateAgentRuns(id, saved);              // so sub-agent chips can open their run
   let ckpt = '';                            // the turn each reply belongs to (review.js)
@@ -128,6 +133,7 @@ async function openThread(id, focusMid) {
   if (live) {
     appendMessage('user', live.userText, live.userFiles, null);
     attachLiveTyper(live);
+    for (const m of sideRuns) appendMessage(m.role, m.text, m.files, m);
     state.activity = live.activity;
     state.activityOrch = live.orch || orchFromSegments(saved);
   } else {

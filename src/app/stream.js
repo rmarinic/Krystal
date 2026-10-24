@@ -61,11 +61,13 @@ els.input.addEventListener('keydown', (e) => {
 
 /* The `$` escape hatch: a leading `$` switches the composer to "shell mode",
  * where Enter runs the line as a shell command (in the project folder) instead
- * of messaging Claude. We light up the composer so the switch is unmistakable. */
+ * of messaging Claude. We light up the composer so the switch is unmistakable.
+ * It works mid-turn too: the command runs beside Claude, not through it, so
+ * there's nothing to wait for (the send button stays Stop; Enter runs it). */
 function isShellInput(v) { return /^\s*\$/.test(v || ''); }
 function shellCommandOf(v) { return (v || '').replace(/^\s*\$\s?/, ''); }
 function syncShellMode() {
-  const on = isShellInput(els.input.value) && !state.streaming;
+  const on = isShellInput(els.input.value);
   els.composer.classList.toggle('shell-mode', on);
 }
 /* The send button doubles as a stop button while a turn streams (when the
@@ -494,7 +496,6 @@ function syncComposer() {
   // real disabled state instead of a button that looks live and does nothing.
   els.compactBtn.disabled = canStop || !state.activeId;
   els.compactBtn.title = tr(canStop ? 'compact.btnTitleBusy' : 'compact.btnTitle');
-  syncShellMode();   // a streaming turn suppresses shell mode; refresh the badge
   refreshActivityBtn();
   // The queue strip words itself by whether a turn is running, and the queue
   // button only exists while one is — both follow the same flag.
@@ -766,9 +767,9 @@ async function send() {
   const hasAtts = typeof hasComposerAttachments === 'function' && hasComposerAttachments();
   if ((!text && !hasAtts) || !state.activeId || sendBusy) return;
 
-  // `$ …` runs a shell command directly, outside Claude — and not mid-turn.
+  // `$ …` runs a shell command directly, outside Claude — even mid-turn.
   if (isShellInput(raw)) {
-    if (!state.streaming) runShellCommand(shellCommandOf(raw).trim());
+    runShellCommand(shellCommandOf(raw).trim());
     return;
   }
 
