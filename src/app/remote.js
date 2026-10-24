@@ -266,6 +266,7 @@ function remoteTurnStarted(threadId, text) {
     // `openThread` adopts if you switch to it mid-turn.
     activity: onScreen ? state.activity : [],
     typer: null, bubble: null, finalText: null, finalized: false,
+    startedAt: Date.now(),   // the working line's clock counts from here
     remote: true,
   };
   state.live.set(threadId, live);

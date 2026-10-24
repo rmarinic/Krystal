@@ -37,6 +37,7 @@ function permissionAsked(live, msg) {
   if (queue.length === 1 && typeof notifyAway === 'function') {
     notifyAway(live.threadId, 'ask', msg.why || msg.detail || msg.target || msg.tool);
   }
+  if (live.typer) live.typer.waiting(true);   // the working line turns amber and still
   if (live.threadId === state.activeId) renderPermission();
   // It's waiting in a chat you can't see: the sidebar marks it, but a turn that
   // has silently stopped is worth saying out loud, once (notifications.js).
@@ -57,6 +58,7 @@ function permissionGone(live, id) {
   if (at < 0) return;
   queue.splice(at, 1);
   if (!queue.length) dropPermissionNote(live.threadId);
+  if (live.typer) live.typer.waiting(queue.length > 0);
   if (live.threadId === state.activeId) renderPermission();
   if (state.view === 'threads') renderSidebar();
   if (typeof paintProjectActivity === 'function') paintProjectActivity();

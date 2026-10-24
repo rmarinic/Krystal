@@ -11,14 +11,15 @@
  *     the one being written re-renders each frame), and the whole block is
  *     rendered once more when it closes (a tool action or the end of the turn);
  *   • each tool action becomes a chip that SPINS until its own result is back;
+ *   • one working line under it says what's going on until the reply lands,
+ *     however quiet the stream goes (working.js);
  *   • the same segment shapes are persisted server-side, so a reload rebuilds
  *     this exact transcript via renderSegments(). */
-function makeTyper(bubble) {
+function makeTyper(bubble, opts = {}) {
   let pending = '';        // unrevealed tokens for the current text block
   let shown = '';          // revealed text for the current text block
   let textEl = null;       // DOM node of the open (streaming) text block, or null
   let chipEl = null;       // DOM node of the current working tool chip, or null
-  let thinkEl = null;      // DOM node of the transient "thinking" indicator
   let caretEl = null;      // the open text block's caret, after the last thing written
   let liveMd = null;       // the open text block's live markdown (livemd.js)
   let finished = false;
@@ -26,8 +27,8 @@ function makeTyper(bubble) {
   let finalText = null;    // canonical text, used only as a no-stream fallback
   let errMsg = null;
   let raf = null, last = 0;
+  const workLine = makeWorkLine(bubble, opts.since);   // "still going" (working.js)
 
-  function clearThinking() { if (thinkEl) { thinkEl.remove(); thinkEl = null; } }
   /* A chip is done when its own result is back, not when the next thing starts:
    * Claude often runs several tools at once, and each should keep spinning until
    * it returns. So moving on only lets go of the chip; `setToolResult` (or the
@@ -98,7 +99,7 @@ function makeTyper(bubble) {
     if ((finished || errMsg) && !pending) {
       closeTextBlock();
       settleChip();
-      clearThinking();
+      workLine.end();
       // Nothing more is coming: a chip still waiting on its result never gets one.
       bubble.querySelectorAll('.action-chip.working[data-id]').forEach((c) => chipDone(c, quietEnd));
       // No streamed text at all (answer came only via the final result)? Show it.
@@ -134,13 +135,14 @@ function makeTyper(bubble) {
     thinking() {
       lightMode('thinking');
       mascotMode('thinking');
-      if (!thinkEl && !textEl && !chipEl) { thinkEl = renderThinkingChip(); bubble.appendChild(thinkEl); }
+      workLine.set({ phase: 'thinking' });
       maybeFollow();
     },
     push(t, instant) {
       lightMode('streaming');
       mascotMode('streaming');
-      clearThinking();
+      workLine.set({ phase: 'writing' });
+      workLine.beat();
       if (!textEl) openTextBlock();   // text after a chip starts a fresh block
       if (instant) {                  // replay path: reveal buffered backlog without re-typing
         shown += t;
@@ -154,8 +156,11 @@ function makeTyper(bubble) {
     setTool(seg) {
       lightMode('working');
       mascotMode('working');
-      clearThinking();
       const name = seg.name || '';
+      // A new call starts its size from nothing; its own second event keeps it.
+      const sameCall = seg.id && seg.id === workLine.toolId;
+      workLine.set({ phase: 'tool', tool: toolLabel(name), toolId: seg.id || '', ...(sameCall ? {} : { chars: 0 }) });
+      workLine.beat();
       // Rich tools (AskUserQuestion, ExitPlanMode) arrive with their payload on
       // the detailed event — swap the transient chip for the rendered card.
       const card = specialToolCard(seg);
@@ -195,9 +200,26 @@ function makeTyper(bubble) {
       if (!chip) return;
       setChipOutput(chip, msg.output, msg.isError);
       chipDone(chip, quiet);
+      // Every step is back: Claude is reading what came of it.
+      if (workLine.phase === 'tool' && !bubble.querySelector('.action-chip.working')) {
+        workLine.set({ phase: 'thinking' });
+      }
+      workLine.beat();
     },
+    // Another stretch of a tool call's input has been written (an artifact, a
+    // long file): the working line shows how far it has got.
+    toolInput(msg) {
+      if (!msg || !msg.id || msg.id !== workLine.toolId) return;
+      workLine.set({ chars: msg.chars || 0 });
+      workLine.beat();
+    },
+    // The turn is (or is no longer) stopped on a permission prompt.
+    waiting(on) { workLine.set({ waiting: !!on }); },
     // Detach from the render loop without finalizing — the bubble is about to be
     // removed (thread switch); the underlying live turn keeps accumulating.
-    stop() { if (raf != null) { cancelAnimationFrame(raf); raf = null; } },
+    stop() {
+      if (raf != null) { cancelAnimationFrame(raf); raf = null; }
+      workLine.detach();
+    },
   };
 }

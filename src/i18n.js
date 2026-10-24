@@ -461,7 +461,11 @@
       'tasks.syncedOpen': 'Show tasks',
 
       /* ---- stream chips / tools ---- */
-      'chip.thinking': 'Thinking…',
+      'work.thinking': 'Thinking',
+      'work.writing': 'Writing',
+      'work.working': 'Working',
+      'work.waiting': 'Waiting for you',
+      'work.size': '{n} KB so far',
       'chip.expandTitle': 'Click to see what this did',
       'chip.outputLabel': 'Output',
       'chip.noOutput': 'No output captured.',
@@ -1455,7 +1459,11 @@
       'tasks.syncedOpen': 'Prikaži zadatke',
 
       /* ---- stream chips / tools ---- */
-      'chip.thinking': 'Razmišljam…',
+      'work.thinking': 'Razmišlja',
+      'work.writing': 'Piše',
+      'work.working': 'Radi',
+      'work.waiting': 'Čeka tebe',
+      'work.size': 'dosad {n} KB',
       'chip.expandTitle': 'Klikni da vidiš što je ovo napravilo',
       'chip.outputLabel': 'Izlaz',
       'chip.noOutput': 'Nema zabilježenog izlaza.',

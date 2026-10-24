@@ -10,7 +10,7 @@
  * Load order (see index.html; tests/boot.test.js loads them all in this order):
  *   core → api → utils → lightbox → icons → motion → light → mascot → titlebar → sidebar → chat → projects → starters → controls →
  *   describe → activity → agents → search → messages → review → artifacts → livemd →
- *   composer → feed → typer → stream → permissions → mentions → skills → attachments → queue →
+ *   composer → feed → working → typer → stream → permissions → mentions → skills → attachments → queue →
  *   wizard → localization → settings → header → tasks → git → run → links → logo → usage →
  *   orchestrator → pins → remote → notifications → palette → find → hotkeys → boot
  *

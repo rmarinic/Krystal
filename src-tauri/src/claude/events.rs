@@ -8,6 +8,12 @@
 
 use super::*;
 
+/// How often a tool call's input reports its size while it streams in: every
+/// this many characters (`tool_input`). An artifact or a long Write is written
+/// as the call's input, which can take minutes with nothing else on the wire —
+/// this is what lets the working line under the reply show it moving.
+const TOOL_INPUT_STEP: usize = 2000;
+
 /// A tool call whose input is still streaming in, by its content-block index.
 struct ToolBlock {
     name: String,
@@ -227,7 +233,13 @@ impl TurnState {
         match field("type").unwrap_or("") {
             "input_json_delta" => {
                 if let (Some(tb), Some(pj)) = (self.tool_blocks.get_mut(&index), field("partial_json")) {
+                    let before = tb.input.len() / TOOL_INPUT_STEP;
                     tb.input.push_str(pj);
+                    if tb.input.len() / TOOL_INPUT_STEP > before && !tb.id.is_empty() {
+                        let _ = self.channel.send(json!({
+                            "type": "tool_input", "id": tb.id, "chars": tb.input.len(),
+                        }));
+                    }
                 }
             }
             "text_delta" => {
@@ -700,6 +712,30 @@ mod tests {
         assert!(sent.iter().any(|e| e["type"] == "tool_result" && e["output"] == "hello"));
         assert!(sent.iter().any(|e| e["type"] == "suggestion" && e["text"] == "Now summarise it"));
         assert!(!kinds.contains(&"error"));
+    }
+
+    /// A long tool input (an artifact being written) reports its size as it
+    /// grows — once per `TOOL_INPUT_STEP`, not once per fragment.
+    #[test]
+    fn a_long_tool_input_reports_its_size_as_it_streams() {
+        let (channel, seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        let se = |event: Value| json!({ "type": "stream_event", "event": event });
+        let mut evs = vec![se(json!({ "type": "content_block_start", "index": 0,
+            "content_block": { "type": "tool_use", "name": "Write", "id": "toolu_w" } }))];
+        let piece = "x".repeat(500);
+        for _ in 0..10 {
+            evs.push(se(json!({ "type": "content_block_delta", "index": 0,
+                "delta": { "type": "input_json_delta", "partial_json": piece } })));
+        }
+        route_all(&evs, &mut turn);
+        let sent = seen.lock().unwrap();
+        let sizes: Vec<u64> = sent
+            .iter()
+            .filter(|e| e["type"] == "tool_input" && e["id"] == "toolu_w")
+            .filter_map(|e| e["chars"].as_u64())
+            .collect();
+        assert_eq!(sizes, vec![2000, 4000]);
     }
 
     #[test]

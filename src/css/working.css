@@ -1,0 +1,45 @@
+/* working.css — the working line under a reply still being made (app/working.js).
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+/* Lined up with the reply's text, one quiet row: a dot, what's happening, and
+ * the time. The dot rests still; it brightens once on each real event (.beat).
+ * Thinking keeps the old slow shimmer on its word — the only stretch with no
+ * other sign of life on screen. Waiting on you: amber, and nothing moves. */
+.work-line {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0 0; padding-left: 29px;
+  font-size: 12.5px; color: var(--accent-3);
+  transition: opacity .3s ease;
+}
+.work-line.out { opacity: 0; }
+.wl-dot {
+  flex: none; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%;
+  background: var(--accent-2); opacity: .75;
+}
+.wl-dot.beat { animation: wl-beat .7s ease-out; }
+@keyframes wl-beat {
+  0%   { opacity: 1; transform: scale(1.35); }
+  100% { opacity: .75; transform: scale(1); }
+}
+.wl-meta { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+.wl-meta:empty { display: none; }
+
+.work-line[data-tone="think"] .wl-label {
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg,
+    rgba(143,224,170,0.6) 0%, rgba(143,224,170,0.6) 38%, var(--fg) 50%,
+    rgba(143,224,170,0.6) 62%, rgba(143,224,170,0.6) 100%);
+  background-size: 250% 100%;
+  animation: think-shimmer 2s linear infinite;
+}
+@keyframes think-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+.work-line[data-tone="wait"] { color: var(--warn); }
+.work-line[data-tone="wait"] .wl-dot { background: var(--warn); opacity: 1; animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .work-line { transition: none; }
+  .wl-dot.beat, .work-line[data-tone="think"] .wl-label { animation: none; }
+  .work-line[data-tone="think"] .wl-label { color: var(--accent-3); background: none; }
+}

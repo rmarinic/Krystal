@@ -88,7 +88,7 @@ function syncComposer() {
 function attachLiveTyper(live) {
   const aDiv = appendMessage('assistant', '', null);
   lightAnchor(aDiv);   // before the replay, so a re-attached lamp appears in place
-  const typer = makeTyper(aDiv.querySelector('.bubble'));
+  const typer = makeTyper(aDiv.querySelector('.bubble'), { since: live.startedAt });
   live.bubble = aDiv;
   live.typer = typer;
   for (const ev of live.events) {
@@ -103,6 +103,8 @@ function attachLiveTyper(live) {
     typer.setToolResult({ id, output: live.outputs[id].output, isError: live.outputs[id].isError }, true);
   }
   refreshAgentChips();   // rebuilt sub-agent chips pick their tally back up
+  if (live.toolInput) typer.toolInput(live.toolInput);   // how far a long tool call has got
+  if (live.permissions && live.permissions.length) typer.waiting(true);
   if (!live.events.length) typer.thinking();
   return typer;
 }
@@ -223,6 +225,11 @@ function handleLiveEvent(live, msg) {
     if (isAgentTool(msg.name)) agentTaskSeen(live.threadId, msg);
     if (live.typer) live.typer.setTool(msg);
     if (live.typer) mascotTool(msg);   // the face reacts to the new step (mascot.js)
+  } else if (event === 'tool_input') {
+    // A long tool call (an artifact, a big file) is still being written; its
+    // size so far keeps the working line under the reply moving (working.js).
+    live.toolInput = msg;
+    if (live.typer) live.typer.toolInput(msg);
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active, live);    // updates the Activity panel
@@ -415,6 +422,7 @@ async function startTurn(threadId, msg, opts = {}) {
     threadId, userText: text, userFiles: files,
     events: [], activity: onScreen ? state.activity : (opts.activity || []), outputs: {},
     typer: null, bubble: null, finalText: null, finalized: false,
+    startedAt: Date.now(),   // the working line's clock counts from here
   };
   state.live.set(threadId, live);
   if (typeof liveTurnStarted === 'function') liveTurnStarted(live);   // which project it is working in

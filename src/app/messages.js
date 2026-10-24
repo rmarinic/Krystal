@@ -599,17 +599,6 @@ function setChipOutput(chip, output, isError) {
 }
 
 // Transient "thinking" indicator (not persisted) shown before the first token.
-function renderThinkingChip() {
-  const el = document.createElement('div');
-  el.className = 'action-chip working thinking';
-  el.innerHTML =
-    '<div class="chip-row">' +
-    '<span class="chip-status" aria-hidden="true"></span>' +
-    `<span class="chip-label">${tr('chip.thinking')}</span>` +
-    '</div>';
-  return el;
-}
-
 /* What the Copy button on a reply puts on the clipboard: what Claude *wrote*, as
  * the markdown it wrote it in, without the action chips between the paragraphs.
  * Takes saved segments (`text` = one block each) or a live turn's events
