@@ -845,7 +845,7 @@ async fn dispatch<R: Runtime>(
         "list_threads" => as_json(commands::list_threads(st(), arg_opt_str(a, "project"))),
         "get_thread" => commands::get_thread(st(), arg_str(a, "id")),
         "create_thread" => commands::create_thread(st(), arg_str(a, "cwd")),
-        "branch_thread" => commands::branch_thread(st(), arg_str(a, "id")),
+        "branch_thread" => commands::branch_thread(st(), arg_str(a, "id"), arg_opt_i64(a, "messageId")),
         "rewind_files" => {
             commands::rewind_files(st(), arg_str(a, "threadId"), arg_str(a, "ckpt"), arg_opt_bool(a, "dryRun")).await
         }

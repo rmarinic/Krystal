@@ -538,6 +538,20 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 .msg .role .msg-copy:hover { opacity: 1; color: var(--fg); transform: scale(1.12); }
 .msg .role .msg-copy.copied { opacity: 1; color: var(--accent-3); transform: scale(1); }
 
+/* ---- Branch from this message ---- */
+/* The same quiet hover affordance; it turns the branch green (alive) on hover. */
+.msg .role .msg-fork {
+  cursor: pointer; background: none; border: none; padding: 0 2px;
+  color: var(--fg-dim); line-height: 0; display: inline-flex;
+  opacity: 0; transform: scale(.9);
+  transition: opacity .14s, transform .14s, color .12s;
+}
+.msg .role .msg-fork .ui-ico { width: 14px; height: 14px; }
+.msg:hover .role .msg-fork,
+.msg .role .msg-fork:focus-visible { opacity: .55; transform: scale(1); }
+.msg .role .msg-fork:hover { opacity: 1; color: var(--accent-2); transform: scale(1.12); }
+.msg .role .msg-fork:disabled { opacity: 1; color: var(--accent-2); cursor: progress; }
+
 /* Collapse + fade a message out as it's removed. */
 .msg.removing {
   height: 0 !important; opacity: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0;
@@ -546,7 +560,7 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
     padding .24s ease, transform .24s ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .msg .role .msg-del, .msg .role .msg-copy { transition: opacity .01s; transform: none; }
+  .msg .role .msg-del, .msg .role .msg-copy, .msg .role .msg-fork { transition: opacity .01s; transform: none; }
   .msg.removing { transition: none; }
 }
 

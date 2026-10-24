@@ -473,10 +473,16 @@ fn branch_title(source: Option<&str>) -> String {
 }
 
 /// Assemble the seed for a branched thread: the source's own carried summary (if
-/// it had one) followed by its transcript, so the branch's first turn continues
-/// seamlessly even though the underlying Claude session can't be forked. Bounded
-/// to a sane size (keeps the most recent slice, like the #-reference context).
-fn build_branch_seed(conn: &Connection, source_id: &str, prior_seed: Option<&str>) -> Option<String> {
+/// it had one) followed by its transcript up to `through` (a message row id;
+/// `None` = all of it), so the branch's first turn continues seamlessly even
+/// though the underlying Claude session can't be forked. Bounded to a sane size
+/// (keeps the most recent slice, like the #-reference context).
+fn build_branch_seed(
+    conn: &Connection,
+    source_id: &str,
+    prior_seed: Option<&str>,
+    through: Option<i64>,
+) -> Option<String> {
     const MAX_CHARS: usize = 48_000;
     let mut body = String::new();
     if let Some(s) = prior_seed {
@@ -485,7 +491,7 @@ fn build_branch_seed(conn: &Connection, source_id: &str, prior_seed: Option<&str
             body.push_str("\n\n");
         }
     }
-    for (role, text) in recent_messages(conn, source_id, 2000) {
+    for (role, text) in messages_through(conn, source_id, through, 2000) {
         let who = if role == "user" { "User" } else { "Assistant" };
         body.push_str(who);
         body.push_str(": ");
@@ -505,13 +511,56 @@ fn build_branch_seed(conn: &Connection, source_id: &str, prior_seed: Option<&str
     }
 }
 
+/// Where a branch is cut from its source. `through` is the last message row it
+/// keeps (`None` = the whole transcript — the header's Branch button).
+///
+/// Branching *from a message* (its own button in the transcript) means:
+/// - from a **reply**: everything up to and including that reply;
+/// - from **your message**: everything before it, and the message itself comes
+///   back as `draft` so it can be reworded and sent down the new branch — the
+///   "what if I'd asked that differently" case.
+#[derive(Debug, PartialEq)]
+pub struct BranchCut {
+    pub through: Option<i64>,
+    pub draft: Option<String>,
+}
+
+/// Work out the cut for branching `source_id` at message `at` (see `BranchCut`).
+/// `None` when that message isn't one of this chat's.
+pub fn branch_cut(conn: &Connection, source_id: &str, at: i64) -> Option<BranchCut> {
+    let (role, text) = conn
+        .query_row(
+            "SELECT role,text FROM messages WHERE id = ?1 AND thread_id = ?2",
+            params![at, source_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?.unwrap_or_default())),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    if role != "user" {
+        return Some(BranchCut { through: Some(at), draft: None });
+    }
+    // Row ids are shared by every chat, so "before this one" is this chat's
+    // previous row — or none at all when it opened the chat.
+    let prev: Option<i64> = conn
+        .query_row(
+            "SELECT MAX(id) FROM messages WHERE thread_id = ?1 AND id < ?2",
+            params![source_id, at],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
+    Some(BranchCut { through: Some(prev.unwrap_or(0)), draft: Some(text) })
+}
+
 /// Fork a conversation: create a new thread in the same folder that starts as a
-/// copy of `source_id` — same settings and full transcript — but with its own
-/// fresh Claude session. The prior conversation is folded into the new thread's
-/// `seed` so Claude keeps full context on the first branched turn (the CLI
-/// session itself can't be forked, so we reconstruct context the same way a
-/// compaction summary is carried forward). The original thread is untouched.
-pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
+/// copy of `source_id` — same settings and its transcript up to `through` (a
+/// message row id, inclusive; `None` = all of it) — but with its own fresh
+/// Claude session. The kept conversation is folded into the new thread's `seed`
+/// so Claude keeps full context on the first branched turn (the CLI session
+/// itself can't be forked, so we reconstruct context the same way a compaction
+/// summary is carried forward). The original thread is untouched.
+pub fn branch(conn: &Connection, source_id: &str, through: Option<i64>) -> Option<Value> {
     let (title, cwd, model, mode, orch, orch_sub, effort, seed) = conn
         .query_row(
             "SELECT title,cwd,model,mode,orch,orch_sub,effort,seed FROM threads WHERE id = ?1",
@@ -533,7 +582,22 @@ pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
         .ok()
         .flatten()?;
 
-    let branch_seed = build_branch_seed(conn, source_id, seed.as_deref());
+    // A pending compaction summary speaks for the conversation *up to the
+    // compaction*. A branch cut before that point would inherit the talk it was
+    // cut away from — and the messages it keeps are all still here to seed from.
+    let seed = seed.filter(|_| match through {
+        None => true,
+        Some(t) => conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE thread_id = ?1 AND compacted = 1 AND id > ?2",
+                params![source_id, t],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|n| n == 0)
+            .unwrap_or(false),
+    });
+
+    let branch_seed = build_branch_seed(conn, source_id, seed.as_deref(), through);
     let new_id = uuid::Uuid::new_v4().to_string();
     let t = now();
     let new_title = branch_title(title.as_deref());
@@ -546,13 +610,13 @@ pub fn branch(conn: &Connection, source_id: &str) -> Option<Value> {
     )
     .ok()?;
 
-    // Copy the full transcript verbatim (files/segments columns carried across
+    // Copy the kept transcript verbatim (files/segments columns carried across
     // as-is) so the branch renders identically. Favorites stay with the original.
     let _ = conn.execute(
         "INSERT INTO messages (thread_id,role,text,files,segments,compacted,favorite,ts)
          SELECT ?1, role, text, files, segments, compacted, 0, ts
-         FROM messages WHERE thread_id = ?2 ORDER BY id ASC",
-        params![new_id, source_id],
+         FROM messages WHERE thread_id = ?2 AND id <= ?3 ORDER BY id ASC",
+        params![new_id, source_id, through.unwrap_or(i64::MAX)],
     );
 
     get_thread(conn, &new_id)
@@ -825,11 +889,17 @@ pub fn add_shell_run(conn: &Connection, id: &str, command: &str, output: &str, c
 }
 
 pub fn recent_messages(conn: &Connection, id: &str, n: i64) -> Vec<(String, String)> {
+    messages_through(conn, id, None, n)
+}
+
+/// The last `n` messages of a thread up to row `through` (inclusive; `None` = the
+/// end), oldest first.
+fn messages_through(conn: &Connection, id: &str, through: Option<i64>, n: i64) -> Vec<(String, String)> {
     let mut stmt = conn
-        .prepare("SELECT role,text FROM messages WHERE thread_id = ?1 ORDER BY id DESC LIMIT ?2")
+        .prepare("SELECT role,text FROM messages WHERE thread_id = ?1 AND id <= ?2 ORDER BY id DESC LIMIT ?3")
         .unwrap();
     let rows = stmt
-        .query_map(params![id, n], |r| {
+        .query_map(params![id, through.unwrap_or(i64::MAX), n], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })
         .unwrap();
@@ -1777,5 +1847,83 @@ mod tests {
         set_run_command(&conn, "/new", "left over from before");
         move_project(&conn, &id, "/new").expect("should move");
         assert_eq!(get_run_command(&conn, "/new").as_deref(), Some("npm run dev"));
+    }
+
+    /// A chat with two finished turns; returns the four row ids in order
+    /// (ask 1, reply 1, ask 2, reply 2).
+    fn two_turns(conn: &Connection, id: &str) -> [i64; 4] {
+        let mut ids = vec![];
+        for (ask, reply) in [("first ask", "first reply"), ("second ask", "second reply")] {
+            let uid = begin_turn(conn, id, ask, &[], "");
+            let (_u, _t, aid, _ts) =
+                finish_turn(conn, id, uid, None, ask, reply, &[], Some("s"), &None, 0.0);
+            ids.extend([uid, aid]);
+        }
+        [ids[0], ids[1], ids[2], ids[3]]
+    }
+
+    fn texts(conn: &Connection, id: &str) -> Vec<String> {
+        rows(conn, id).iter().map(|m| m["text"].as_str().unwrap().to_string()).collect()
+    }
+
+    #[test]
+    fn branching_from_a_reply_keeps_everything_through_it() {
+        let conn = db();
+        let id = thread(&conn);
+        let [_, r1, _, _] = two_turns(&conn, &id);
+
+        let cut = branch_cut(&conn, &id, r1).unwrap();
+        assert_eq!(cut, BranchCut { through: Some(r1), draft: None });
+        let b = branch(&conn, &id, cut.through).unwrap();
+        let bid = id_of(&b);
+        assert_eq!(texts(&conn, &bid), ["first ask", "first reply"]);
+        // Claude is seeded with exactly what the branch shows, nothing after it.
+        let seed = b["seed"].as_str().unwrap();
+        assert!(seed.contains("first reply") && !seed.contains("second"));
+        // The original is untouched.
+        assert_eq!(texts(&conn, &id).len(), 4);
+    }
+
+    #[test]
+    fn branching_from_your_message_stops_before_it_and_hands_it_back() {
+        let conn = db();
+        let id = thread(&conn);
+        let [a1, r1, a2, _] = two_turns(&conn, &id);
+
+        let cut = branch_cut(&conn, &id, a2).unwrap();
+        assert_eq!(cut, BranchCut { through: Some(r1), draft: Some("second ask".into()) });
+        let bid = id_of(&branch(&conn, &id, cut.through).unwrap());
+        assert_eq!(texts(&conn, &bid), ["first ask", "first reply"]);
+
+        // From the very first message there is nothing before it: an empty
+        // branch with the same settings, and that message to reword.
+        let cut = branch_cut(&conn, &id, a1).unwrap();
+        assert_eq!(cut.draft.as_deref(), Some("first ask"));
+        let b = branch(&conn, &id, cut.through).unwrap();
+        assert!(texts(&conn, &id_of(&b)).is_empty());
+        assert!(b["seed"].is_null());
+    }
+
+    #[test]
+    fn a_branch_cannot_be_cut_at_another_chats_message() {
+        let conn = db();
+        let id = thread(&conn);
+        let other = thread(&conn);
+        let [_, r1, _, _] = two_turns(&conn, &other);
+        assert!(branch_cut(&conn, &id, r1).is_none());
+    }
+
+    #[test]
+    fn a_branch_cut_before_a_compaction_leaves_its_summary_behind() {
+        let conn = db();
+        let id = thread(&conn);
+        let [_, r1, _, _] = two_turns(&conn, &id);
+        compact(&conn, &id, "SUMMARY of both turns");
+
+        let early = branch(&conn, &id, Some(r1)).unwrap();
+        assert!(!early["seed"].as_str().unwrap().contains("SUMMARY"));
+        // The whole-chat branch still carries it.
+        let whole = branch(&conn, &id, None).unwrap();
+        assert!(whole["seed"].as_str().unwrap().contains("SUMMARY"));
     }
 }

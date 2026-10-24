@@ -351,7 +351,7 @@ const api = {
   threads(project) { return invoke('list_threads', { project }); },
   thread(id) { return invoke('get_thread', { id }); },
   create(cwd) { return invoke('create_thread', { cwd }); },
-  branch(id) { return invoke('branch_thread', { id }); },
+  branch(id, messageId) { return invoke('branch_thread', { id, messageId: messageId || null }); },
   remove(id) { return invoke('delete_thread', { id }); },
   rename(id, title) { return invoke('rename_thread', { id, title }); },
   config() { return invoke('get_config'); },

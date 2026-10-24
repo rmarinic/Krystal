@@ -378,12 +378,18 @@ function appendMessage(role, text, files, meta) {
   const del = (meta && meta.id)
     ? `<button class="msg-del" title="${tr('msg.deleteTitle')}" aria-label="${tr('msg.delete')}">${TRASH_ICON}</button>`
     : '';
+  // Branch the chat from this point (controls.js `doBranch`). From a reply the
+  // branch keeps it; from your own message it stops just before it and hands
+  // the message back to the composer to be asked differently. Saved rows only.
+  const fork = (meta && meta.id)
+    ? `<button class="msg-fork" title="${tr(role === 'user' ? 'fork.fromAskTitle' : 'fork.fromReplyTitle')}" aria-label="${tr('fork.fromHere')}">${icon('branch')}</button>`
+    : '';
   // A turn the app never got to finish (closed mid-answer). What was written is
   // kept rather than dropped, and says so.
   const cut = (meta && meta.partial)
     ? `<div class="msg-cut" title="${escapeHtml(tr('msg.interruptedTip'))}">${escapeHtml(tr('msg.interrupted'))}</div>`
     : '';
-  div.innerHTML = `<div class="role">${roleLabel}${star}${copy}${del}</div>${chips}<div class="bubble"></div>${cut}`;
+  div.innerHTML = `<div class="role">${roleLabel}${star}${copy}${fork}${del}</div>${chips}<div class="bubble"></div>${cut}`;
   const bubble = div.querySelector('.bubble');
   if (role === 'assistant') {
     if (segs && segs.length) {
@@ -402,6 +408,8 @@ function appendMessage(role, text, files, meta) {
   div.querySelector('.msg-copy').onclick = () => copyFromButton(div.querySelector('.msg-copy'), messageCopyText(div), COPY_ICON);
   const delBtn = div.querySelector('.msg-del');
   if (delBtn) delBtn.onclick = () => deleteMessage(div);
+  const forkBtn = div.querySelector('.msg-fork');
+  if (forkBtn) forkBtn.onclick = () => doBranch(div);
   els.feed.appendChild(div);
   if (files && files.length) loadFileChipThumbs(div);
   return div;

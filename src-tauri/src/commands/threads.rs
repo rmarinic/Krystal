@@ -47,10 +47,22 @@ pub fn create_thread(state: State<'_, AppState>, cwd: String) -> CmdResult {
 /// project that starts as an exact copy (settings + transcript) but with its own
 /// fresh Claude session and the prior conversation folded into its seed for
 /// context. The original is left untouched. Returns the new thread.
+///
+/// With `message_id` the branch starts from that message instead of the end
+/// (see `db::BranchCut`): from a reply it keeps everything through it, from one
+/// of the user's own messages everything before it — and hands that message
+/// back as the thread's `draft`, for the composer to offer up for rewording.
 #[tauri::command]
-pub fn branch_thread(state: State<'_, AppState>, id: String) -> CmdResult {
+pub fn branch_thread(state: State<'_, AppState>, id: String, message_id: Option<i64>) -> CmdResult {
     let conn = state.db();
-    let thread = db::branch(&conn, &id).ok_or("could not branch this chat")?;
+    let cut = match message_id {
+        Some(mid) => db::branch_cut(&conn, &id, mid).ok_or("that message is no longer in this chat")?,
+        None => db::BranchCut { through: None, draft: None },
+    };
+    let mut thread = db::branch(&conn, &id, cut.through).ok_or("could not branch this chat")?;
+    if let Some(draft) = cut.draft {
+        thread["draft"] = Value::String(draft);
+    }
     if let Some(cwd) = thread.get("cwd").and_then(|c| c.as_str()) {
         db::touch_project(&conn, cwd); // keep the project list ordered by recent use
     }

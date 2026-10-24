@@ -341,34 +341,49 @@ els.compactBtn.onclick = () => doCompact();
  *
  * Works mid-reply too (streams are per-thread and keep running when you switch
  * away): the branch simply starts from everything before the turn still in
- * flight, which the done-tip spells out. */
-async function doBranch() {
+ * flight, which the done-tip spells out.
+ *
+ * `fromMsg` (a message's own branch button) cuts the copy at that message
+ * instead of the end — see `branch_thread`. Branching from one of your own
+ * messages stops just before it and puts it back in the composer, so the new
+ * branch is that question asked again, differently. */
+async function doBranch(fromMsg) {
   if (!state.activeId || els.branchBtn.disabled) return;
-  const midTurn = state.streaming;
+  const mid = fromMsg ? Number(fromMsg.dataset.mid) || null : null;
+  const midTurn = state.streaming && !mid;
   // Nothing to fork from an empty chat — nudge instead of making a blank copy.
   if (!els.feed.querySelector('.msg')) {
     showTip({ key: 'status', icon: 'branch', label: tr('fork.emptyLabel'), body: tr('fork.emptyBody') });
     return;
   }
+  const forkBtn = fromMsg && fromMsg.querySelector('.msg-fork');
   els.branchBtn.disabled = true;
-  replayClass(els.branchBtn, 'sprouting', 900);     // a gentle "sprout" pulse on press
+  if (forkBtn) forkBtn.disabled = true;
+  else replayClass(els.branchBtn, 'sprouting', 900);   // a gentle "sprout" pulse on press
   els.branchBtn.textContent = tr('fork.working');
   try {
-    const t = await api.branch(state.activeId);
+    const t = await api.branch(state.activeId, mid);
     if (!t || !t.id) throw new Error(tr('fork.failBody'));
     branchedThreads.add(t.id);                       // meter labels it "branched", not "compacted"
     justAddedThreadId = t.id;                        // sidebar pops + glows the new row
+    if (t.draft) saveDraft(t.id, t.draft);           // openThread puts it in the composer
     await loadThreads();                             // it appears at the top of the list
     await openThread(t.id);                          // switch into the branch…
     replayClass(els.feed, 'branch-switch', 900);     // …with a calm settle of the copied thread
-    showTip({ key: 'status', icon: 'branch', label: tr('fork.doneLabel'),
-      body: tr(midTurn ? 'fork.doneBodyLive' : 'fork.doneBody') });
+    if (t.draft) {
+      const end = els.input.value.length;            // ready to reword: caret at the end
+      els.input.setSelectionRange(end, end);
+    }
+    const body = !mid ? (midTurn ? 'fork.doneBodyLive' : 'fork.doneBody')
+      : (t.draft ? 'fork.doneBodyAsk' : 'fork.doneBodyReply');
+    showTip({ key: 'status', icon: 'branch', label: tr('fork.doneLabel'), body: tr(body) });
   } catch (e) {
     showTip({ key: 'status', cls: 'high', icon: 'alert', label: tr('fork.failLabel'),
       body: escapeHtml(String(e.message || e)) });
   } finally {
     els.branchBtn.disabled = false;
     els.branchBtn.textContent = tr('fork.btn');
+    if (forkBtn) forkBtn.disabled = false;
   }
 }
 els.branchBtn.onclick = () => doBranch();
