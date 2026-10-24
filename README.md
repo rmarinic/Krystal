@@ -49,8 +49,13 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   you Tab through.
 - **Reference other chats with `#`**, run a **skill with `/`**, and **paste or drop** files and
   screenshots straight into the message box.
-- **Branch** a conversation into a copy, **Compact** a long one into a summary, or **Clear** it.
-  Very long chats tidy their own context automatically.
+- **Run a command yourself with `$`.** Start a message with `$` and it runs in the project
+  folder.
+- **Branch from any message.** From one of Claude's replies, the new chat keeps the
+  conversation up to there; from one of yours, it stops just before it and puts your message
+  back in the box to reword. **Compact** a long chat into a summary, or **Clear** it. Very long
+  chats tidy their own context automatically.
+- **Copy any message.** A reply copies just what Claude wrote, without the steps in between.
 - **Nothing is lost.** Your message is saved the moment you send it and the answer as it's
   written, so closing the app mid-reply keeps both.
 
@@ -65,7 +70,7 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
 - **See and undo what changed.** A reply that edited files leaves a "Changed files" strip. Open
   it for line diffs, comment on any line (your comments go to Claude as one review), or **Undo**
   to put the files back as they were before that message.
-- **Stop that really stops.** The first press asks Claude to put the work down and keeps the
+- **Stop in two steps.** The first press asks Claude to put the work down and keeps the
   session. A second press ends it, background sub-agents included.
 
 ### Built by Claude, beside the chat
@@ -92,17 +97,23 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
 - **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
   search through every message). Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S
   lists every shortcut.
-- **Usage at a glance.** A context ring shows how full the chat is, alongside your 5-hour and
-  weekly Claude subscription usage.
+- **Usage at a glance.** A context ring shows how full the chat is, and beside it your plan's
+  limits: the 5-hour session, the week, and each model's weekly share.
 
 ### The app itself
 - **Guided first run.** Krystal checks for Claude Code, installs it if it's missing, and walks
   you through signing in. No terminal knowledge required.
 - **Setup wizard.** Claude explores your folder, asks a few tailored questions and writes a
   `CLAUDE.md` guide so it always knows the project.
-- **Calm, fluid design.** A document-like layout with its own window frame, one set of line
-  icons, and motion that answers what's happening (then rests). Bundled fonts, so it looks the
-  same offline. All motion respects Windows' "reduce animations" setting.
+- **A face that follows along.** The logo is a little crystal that reacts to the work: it
+  watches you type, looks up while Claude thinks, nods as each step finishes, smiles when the
+  reply lands, turns amber and holds still while Claude waits for your OK, and dozes off when
+  you leave it alone.
+- **Calm, fluid design.** A document-like layout with its own window frame, a sidebar panel
+  floating beside the chat, one set of line icons, and motion that answers what's happening
+  (then rests). A soft light behind the chat follows the line Claude is writing. Bundled
+  fonts, so it looks the same offline. All motion respects Windows' "reduce animations"
+  setting.
 - **Bilingual.** Full English and Croatian interface, switchable any time.
 - **Updates itself** (see below).
 
@@ -139,11 +150,11 @@ Releases are automated by [GitHub Actions](.github/workflows/release.yml). Add t
 notes to the top of `CHANGELOG.md` (they appear in the in-app update prompt), then:
 
 ```bat
-release.bat 0.31.0
+release.bat 0.34.0
 ```
 
 That bumps the version in `package.json`, `tauri.conf.json` and `Cargo.toml`, commits, tags
-`v0.31.0` and pushes. The tag triggers the workflow, which builds and signs the installer on a
+`v0.34.0` and pushes. The tag triggers the workflow, which builds and signs the installer on a
 Windows runner and publishes a GitHub Release with the installer and a signed `latest.json`
 manifest. Installed copies pick it up on their next launch.
 
@@ -252,7 +263,8 @@ closes.
 | `src-tauri/src/server.rs`, `src-tauri/src/webui/` | remote access server and phone UI |
 | `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
 | `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |
-| `tests/` | frontend tests (`npm test`) |
+| `src-tauri/src/util.rs` | the few helpers several modules share |
+| `tests/` | frontend tests, plus checks that the command wiring, EN/HR strings and script load order agree (`npm test`) |
 | `.github/workflows/release.yml` | build, sign and publish on every `v*` tag |
 
 ---
