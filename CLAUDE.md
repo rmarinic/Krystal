@@ -86,6 +86,28 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - Keep files cohesive as they are (the `claude/` / `commands/` / `db.rs` split on the Rust side; the per-concern `src/app/*.js` modules on the frontend). When adding UI, put it in the module that owns that concern rather than growing one file back into a monolith.
 - Prefer **small, readable changes** over large refactors.
 
+## Code health (applies to every new feature and fix)
+The codebase was cleaned of its god files once; these rules keep it that way. Check new work against them before calling it done.
+
+**Where code goes**
+- **One concern per file.** New code goes in the file that owns its concern (see the maps above). If no file owns it, make a new one: a `commands/` or `claude/` file on the Rust side, a `src/app/*.js` module plus its own `src/css/*.css` on the frontend. Don't park it in `mod.rs`, `core.js`, `main.rs` or whichever file happens to be open.
+- **Watch the size.** When a file passes **~600 lines**, or picks up a second concern, split it in the same change. Don't leave that for "later". When a function passes **~100 lines** or **7 parameters**, break it up. For a function that threads state through many arguments, bundle that state into a struct (`TurnState`) and give each case its own small handler (`TurnState::route` → `on_…`). For a long argument list, use a request struct with named fields (`TurnRequest`). Lines means code: a file's `mod tests` and pure data (the `i18n.js` dictionary) don't count. Files already past the mark (`db.rs`, `server.rs`, `session.rs`, `core.js`, …) get split the next time a change *adds* to them, as the first step of that change.
+- **One home per helper.** Search before writing a small utility (`grep` the name and the idea). Rust helpers shared by several modules go in `util.rs`; frontend ones go in `core.js`. A second copy of `base_name` or `escapeHtml` is a bug waiting to diverge. Never index a mutex-held resource with a raw `.lock().unwrap()` where a helper exists (`AppState::db()`).
+
+**Moving and splitting code safely**
+- **Move, don't rewrite.** Moving code and changing code are separate steps, ideally separate commits. Move whole items (a function with its docs, attributes and tests) unchanged, and prove nothing was lost. Compare the old and new lines, or for CSS the old and new text with comments and whitespace stripped.
+- **Keep paths stable.** On the Rust side, turn `foo.rs` into `foo/mod.rs` + files, with `pub use` re-exports so callers keep writing `foo::bar`. A helper one file lends a sibling is `pub(super)`, not `pub`. Tests move with the code they test.
+- **Keep execution order.** Frontend scripts and stylesheets are order-sensitive: a script's top-level code runs in load order, and stylesheet link order is the cascade. Cut **contiguous** ranges at top-level boundaries (never inside a block, `@media` or comment), and link the new files exactly where the original was. `tests/boot.test.js` must stay green.
+
+**Tests and checks**
+- **A change gets a test.** Every restructured or new code path gets a test that exercises it. If nothing covered a path before you touched it, write that test as part of the change (`a_streamed_answer_becomes_text_and_one_chip_per_tool` exists for this reason).
+- **Guard what only agrees by convention.** When two places must match and the compiler can't see it (command wiring, EN/HR keys, script/stylesheet links), add a check that reads both sides, like `tests/commands.test.js`, `tests/i18n.test.js` and `tests/boot.test.js` do. **Prove a new check can fail:** break the thing it guards once, see it fail, then put it back.
+- **Clippy stays clean.** `cargo clippy` should add no warnings. Silence one with `#[allow]` only for a stated reason in a comment.
+
+**Docs travel with the code**
+- A doc comment (`///`) sits **directly** above the item it documents, with no blank line and no other item in between. A section intro that documents nothing in particular is a plain `//` (or `//!` at the top of a file).
+- Moving, renaming or splitting a file updates, in the same change, every place that names it: this file's maps, `README.md`'s file table and diagram, `core.js`'s load-order map, `index.html`, and code comments that say "see foo.js". A stale pointer sends the next session to the wrong file.
+
 ## i18n
 - For **every new user-facing string, add both EN and HR** — never leave one locale behind.
 - Keep **Croatian output gender-neutral**. Always use UTF-8 so č/ć/ž/š/đ are preserved exactly.
@@ -117,7 +139,7 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - Name the *why* in comments next to the effect (what it answers and why it rests), as `light.js` and `motion.js` do.
 
 ## Verification (before considering work done)
-- Make sure it compiles: `cargo build`, and `cargo test` passes (in `src-tauri/`).
+- Make sure it compiles: `cargo build`, and `cargo test` passes and `cargo clippy` adds no warnings (in `src-tauri/`).
 - Make sure `npm test` passes (the frontend tests, the boot check, the command-wiring check and EN/HR parity).
 - Make sure `tauri build` succeeds.
 - Add automated tests where it makes sense.
@@ -137,8 +159,11 @@ Loaded in this order; each file may use symbols from any earlier one (shared glo
 - ✅ Keep Croatian gender-neutral and UTF-8 clean.
 - ✅ Verify with `cargo build` + `tauri build`.
 - ✅ Keep changes small and in-style.
+- ✅ New code in the file that owns its concern; split a file at ~600 lines or a second concern (see *Code health*).
+- ✅ Every new or restructured path gets a test; every new guard is shown to fail once.
 - ✅ Make every feature feel fluid: motion that answers something, lands, and comes to rest (see *Feel, motion & fluidity*), with a reduced-motion fallback.
 - ❌ No looping ambient animation that ignores what's happening, and no glow drawn as an outline around a box.
 - ❌ **Never restrict Claude to a curated toolset** — keep full tool freedom in the app.
 - ❌ Don't introduce a frontend framework or bundler.
 - ❌ Don't cut a release without explicit approval.
+- ❌ No duplicate helpers, no god files, no moving and rewriting code in the same step.
