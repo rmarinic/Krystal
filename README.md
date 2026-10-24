@@ -183,7 +183,7 @@ Rust unit tests run with `cargo test` inside `src-tauri/`.
 ```
 WebView2 (src/)                       Rust (src-tauri/src/)
   index.html, *.css                     main.rs       bootstrap, plugins, commands
-  app/*.js  ── invoke() ─────────────►  commands.rs   every IPC command
+  app/*.js  ── invoke() ─────────────►  commands/     every IPC command, one file per concern
             ◄── Channel (stream) ─────  session.rs    one warm `claude` process per chat
                                           │             (stream-json in / out)
                                           ▼
@@ -244,7 +244,7 @@ closes.
 | `src/base.css`, `src/chat.css`, `src/motion.css` | the look and the motion layer |
 | `src/fonts/`, `src/vendor/` | bundled fonts and libraries (offline) |
 | `src-tauri/src/main.rs` | bootstrap: environment, DB, commands, plugins |
-| `src-tauri/src/commands.rs` | every IPC command |
+| `src-tauri/src/commands/` | every IPC command, one file per concern (`mod.rs` holds `AppState`) |
 | `src-tauri/src/claude.rs` | CLI flags, prompts, stream-json → UI events |
 | `src-tauri/src/session.rs` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |

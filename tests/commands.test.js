@@ -57,8 +57,10 @@ const injected = (type) => /\b(State|AppHandle|Window|WebviewWindow)\b/.test(typ
 /* name → [{ key, optional, channel }] for every #[tauri::command]. */
 function commandSignatures() {
   const sigs = new Map();
-  for (const file of fs.readdirSync(path.join(root, rsDir))) {
-    if (!file.endsWith('.rs')) continue;
+  const files = fs.readdirSync(path.join(root, rsDir), { recursive: true })
+    .map((f) => String(f).replace(/\\/g, '/'))
+    .filter((f) => f.endsWith('.rs'));
+  for (const file of files) {
     const src = read(path.join(rsDir, file));
     const re = /#\[tauri::command\]\s*pub\s+(?:async\s+)?fn\s+(\w+)/g;
     let m;

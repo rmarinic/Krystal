@@ -399,7 +399,7 @@ function loadChipImages(chip) {
 /* How the chip's Open button treats a file. Opening hands a file to its default
  * program, which for a script or a binary means running it — so scripts open in
  * Notepad and binaries get no Open at all. This only picks the label; the
- * backend's `open_kind` (commands.rs) holds the same rule and is what enforces it. */
+ * backend's `open_kind` (commands/system.rs) holds the same rule and is what enforces it. */
 const OPEN_AS_TEXT_RE = /\.(ps1|psm1|psd1|bat|cmd|js|jse|vbs|vbe|wsf|wsh|py|pyw|sh|reg|hta)$/i;
 const OPEN_NEVER_RE = /\.(exe|com|scr|pif|msi|msp|msix|appx|dll|sys|ocx|cpl|lnk|url|jar|msc|application|appref-ms|gadget|settingcontent-ms)$/i;
 function chipOpenKind(path) {

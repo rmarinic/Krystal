@@ -8,7 +8,7 @@
  *   • comment on a line. Comments collect in the panel and go to Claude as one
  *     message, so a review reads as a review rather than five separate nags.
  *   • undo the changes. The CLI keeps a copy of each file it edits, filed under
- *     the message that asked (`rewind_files` in commands.rs), so the project can
+ *     the message that asked (`rewind_files` in commands/turn.rs), so the project can
  *     be put back to how it was before that message — later replies' edits
  *     included. The conversation is left alone; Claude is told on the next turn.
  *

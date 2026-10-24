@@ -91,8 +91,8 @@ test('binaries and shortcuts are never opened', () => {
   }
 });
 
-test('matches the backend rule (commands.rs open_kind) extension for extension', () => {
-  const rs = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands.rs'), 'utf8');
+test('matches the backend rule (commands/system.rs open_kind) extension for extension', () => {
+  const rs = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'system.rs'), 'utf8');
   const list = (name) => {
     const m = rs.match(new RegExp(`const ${name}: &\\[&str\\] = &\\[([^\\]]*)\\]`));
     return m[1].match(/"([^"]+)"/g).map((s) => s.slice(1, -1));
