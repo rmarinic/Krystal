@@ -1592,7 +1592,6 @@ body.fx-on .chat-light { opacity: 1; }
 }
 .tip.warn { border-left-color: #e0c35a; }
 .tip.high { border-left-color: #e07a5a; }
-.tip.hint { border-left-color: var(--accent-3); }
 .tip.summary { border-left-color: var(--accent-2); }
 /* The kept compaction brief can be long — let it scroll inside the card. */
 .tip.summary .tip-body { max-height: 50vh; overflow: auto; }
@@ -1629,85 +1628,56 @@ body.fx-on .chat-light { opacity: 1; }
  * of the sidebar, under the conversation list (see .sidebar-foot).
  * ============================================================ */
 
-/* A small section pinned to the bottom of the sidebar. margin-top:auto
- * pushes it below the thread list; the border/padding only appear when the
- * Insight button is actually visible (no empty box on the empty state). */
-.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
-.sidebar-foot:has(.hint-btn:not([hidden])),
-.sidebar-foot:has(.tasks-btn:not([hidden])) {
-  padding-top: 14px;
+/* A small section pinned to the bottom of the sidebar: the project's places —
+ * Activity, Tasks, Artifacts, Remote — as quiet rows of the same family as the
+ * chat rows above. No cards: an icon, a label, the count or state at the far
+ * end, and a tint on hover. margin-top:auto pushes it below the thread list;
+ * the divider only appears when a row is actually visible (no empty box on
+ * the empty state). */
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 1px; }
+.sidebar-foot:has(.foot-item:not([hidden])) {
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
-/* Insight + Activity sit side by side, each ~half the width. */
-.foot-row { display: flex; gap: 8px; }
-/* When both Insight & Activity are hidden (welcome screen), collapse the row so
- * it doesn't add a stray gap above the Tasks button. */
-.foot-row:not(:has(button:not([hidden]))) { display: none; }
-.foot-row > button { flex: 1 1 0; min-width: 0; }
-
-/* Tasks button — full width, below the Insight/Activity row. A small badge
- * shows how many tasks are still open. */
-.tasks-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
-  color: var(--fg-muted); background: rgba(255,255,255,0.04); border: 1px solid transparent; border-radius: 8px;
-  padding: 9px 12px; cursor: pointer; transition: color .15s, background .15s;
+.sidebar-foot .foot-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0;
+  padding: 7px 10px; border: 0; border-radius: 8px; background: transparent;
+  font-family: var(--sans); font-size: 13px; font-weight: 500; text-align: left;
+  color: var(--fg-muted); cursor: pointer;
+  transition: color .15s ease, background .15s ease;
 }
-.tasks-btn:hover { color: var(--fg); background: rgba(255,255,255,0.075); }
-.tasks-btn .tasks-count {
-  font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px;
-  border-radius: 8px; color: #0a0f0b; background: var(--accent-2);
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: transform .2s cubic-bezier(.2,.9,.3,1.25);
+.sidebar-foot .foot-item > svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+/* The label takes the room, so whatever follows it sits at the row's end. */
+.sidebar-foot .foot-item > span:not([class]), .sidebar-foot .remote-label-text {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* A gentle pulse when Claude changes the list from chat, so the move is noticed. */
-.tasks-btn.tasks-bump { animation: tasks-bump .6s ease; }
-@keyframes tasks-bump {
-  0%, 100% { border-color: var(--border-2); }
-  30% { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(108,199,142,0.16); }
+.sidebar-foot .foot-item:hover:not(:disabled) { color: var(--fg); background: rgba(255,255,255,0.045); }
+.sidebar-foot .foot-item:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+/* The count at the end of a row is a plain number, not a badge: it informs,
+ * it doesn't call for attention. */
+.foot-item .tasks-count, .foot-item .act-count {
+  flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
 }
+.foot-item .tasks-count:empty { display: none; }
+/* Claude changed the task list (or made an artifact) from chat: the row warms
+ * once and cools again, so the change is noticed without anything looping. */
+.foot-item.tasks-bump, .foot-item.just-made { animation: foot-warm .9s ease-out; }
+@keyframes foot-warm { 12% { background: rgba(108,199,142,0.13); color: var(--fg); } }
 @media (prefers-reduced-motion: reduce) {
-  .tasks-btn.tasks-bump { animation: none; }
+  .foot-item.tasks-bump, .foot-item.just-made { animation: none; }
 }
 
-.hint-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
-  color: #0a0f0b; background: var(--accent-2);
-  border: none; border-radius: 8px; padding: 9px 14px; cursor: pointer;
-}
-.hint-btn:hover { background: var(--accent-3); }
-.hint-btn:disabled { opacity: 0.6; cursor: progress; }
-.hint-btn .spin {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid rgba(10,15,11,0.35); border-top-color: #0a0f0b;
-  animation: hint-spin .7s linear infinite;
-}
+/* The shared little spinner (chips, the Claude Code update button…). */
 @keyframes hint-spin { to { transform: rotate(360deg); } }
 
-/* Activity button — disabled until a shell/sub-agent has run; pulses while one
- * is working. A small count badge shows how many ran in this chat. */
-.activity-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
-  color: var(--fg-muted); background: rgba(255,255,255,0.04); border: 1px solid transparent; border-radius: 8px;
-  padding: 9px 12px; cursor: pointer; transition: color .15s, background .15s;
-}
-.activity-btn:hover:not(:disabled) { color: var(--fg); background: rgba(255,255,255,0.075); }
-.activity-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.activity-btn.live {
-  color: #0a0f0b; background: var(--accent-2); border-color: transparent;
-  animation: act-pulse 1.3s ease-in-out infinite;
-}
-@keyframes act-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0.45); }
-  50%      { box-shadow: 0 0 0 5px rgba(108,199,142,0); }
-}
-.activity-btn .act-count {
-  font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px;
-  border-radius: 8px; background: rgba(0,0,0,0.18);
-  display: inline-flex; align-items: center; justify-content: center;
-}
+/* Activity — disabled until a command or sub-agent has run in this chat. While
+ * one runs, the row says so the way a working chat row does: green words, held
+ * steady (no pulse), and it settles back when the step ends. The count is how
+ * many ran in this chat. */
+.activity-btn:disabled { opacity: .45; cursor: default; }
+.activity-btn.live { color: var(--accent-3); }
+.activity-btn.live > svg { opacity: 1; }
 
 /* Activity panel — what Claude ran, grouped under the message that asked for it.
  * Surfaces are tone, not lines: a group is a faint card, a step is one line
@@ -3766,28 +3736,15 @@ body:has(.project-screen:not([hidden])) .modal-overlay { z-index: 105; }
 
 /* Sits under Tasks, styled to match it. A small dot lights up while the local
    server is actually serving, so the sidebar tells you without being opened. */
-.remote-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
-  color: var(--fg-muted); background: rgba(255,255,255,0.04); border: 1px solid transparent; border-radius: 8px;
-  padding: 9px 12px; cursor: pointer; transition: color .15s, background .15s;
-}
-.remote-btn:hover { color: var(--fg); background: rgba(255,255,255,0.075); }
-.remote-btn.live { color: var(--fg); border-color: rgba(108,199,142,0.45); }
+/* Remote's state dot at the end of its row: steady green while this machine is
+ * reachable from the phone — hosting is a state, not an event, so it holds
+ * still instead of pulsing. */
 .remote-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--border-2);
-  transition: background .2s ease;
+  width: 7px; height: 7px; border-radius: 50%; flex: none; margin-right: 4px;
+  background: var(--border-2); transition: background .2s ease;
 }
-.remote-btn.live .remote-dot { background: var(--accent-2); animation: remote-live 1.8s ease-in-out infinite; }
-@keyframes remote-live {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(108,199,142,0.5); }
-  60%      { box-shadow: 0 0 0 4px rgba(108,199,142,0); }
-}
-/* The foot's divider should appear for this button too, not just Insight/Tasks. */
-.sidebar-foot:has(.remote-btn:not([hidden])) {
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
+.remote-btn.live { color: var(--fg); }
+.remote-btn.live .remote-dot { background: var(--accent-2); }
 
 /* ---- Settings → Remote (hosting) ---- */
 .remote-row .remote-state { margin-top: 12px; }
@@ -3979,10 +3936,6 @@ body.is-remote .project-screen { top: 35px; }
 
 /* A quiet pulse on the sidebar button when a new artifact lands, so it's noticed
    without pulling the eye off the reply. Same idea as the tasks badge. */
-.artifacts-btn.just-made { animation: tasks-bump .6s ease; }
-@media (prefers-reduced-motion: reduce) {
-  .artifacts-btn.just-made { animation: none; }
-}
 
 .artifact-modal {
   width: min(1180px, 100%); height: min(88vh, 920px);

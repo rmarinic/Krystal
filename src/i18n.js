@@ -236,12 +236,6 @@
       'clear.overlaySub': 'Wiping this chat for a fresh start.',
       'clear.overlayDone': 'Fresh start',
 
-      /* ---- insight (hint) ---- */
-      'hint.label': 'Insight',
-      'hint.title': 'Ask Claude for a small insight on how to get even better results',
-      'hint.looking': 'Looking…',
-      'hint.allGood': "You're communicating clearly — nothing to change. Keep going!",
-
       /* ---- activity ---- */
       'activity.label': 'Activity',
       'activity.working': 'Working…',
@@ -737,7 +731,6 @@
       'palette.compact': 'Compact this conversation',
       'palette.clear': 'Clear this conversation',
       'palette.branch': 'Branch this conversation',
-      'palette.insight': 'Ask for an insight',
       'palette.activity': 'Agents & shells',
       'palette.tasks': 'Open tasks',
       'palette.artifacts': 'Open artifacts',
@@ -1226,12 +1219,6 @@
       'clear.overlayTitle': 'Čišćenje…',
       'clear.overlaySub': 'Brišem razgovor za novi početak.',
       'clear.overlayDone': 'Novi početak',
-
-      /* ---- insight (hint) ---- */
-      'hint.label': 'Uvid',
-      'hint.title': 'Pitaj Claudea za mali savjet kako dobiti još bolje rezultate',
-      'hint.looking': 'Tražim…',
-      'hint.allGood': 'Jasno se izražavaš — nema se što mijenjati. Samo nastavi!',
 
       /* ---- activity ---- */
       'activity.label': 'Aktivnost',
@@ -1727,7 +1714,6 @@
       'palette.compact': 'Sažmi ovaj razgovor',
       'palette.clear': 'Očisti ovaj razgovor',
       'palette.branch': 'Granaj ovaj razgovor',
-      'palette.insight': 'Zatraži savjet',
       'palette.activity': 'Agenti i ljuske',
       'palette.tasks': 'Otvori zadatke',
       'palette.artifacts': 'Otvori artefakte',

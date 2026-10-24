@@ -13,7 +13,6 @@ function showEmpty() {
   els.composer.hidden = true;
   els.chatTools.hidden = true;
   els.meterRow.hidden = true;
-  els.hintBtn.hidden = true;
   els.activityBtn.hidden = true;
   state.activity = [];               // leaving any chat clears the Activity panel state
   state.activityOrch = null;
@@ -89,7 +88,6 @@ async function openThread(id, focusMid) {
   els.composer.hidden = false;
   els.chatTools.hidden = false;
   els.meterRow.hidden = false;
-  els.hintBtn.hidden = false;
   els.title.textContent = t.title || tr('nav.newChatTitle');
   els.cwd.textContent = t.cwd;
   if (modelSel) modelSel.set(t.model || (state.models[0] && state.models[0].id) || '');

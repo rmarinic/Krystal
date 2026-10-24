@@ -317,7 +317,7 @@ let state = {
   defaultEffort: 'high', // what a chat opens on before its own value loads
   activity: [],          // this chat's shells & sub-agents (for the Activity panel)
   activityOrch: null,    // latest orchestrator token-split summary for this chat (or null)
-  activityFilter: 'all', // Activity panel filter: 'all' | 'active' | 'done'
+  activityFilter: 'all', // Activity panel filter: 'all' | 'failed' | 'running'
   tipLevelShown: null,   // which context-rot tip level we've already shown
   view: 'threads',       // 'threads' | 'search' | 'saved'
   results: [],           // current search/favorite results
