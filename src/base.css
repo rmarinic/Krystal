@@ -99,9 +99,11 @@ svg.icon-defs { display: none; }
  * ============================================================ */
 
 /* A panel of its own, floating on the window's canvas: inset from the window's
-   edges with rounded corners, a tone lighter than the chat, and the same
-   material as the composer dock (a hairline of light at its edge, a soft
-   drop beneath), so the two things you hold read as one family. */
+   edges with rounded corners, a tone lighter than the chat, and a hairline of
+   light at its edge like the composer dock's. No drop shadow: dark on dark it
+   showed as nothing but artifacts — a band beside the panel that ended in a
+   visible step, cut off in a straight line where the opaque chat header and
+   composer paint over it. */
 aside.sidebar {
   position: sticky;
   top: var(--panel-gap);
@@ -112,8 +114,7 @@ aside.sidebar {
   overflow: hidden;
   background: var(--bg-elev);
   border-radius: 14px;
-  box-shadow: 0 18px 40px -16px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05),
-    inset 0 1px 0 rgba(255,255,255,0.03);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03);
   padding: 20px 12px 18px;
   display: flex;
   flex-direction: column;
