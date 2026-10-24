@@ -222,6 +222,7 @@ function handleLiveEvent(live, msg) {
     // chip can read its tally straight from it).
     if (isAgentTool(msg.name)) agentTaskSeen(live.threadId, msg);
     if (live.typer) live.typer.setTool(msg);
+    if (live.typer) mascotTool(msg);   // the face reacts to the new step (mascot.js)
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active, live);    // updates the Activity panel

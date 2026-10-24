@@ -15,6 +15,7 @@ const path = require('path');
 const vm = require('vm');
 
 let fx = true;
+let clock = 0;   // what performance.now() says
 function load() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'mascot.js'), 'utf8');
   const ctx = {
@@ -25,12 +26,14 @@ function load() {
     window: { addEventListener() {} },
     requestAnimationFrame: () => 1,
     setTimeout: () => 0, clearTimeout() {},
-    performance: { now: () => 0 },
+    performance: { now: () => clock },
     motionOK: () => true,
+    isShellTool: (n) => n === 'Bash' || n === 'PowerShell',
+    isAgentTool: (n) => n === 'Task' || n === 'Agent',
     state: { live: new Map() },
     console, Math,
   };
-  return vm.runInNewContext(`${src}\n;({ mascot, mascotFace, mascotTarget, mascotStep, mascotTalkFor, mascotFidget, MASCOT_GREEN, MASCOT_AMBER, MASCOT_RED,
+  return vm.runInNewContext(`${src}\n;({ mascot, mascotFace, mascotTarget, mascotStep, mascotTalkFor, mascotFidget, mascotToolKind, mascotApplyReaction, mascotTool, MASCOT_REACTION_MS, MASCOT_GREEN, MASCOT_AMBER, MASCOT_RED,
     mascotTurnBegan, mascotTurnEnded, mascotMode, mascotRest, mascotWords, mascotActivity, mascotNod })`,
     ctx, { filename: 'mascot.js' });
 }
@@ -41,7 +44,7 @@ function run(F, m, secs, env = {}) {
   let more = true;
   for (let i = 0; i < Math.round(secs * 60); i++) {
     const e = { now: i * 16.7, t: i / 60, ...env };
-    e.busy = !e.still && !e.waiting && m.mood === 'thinking';
+    e.busy = !e.still && !e.waiting && (m.mood === 'thinking' || m.mood === 'working');
     more = M.mascotStep(F, M.mascotTarget(m, e), 1 / 60, e);
   }
   return more;
@@ -131,7 +134,7 @@ check('still (no Extra effects / reduced motion): no bounce, no blink, no drift 
 check('the pointer is followed only at rest, and never while still', () => {
   const ptr = { x: 1, y: -1 };
   near(M.mascotTarget(st('rest'), { now: 0, t: 0, ptr }).lx, 1, 1e-9, 'rest ignores the pointer');
-  near(M.mascotTarget(st('working'), { now: 0, t: 0, ptr }).lx, 0.95, 1e-9, 'working followed the pointer');
+  near(M.mascotTarget(st('working'), { now: 0, t: 0, ptr }).lx, M.mascotTarget(st('working'), { now: 0, t: 0 }).lx, 1e-9, 'working followed the pointer');
   near(M.mascotTarget(st('rest'), { now: 0, t: 0, ptr: null, still: true }).lx, 0, 1e-9, 'followed while still');
 });
 
@@ -170,14 +173,19 @@ check('switching away from a running turn rests the face; words outside writing 
   M.mascotWords('abc'); ok(m.talk === 0, 'talking at rest');
 });
 
-check('fidgets: never while waiting or dozing; busy only blinks; at rest a small smile, look or tilt', () => {
+check('fidgets: never while waiting or dozing; working may ponder, other busy moods only blink; at rest a small smile, look or tilt', () => {
   const seq = (...v) => { let i = 0; return () => v[i++ % v.length]; };
   ok(M.mascotFidget('waiting', Math.random) === null, 'fidgeted while waiting on you');
   ok(M.mascotFidget('sleep', Math.random) === null, 'fidgeted while dozing');
   for (const p of [0.1, 0.5, 0.7, 0.9, 0.99]) {
-    const k = M.mascotFidget('working', seq(p)).kind;
-    ok(k === 'blink' || k === 'double', `a busy face did a ${k}`);
+    const k = M.mascotFidget('writing', seq(p)).kind;
+    ok(k === 'blink' || k === 'double', `a writing face did a ${k}`);
   }
+  for (const r of [0, 1]) {
+    const f = M.mascotFidget('working', seq(0.7, r));
+    ok(f.kind === 'look' && f.x < 0 && f.y < -0.5 && f.ms <= 1400, `working did not ponder upward (${JSON.stringify(f)})`);
+  }
+  ok(M.mascotFidget('working', seq(0.9)).kind === 'blink', 'working never just blinks');
   ok(M.mascotFidget('rest', seq(0.1)).kind === 'blink', 'no blink');
   ok(M.mascotFidget('rest', seq(0.5)).kind === 'double', 'no double blink');
   const sm = M.mascotFidget('rest', seq(0.7, 0, 1));
@@ -198,6 +206,72 @@ check('a resting fidget changes the face a little, then it settles and stops aga
   ok(run(F, m, 4) === false, 'the fidget never settled');
   near(F.smile, 0.45, 0.01, 'smile'); near(F.tilt, -3, 0.01, 'tilt');
   near(M.mascotTarget(st('working', { idle: { smile: 0.2, tilt: -3 } }), { now: 0, t: 0 }).tilt, 0, 1e-9, 'a busy face kept the fidget');
+});
+
+check('each kind of step is told apart', () => {
+  const kinds = { Read: 'look', Grep: 'look', WebSearch: 'look', Edit: 'change', Write: 'change',
+    mcp__krystal__artifact: 'change', Bash: 'run', PowerShell: 'run', Task: 'agent', TodoWrite: 'other', '': 'other' };
+  for (const [name, kind] of Object.entries(kinds)) ok(M.mascotToolKind(name) === kind, `${name || '(none)'} is not ${kind}`);
+});
+
+check('a step reaction shows while it lasts, then gives the face back to the work', () => {
+  const work = () => M.mascotTarget(st('working'), { now: 0, t: 0, still: true });
+  for (const kind of Object.keys(M.MASCOT_REACTION_MS)) {
+    const react = { kind, at: 1000 };
+    const t = work();
+    ok(M.mascotApplyReaction(t, react, 1000 + M.MASCOT_REACTION_MS[kind] / 2) === true, `${kind} ended early`);
+    ok(JSON.stringify(t) !== JSON.stringify(work()), `${kind} changed nothing`);
+    const after = work();
+    ok(M.mascotApplyReaction(after, react, 1000 + M.MASCOT_REACTION_MS[kind]) === false, `${kind} never ended`);
+    ok(JSON.stringify(after) === JSON.stringify(work()), `${kind} left a trace`);
+  }
+  // A scan sweeps across: the eyes start left and finish right.
+  const a = work(), b = work();
+  M.mascotApplyReaction(a, { kind: 'look', at: 0 }, 10);
+  M.mascotApplyReaction(b, { kind: 'look', at: 0 }, M.MASCOT_REACTION_MS.look - 10);
+  ok(b.lx - a.lx > 0.5, 'the scan did not sweep');
+  // Only while it works or thinks, and never over a face that waits on you.
+  const r = { kind: 'agent', at: 0 };
+  ok(M.mascotTarget(st('working', { react: r }), { now: 100, t: 0, still: true }).happy > 0.3, 'no reaction while working');
+  ok(M.mascotTarget(st('working', { react: r }), { now: 100, t: 0, still: true, waiting: true }).happy === 0, 'reacted while waiting');
+  ok(M.mascotTarget(st('rest', { react: r }), { now: 100, t: 0, still: true }).happy === 0, 'reacted at rest');
+});
+
+check('working drifts over the work, less than thinking, and holds still when still', () => {
+  const span = (mood, still) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 1200; i++) {
+      const x = M.mascotTarget(st(mood), { now: 0, t: i / 30, still }).lx;
+      lo = Math.min(lo, x); hi = Math.max(hi, x);
+    }
+    return hi - lo;
+  };
+  const w = span('working', false);
+  ok(w > 0.08, `working did not drift (${w})`);
+  ok(w < span('thinking', false), 'working drifted as much as thinking');
+  ok(span('working', true) === 0, 'drifted while still');
+  const F = M.mascotFace();
+  ok(run(F, st('working'), 3) === true, 'working came to rest while the step ran');
+});
+
+check('a step reacts once, however often its event comes, and parallel steps share a reaction', () => {
+  const m = M.mascot;
+  clock = 10000;
+  M.mascotTool({ id: 'a', name: 'Read' });
+  ok(m.react && m.react.kind === 'look' && m.react.at === 10000, 'no reaction to a new step');
+  clock = 10500;
+  M.mascotTool({ id: 'a', name: 'Read', detail: 'x' });
+  ok(m.react.at === 10000, 'the same step reacted twice');
+  clock = 10600;
+  M.mascotTool({ id: 'b', name: 'Edit' });
+  ok(m.react.kind === 'change', 'a new step did not react');
+  clock = 10700;
+  M.mascotTool({ id: 'c', name: 'Bash' });
+  ok(m.react.kind === 'change', 'a parallel step stacked a second reaction');
+  fx = false; clock = 20000;
+  M.mascotTool({ id: 'd', name: 'Bash' });
+  ok(m.react.kind === 'change', 'reacted with Extra effects off');
+  fx = true;
 });
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }

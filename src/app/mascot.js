@@ -10,9 +10,14 @@
      • thinking     — it looks up, with a slow drift that never repeats (unrelated
                       sines, the light's flicker) — the one ongoing movement, and
                       it lasts exactly as long as the thinking does;
-     • a tool runs  — it looks at the work, focused; when the tool hands back its
-                      result it nods once (rate-limited, so parallel results don't
-                      stack);
+     • a tool runs  — it looks at the work, focused, with a slower, smaller drift
+                      than thinking's. Each new step gets a small reaction of its
+                      own kind (mascotToolKind): reading or searching sweeps the
+                      eyes across like scanning a line, an edit looks down and
+                      squints, a command widens the eyes, handing work to a helper
+                      agent glances up hopefully. When the step hands back its
+                      result it nods once. Both are rate-limited, so parallel steps
+                      don't stack;
      • the reply    — its mouth moves with the words the typer actually reveals:
                       open on letters, closed at a space or full stop;
      • it lands     — happy eyes, KRYSTAL ripples once, then it settles to rest
@@ -29,7 +34,8 @@
 
    Between those, it fidgets now and then, the way a face does: a blink (once in a
    while two), and at rest a slightly different smile, a glance aside, a small tilt
-   of the head. These come at random intervals and are picked at random, so there
+   of the head, and while it works a glance up now and then, as if pondering
+   what the step will turn up. These come at random intervals and are picked at random, so there
    is no rhythm for the eye to learn, and each one settles and lets the loop stop
    again. They are the maintainer's deliberate exception to "rest is still" — so
    never while it waits on you (that stillness is the signal) or dozes.
@@ -55,6 +61,11 @@ const MASCOT_ERROR_MS = 6000;           // red after a failure, unless you look 
 const MASCOT_TYPING_MS = 1500;          // still watching this long after the last key
 const MASCOT_NOD_GAP_MS = 350;          // parallel tool results shouldn't stack nods
 const MASCOT_FIDGET_MS = [3500, 10000]; // a fidget comes somewhere in this window after the last
+const MASCOT_STEP_GAP_MS = 300;         // parallel steps starting together get one reaction
+// How long each kind of step's reaction lasts (see mascotApplyReaction).
+const MASCOT_REACTION_MS = { look: 600, change: 650, run: 450, agent: 800, other: 350 };
+const MASCOT_LOOK_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'ToolSearch', 'NotebookRead']);
+const MASCOT_CHANGE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'mcp__krystal__artifact']);
 
 function mascotFace() {
   return { lx: 0, ly: 0, open: 1, happy: 0, smile: 0.25, droop: 0, mw: 1, glow: 0.22, tilt: 0, talk: 0,
@@ -70,7 +81,9 @@ const mascot = {
   glance: null,     // { x, y, happy, until } — a look somewhere for a moment
   talk: 0,          // the mouth's target, set by each stretch of revealed text
   idle: { smile: 0, tilt: 0 },   // the resting face's current fidget: a touch more or less smile, a tilt
-  moodT: 0, typingT: 0, idleT: 0, fidgetT: 0, nodAt: 0,
+  react: null,      // { kind, at } — the reaction to the step that just started
+  steps: [],        // ids of the steps already reacted to (a step's event comes twice)
+  moodT: 0, typingT: 0, idleT: 0, fidgetT: 0, nodAt: 0, stepAt: -1e9,
   lastAct: 0,
   raf: 0, last: 0,
   insts: [],
@@ -90,13 +103,20 @@ function mascotTarget(m, env) {
       t.ly += 0.18 * (Math.sin(env.t * 1.73 + 0.4) + Math.sin(env.t * 0.93 + 2)) / 2;
     }
   }
-  else if (mood === 'working') { t.lx = 0.95; t.ly = 0.15; t.open = 0.84; t.droop = -0.35; t.smile = 0.05; t.glow = 0.48; }
+  else if (mood === 'working') {
+    t.lx = 0.95; t.ly = 0.15; t.open = 0.84; t.droop = -0.35; t.smile = 0.05; t.glow = 0.48;
+    if (!env.still) {   // its eyes move over the work: slower and smaller than thinking's drift
+      t.lx += 0.12 * (Math.sin(env.t * 1.07 + 0.6) + Math.sin(env.t * 1.89 + 2.1)) / 2;
+      t.ly += 0.1 * (Math.sin(env.t * 1.51) + Math.sin(env.t * 0.71 + 1.1)) / 2;
+    }
+  }
   else if (mood === 'writing') { t.lx = 0.9; t.ly = 0.3; t.smile = 0.3; t.glow = 0.5; t.talk = env.still ? 0.25 : m.talk; }
   else if (mood === 'waiting') { t.open = 1.12; t.smile = 0; t.mw = 0.5; t.talk = 0.45; t.glow = 0.6; t.tint = MASCOT_AMBER; }
   else if (mood === 'done') { t.happy = 1; t.smile = 0.85; t.glow = 0.66; t.tilt = -5; }
   else if (mood === 'error') { t.droop = 1; t.open = 0.72; t.smile = -0.75; t.glow = 0.45; t.ly = 0.35; t.tint = MASCOT_RED; }
   else if (mood === 'sleep') { t.open = 0.04; t.ly = 0.45; t.smile = 0.12; t.glow = 0.06; t.tilt = 4; }
   else if (mood === 'rest' && m.idle) { t.smile += m.idle.smile; t.tilt += m.idle.tilt; }
+  if ((mood === 'working' || mood === 'thinking') && m.react) mascotApplyReaction(t, m.react, env.now);
 
   const calm = mood === 'rest' || mood === 'done';
   if (m.glance && env.now < m.glance.until && mood !== 'waiting') {
@@ -109,6 +129,29 @@ function mascotTarget(m, env) {
     t.lx = env.ptr.x; t.ly = env.ptr.y;
   }
   return t;
+}
+
+/* What kind of step a tool is, for the face's reaction to it starting. */
+function mascotToolKind(name) {
+  if (MASCOT_LOOK_TOOLS.has(name)) return 'look';
+  if (MASCOT_CHANGE_TOOLS.has(name)) return 'change';
+  if (isShellTool(name)) return 'run';
+  if (isAgentTool(name)) return 'agent';
+  return 'other';
+}
+
+/* The reaction to a step that just started, laid over the working face while it
+ * lasts. Pure; says whether it is still going. */
+function mascotApplyReaction(t, react, now) {
+  const age = now - react.at, dur = MASCOT_REACTION_MS[react.kind] || 0;
+  if (age < 0 || age >= dur) return false;
+  const p = age / dur;
+  if (react.kind === 'look') { t.lx = 0.35 + 0.65 * p; t.ly = 0.45 - 0.35 * p; t.open = 0.95; }   // scans a line
+  else if (react.kind === 'change') { t.lx = 0.75; t.ly = 0.55; t.open = 0.7; t.droop = -0.55; } // looks down, concentrating
+  else if (react.kind === 'run') { t.lx = 1; t.ly = 0; t.open = 1.1; }                           // eyes widen: off it goes
+  else if (react.kind === 'agent') { t.lx = 0.85; t.ly = -0.65; t.happy = 0.45; t.smile = 0.4; } // a hopeful glance up
+  else { t.lx = 0.6; t.ly = -0.3; }
+  return true;
 }
 
 function mascotSpring(y, v, dt, k, c) {
@@ -147,14 +190,16 @@ function mascotStep(F, t, dt, env) {
   return [F.bobY, F.bobV, F.sqY, F.sqV, F.shX, F.shV].some((v) => Math.abs(v) > 0.01) || F.beat > 0.004;
 }
 
-/* Pick a fidget, pure: `r` is a source of random numbers in 0..1. Busy moods only
- * blink (the face is watching the work); at rest it may also change its smile,
- * glance aside or tilt its head. Waiting on you and dozing get nothing at all. */
+/* Pick a fidget, pure: `r` is a source of random numbers in 0..1. Busy moods
+ * mostly blink (the face is watching the work), and while a step runs it may
+ * look up to ponder; at rest it may also change its smile, glance aside or tilt
+ * its head. Waiting on you and dozing get nothing at all. */
 function mascotFidget(mood, r) {
   if (mood === 'waiting' || mood === 'sleep') return null;
   const p = r();
   if (p < 0.45) return { kind: 'blink' };
   if (p < 0.55) return { kind: 'double' };
+  if (mood === 'working' && p < 0.85) return { kind: 'look', x: -0.3 - r() * 0.3, y: -0.6 - r() * 0.2, ms: 800 + r() * 600 };
   if (mood !== 'rest') return { kind: 'blink' };
   if (p < 0.8) return { kind: 'smile', smile: -0.08 + r() * 0.3 };
   if (p < 0.92) return { kind: 'look', x: (r() * 2 - 1) * 0.7, y: (r() * 2 - 1) * 0.5, ms: 700 + r() * 900 };
@@ -291,7 +336,8 @@ function mascotFrame(now) {
   const still = mascotStill(), waiting = mascotWaiting();
   const env = { now, t: now / 1000, still, waiting, ptr: still ? null : mascotPointer() };
   const glancing = !!(mascot.glance && now < mascot.glance.until);
-  env.busy = glancing || (!still && !waiting && mascot.mood === 'thinking');
+  const reacting = !!(mascot.react && now - mascot.react.at < (MASCOT_REACTION_MS[mascot.react.kind] || 0));
+  env.busy = glancing || (!still && !waiting && (reacting || mascot.mood === 'thinking' || mascot.mood === 'working'));
   const more = mascotStep(mascot.face, mascotTarget(mascot, env), dt, env);
   mascot.insts.forEach(mascotDraw);
   if (more) mascot.raf = requestAnimationFrame(mascotFrame);
@@ -450,6 +496,24 @@ function mascotNod() {
   mascot.nodAt = now;
   mascotImpulse('nod');
   mascotBeat(0.35);
+}
+
+/* A step started on screen (a tool event): a small reaction of its kind and a
+ * touch of light. A step's event comes twice (start, then with its detail), and
+ * parallel steps start together, so each id counts once and close starts share
+ * one reaction. */
+function mascotTool(msg) {
+  if (!msg || mascotStill()) return;
+  if (msg.id) {
+    if (mascot.steps.includes(msg.id)) return;
+    mascot.steps.push(msg.id);
+    if (mascot.steps.length > 32) mascot.steps.shift();
+  }
+  const now = performance.now();
+  if (now - mascot.stepAt < MASCOT_STEP_GAP_MS) return;
+  mascot.stepAt = now;
+  mascot.react = { kind: mascotToolKind(msg.name || ''), at: now };
+  mascotBeat(0.12);
 }
 
 /* The turn on screen ended: happy if it landed, red if it failed, plain rest if
