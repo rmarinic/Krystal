@@ -543,8 +543,12 @@ function finishLive(live) {
   agentTurnEnded(live.threadId);                      // no worker is still going either
   state.live.delete(live.threadId);
   if (typeof permissionsTurnEnded === 'function') permissionsTurnEnded(live);   // nothing left to answer
+  if (live.failed && !live.stopped) taskbarFailedTurn();   // red on the taskbar if you were away
+  taskbarSync();                                            // …or back to rest (titlebar.js)
   if (typeof paintProjectActivity === 'function') paintProjectActivity();       // its project may be idle now
   if (live.threadId === state.activeId) {
+    if (!stickToBottom && !atBottom() && !live.stopped) replyUnseen = true;
+    syncReplyPill();
     lightRest();    // the lamp cools down (light.js)
     syncComposer();
     refreshActivityPanel();
@@ -559,12 +563,8 @@ function finishLive(live) {
 
 /* -------------------------- desktop notifications ------------------------ */
 /* A reply that lands while you are in another window is easy to miss for an
-  if (live.failed && !live.stopped) taskbarFailedTurn();   // red on the taskbar if you were away
-  taskbarSync();                                            // …or back to rest (titlebar.js)
  * hour. So when a turn ends — or stops to ask permission — and Krystal isn't the
  * window in front, the OS says so. Never while you are looking at the app: the
-    if (!stickToBottom && !atBottom() && !live.stopped) replyUnseen = true;
-    syncReplyPill();
  * in-app tips already cover a chat that is merely off screen. */
 
 function notifyAway(threadId, kind, body) {
@@ -816,6 +816,7 @@ async function startTurn(threadId, msg, opts = {}) {
   const onScreen = threadId === state.activeId;
 
   if (onScreen) {
+    if (typeof clearStarters === 'function') clearStarters();   // the first message is on its way
     if (opts.follow) stickToBottom = true;
     state.seed = null;               // this turn folds the compaction summary back in
     hideSuggestion();                // the next message has been chosen
@@ -832,7 +833,6 @@ async function startTurn(threadId, msg, opts = {}) {
   // its activity array IS the active thread's list (same ref), so tool chips keep
   // flowing into the Activity panel and survive switching away and back; off
   // screen it carries on the list of the turn before it.
-    if (typeof clearStarters === 'function') clearStarters();   // the first message is on its way
   const live = {
     threadId, userText: text, userFiles: files,
     events: [], activity: onScreen ? state.activity : (opts.activity || []), outputs: {},
@@ -893,6 +893,7 @@ async function runShellCommand(command) {
   autosize();
   syncShellMode();
 
+  if (typeof clearStarters === 'function') clearStarters();
   const { div, bubble } = appendShellRun();
   const running = renderShellCard({ command, output: tr('shell.running'), code: 0 });
   running.classList.add('running');
@@ -909,7 +910,6 @@ async function runShellCommand(command) {
     const r = await api.runShell(threadId, command);
     if (r && r.id != null && threadId === state.activeId) div.dataset.mid = r.id;
     paint(r);
-  if (typeof clearStarters === 'function') clearStarters();
   } catch (e) {
     paint({ command, output: String((e && e.message) || e), code: -1 });
   } finally {

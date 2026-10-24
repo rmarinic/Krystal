@@ -605,7 +605,6 @@
       /* ---- settings ---- */
       'settings.title': 'Settings',
       'headMenu.title': 'More: instructions, settings, language',
-      'headMenu.language': 'Language',
       'window.minimize': 'Minimize',
       'window.maximize': 'Maximize',
       'window.restore': 'Restore down',
@@ -628,6 +627,7 @@
       'starter.code.name': 'Code',
       'starter.code.blurb': 'Change or build something',
       'starter.code.prompt': 'In this project I would like to [change or build something]. Look at how things are set up first, then make the change and check that it works.',
+      'headMenu.language': 'Language',
       'settings.heading': 'Settings',
       'settings.close': 'Close',
       'settings.intro': 'Turn features on or off. Your choices are remembered on this computer.',
@@ -1521,8 +1521,6 @@
       /* ---- settings ---- */
       'settings.title': 'Postavke',
       'headMenu.title': 'Više: upute, postavke, jezik',
-      'headMenu.language': 'Jezik',
-      'settings.heading': 'Postavke',
       'window.minimize': 'Smanji',
       'window.maximize': 'Povećaj',
       'window.restore': 'Vrati na manju veličinu',
@@ -1545,6 +1543,8 @@
       'starter.code.name': 'Kod',
       'starter.code.blurb': 'Promijeni ili izgradi nešto',
       'starter.code.prompt': 'U ovom projektu želim [što promijeniti ili izgraditi]. Najprije pogledaj kako je projekt postavljen, zatim napravi promjenu i provjeri radi li.',
+      'headMenu.language': 'Jezik',
+      'settings.heading': 'Postavke',
       'settings.close': 'Zatvori',
       'settings.intro': 'Uključi ili isključi mogućnosti. Tvoji se izbori pamte na ovom računalu.',
       'settings.on': 'Uključeno',
