@@ -9,6 +9,7 @@
 const branchedThreads = new Set();
 
 function showEmpty() {
+  rememberScroll(state.activeId);
   els.composer.hidden = true;
   els.chatTools.hidden = true;
   els.meterRow.hidden = true;
@@ -32,8 +33,46 @@ function showEmpty() {
   refreshWelcomeInit();              // sets the Initialize / Reinitialize label
 }
 
+/* ------------------------------ your place ------------------------------ *
+ * Each chat reopens where you left it: scrolled up reading something, you come
+ * back to that, not to the bottom. Only a position away from the bottom is worth
+ * keeping (the bottom is the default). Kept per chat in localStorage, trimmed to
+ * the most recent few dozen, and saved as you scroll and as you leave. */
+const SCROLL_KEY = 'krystal.scroll';
+const SCROLL_KEEP = 60;
+let scrollMemo = (function loadScrollMemo() {
+  try { return JSON.parse(localStorage.getItem(SCROLL_KEY)) || {}; } catch (_) { return {}; }
+})();
+
+function rememberScroll(id) {
+  if (!id || els.feed.querySelector('#empty-state:not([hidden])')) return;
+  delete scrollMemo[id];   // re-inserted last, so the oldest are trimmed first
+  if (!atBottom()) scrollMemo[id] = Math.round(els.feed.scrollTop);
+  const ids = Object.keys(scrollMemo);
+  for (let i = 0; i < ids.length - SCROLL_KEEP; i++) delete scrollMemo[ids[i]];
+  try { localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollMemo)); } catch (_) {}
+}
+
+/* Put the feed back where `id` was left. False when there's nothing to restore. */
+function restoreScroll(id) {
+  const top = scrollMemo[id];
+  if (top == null) return false;
+  feedAutoTop = -1;
+  els.feed.scrollTop = Math.min(top, els.feed.scrollHeight - els.feed.clientHeight);
+  stickToBottom = atBottom();
+  return true;
+}
+
+let scrollSaveT = 0;
+els.feed.addEventListener('scroll', () => {
+  clearTimeout(scrollSaveT);
+  scrollSaveT = setTimeout(() => rememberScroll(state.activeId), 300);
+}, { passive: true });
+
 async function openThread(id, focusMid) {
   const t = await api.thread(id);
+  const prevId = state.activeId;
+  rememberScroll(prevId);   // where you were in the chat you're leaving
 
   // Leaving a streaming thread: stop painting its bubble (we're about to wipe the
   // feed), but keep its liveTurn accumulating in the background.
@@ -96,6 +135,8 @@ async function openThread(id, focusMid) {
     // it's populated on reload, not just during a live turn.
     state.activity = activityFromSegments(saved);
     state.activityOrch = orchFromSegments(saved);
+    // Nothing said yet: offer somewhere to start (starters.js).
+    if (!saved.length && typeof starterBlock === 'function') els.feed.appendChild(starterBlock('chat'));
   }
   els.activityBtn.hidden = false;
   showTasksBtn(true);
@@ -124,9 +165,13 @@ async function openThread(id, focusMid) {
       el.classList.add('flash');
       setTimeout(() => el.classList.remove('flash'), 1700);
     }
-  } else {
+  } else if (!restoreScroll(id)) {
+    stickToBottom = true;
     scrollFeed();
   }
+  // Coming from another chat, the new one settles in rather than cutting over.
+  if (prevId !== id) replayClass(els.feed, 'thread-in', 400);
+  resetReplyPill();
   els.input.focus();
 }
 

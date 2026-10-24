@@ -157,6 +157,7 @@ els.feed.addEventListener('scroll', () => {
   }
   feedAutoTop = -1;
   stickToBottom = atBottom();
+  syncReplyPill();
 }, { passive: true });
 
 // Wheel: any upward nudge detaches immediately; scrolling back down re-attaches
@@ -184,7 +185,64 @@ els.feed.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') unfollowFeed();
 });
 
-function maybeFollow() { if (stickToBottom) glideFeed(); }
+function maybeFollow() { if (stickToBottom) glideFeed(); else syncReplyPill(); }
+
+/* ---------------------------- "new reply below" --------------------------- *
+ * Scroll up to read while Claude is still writing and the reply carries on out
+ * of sight — so a small pill above the composer says so, and a click glides you
+ * back down to it (and keeps following). If the reply lands while you're still
+ * up there, the pill says that instead and stays until you've been down to see
+ * it. At the bottom there is nothing to say, so it isn't there. */
+let replyPillEl = null;
+let replyPillShown = '';
+let replyUnseen = false;   // a reply finished while you were scrolled away from it
+
+function syncReplyPill() {
+  if (!replyPillEl) {
+    replyPillEl = document.createElement('button');
+    replyPillEl.type = 'button';
+    replyPillEl.className = 'reply-pill';
+    replyPillEl.hidden = true;
+    replyPillEl.onclick = () => {
+      stickToBottom = true;
+      replyUnseen = false;
+      glideFeed();
+      syncReplyPill();
+    };
+    els.composer.prepend(replyPillEl);
+  }
+  let kind = '';
+  if (state.activeId && !atBottom()) {
+    if (state.live.has(state.activeId) && !stickToBottom) kind = 'writing';
+    else if (replyUnseen) kind = 'new';
+  } else {
+    replyUnseen = false;
+  }
+  if (kind === replyPillShown) return;
+  replyPillShown = kind;
+  if (!kind) {   // leaves with a short fade rather than blinking out
+    replyPillEl.classList.add('out');
+    setTimeout(() => {
+      if (replyPillShown) return;
+      replyPillEl.hidden = true;
+      replyPillEl.classList.remove('out');
+    }, motionOK() ? 160 : 0);
+    return;
+  }
+  replyPillEl.classList.remove('out');
+  replyPillEl.classList.toggle('live', kind === 'writing');
+  replyPillEl.innerHTML = (kind === 'writing' ? '<span class="rp-dot" aria-hidden="true"></span>' : '') +
+    `<span>${escapeHtml(tr(kind === 'writing' ? 'replyPill.writing' : 'replyPill.new'))}</span>${icon('arrowDown')}`;
+  replyPillEl.title = tr('replyPill.title');
+  replyPillEl.hidden = false;
+  replayClass(replyPillEl, 'in');
+}
+
+/* A different chat is on screen: whatever the last one had below is its own. */
+function resetReplyPill() {
+  replyUnseen = false;
+  syncReplyPill();
+}
 
 /* Follow the stream by easing toward the bottom rather than jumping: each frame
  * closes a fifth of the gap, so a paragraph or a chip landing reads as the feed
@@ -501,8 +559,12 @@ function finishLive(live) {
 
 /* -------------------------- desktop notifications ------------------------ */
 /* A reply that lands while you are in another window is easy to miss for an
+  if (live.failed && !live.stopped) taskbarFailedTurn();   // red on the taskbar if you were away
+  taskbarSync();                                            // …or back to rest (titlebar.js)
  * hour. So when a turn ends — or stops to ask permission — and Krystal isn't the
  * window in front, the OS says so. Never while you are looking at the app: the
+    if (!stickToBottom && !atBottom() && !live.stopped) replyUnseen = true;
+    syncReplyPill();
  * in-app tips already cover a chat that is merely off screen. */
 
 function notifyAway(threadId, kind, body) {
@@ -770,6 +832,7 @@ async function startTurn(threadId, msg, opts = {}) {
   // its activity array IS the active thread's list (same ref), so tool chips keep
   // flowing into the Activity panel and survive switching away and back; off
   // screen it carries on the list of the turn before it.
+    if (typeof clearStarters === 'function') clearStarters();   // the first message is on its way
   const live = {
     threadId, userText: text, userFiles: files,
     events: [], activity: onScreen ? state.activity : (opts.activity || []), outputs: {},
@@ -846,6 +909,7 @@ async function runShellCommand(command) {
     const r = await api.runShell(threadId, command);
     if (r && r.id != null && threadId === state.activeId) div.dataset.mid = r.id;
     paint(r);
+  if (typeof clearStarters === 'function') clearStarters();
   } catch (e) {
     paint({ command, output: String((e && e.message) || e), code: -1 });
   } finally {

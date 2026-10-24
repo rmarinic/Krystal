@@ -45,6 +45,7 @@ function permissionAsked(live, msg) {
   }
   if (state.view === 'threads') renderSidebar();
   if (typeof paintProjectActivity === 'function') paintProjectActivity();
+  if (typeof taskbarSync === 'function') taskbarSync();   // amber on the taskbar while it waits
 }
 
 /* A question is settled or withdrawn. */
@@ -58,6 +59,7 @@ function permissionGone(live, id) {
   if (live.threadId === state.activeId) renderPermission();
   if (state.view === 'threads') renderSidebar();
   if (typeof paintProjectActivity === 'function') paintProjectActivity();
+  if (typeof taskbarSync === 'function') taskbarSync();   // amber on the taskbar while it waits
 }
 
 /* Nothing is being asked in this chat any more — take its notification down. */

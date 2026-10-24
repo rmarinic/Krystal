@@ -63,9 +63,10 @@ if (tbWin) {
   const bar = document.getElementById('win-controls');
   if (bar) bar.hidden = false;
 
-  document.getElementById('wc-min').onclick = () => tbWin.minimize();
-  document.getElementById('wc-max').onclick = () => tbWin.toggleMaximize();
-  document.getElementById('wc-close').onclick = () => tbWin.close();
+  const on = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+  on('wc-min', () => tbWin.minimize());
+  on('wc-max', () => tbWin.toggleMaximize());
+  on('wc-close', () => tbWin.close());
 
   document.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !tbDragTarget(e)) return;
@@ -83,4 +84,47 @@ if (tbWin) {
   window.addEventListener('focus', () => document.body.classList.remove('win-inactive'));
   document.addEventListener('i18n:changed', tbLabel);
   tbLabel();
+}
+
+/* ---------------------------- taskbar progress ---------------------------- *
+ * The taskbar button says what Krystal is doing while you're in another
+ * window, in the app's own colours: a running turn (in any chat) shows Windows'
+ * moving green bar; a turn stopped on a permission prompt turns it amber (a
+ * paused bar) and holds it still; a turn that failed while you were away turns
+ * it red until you come back. Nothing running, nothing shown — the button rests
+ * like every other. Called whenever a turn starts, ends, or starts/stops
+ * waiting on you. */
+let taskbarShown = 'none';
+let taskbarFailed = false;
+
+function taskbarStatus() {
+  let running = false, waiting = false;
+  for (const live of state.live.values()) {
+    running = true;
+    if (live.permissions && live.permissions.length) waiting = true;
+  }
+  if (waiting) return 'paused';
+  if (running) return 'indeterminate';
+  return taskbarFailed ? 'error' : 'none';
+}
+
+function taskbarSync() {
+  if (!tbWin || typeof tbWin.setProgressBar !== 'function') return;
+  const status = taskbarStatus();
+  if (status === taskbarShown) return;
+  taskbarShown = status;
+  // paused/error only draw with a value; a full bar reads as a state, not a percentage.
+  const bar = status === 'paused' || status === 'error' ? { status, progress: 100 } : { status };
+  tbWin.setProgressBar(bar).catch(() => {});
+}
+
+/* A turn failed. Worth a red button only if you weren't looking. */
+function taskbarFailedTurn() {
+  if (document.hasFocus()) return;
+  taskbarFailed = true;
+  taskbarSync();
+}
+
+if (tbWin) {
+  window.addEventListener('focus', () => { if (taskbarFailed) { taskbarFailed = false; taskbarSync(); } });
 }

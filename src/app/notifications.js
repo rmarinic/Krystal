@@ -72,6 +72,7 @@ function notifSnippet(text) {
  * the turn may end long after you've left that project, when `state.threads` no
  * longer has the chat to look them up in. */
 async function liveTurnStarted(live) {
+  if (typeof taskbarSync === 'function') taskbarSync();   // the taskbar shows a turn running (titlebar.js)
   const t = (state.threads || []).find((x) => x.id === live.threadId);
   if (t) {
     live.cwd = t.cwd;

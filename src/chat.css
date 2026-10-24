@@ -4292,3 +4292,68 @@ body.framed .modal-overlay { padding-top: 56px; }
   .win-controls, .wc-btn { transition: none; }
   .wc-ico-max, body.win-max .wc-ico-restore { animation: none; }
 }
+
+/* ---- "New reply below" (app/stream.js) ----
+   A small pill floating above the composer while the reply carries on below
+   where you've scrolled to — or has landed there. It rises in, fades out. */
+.reply-pill {
+  position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 4;
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px 7px 14px; border: 0; border-radius: 999px; cursor: pointer;
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--fg);
+  background: rgba(24,36,29,0.94); backdrop-filter: blur(8px);
+  box-shadow: 0 8px 26px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(108,199,142,0.18);
+  transition: background-color .15s ease, opacity .16s ease;
+}
+.reply-pill[hidden] { display: none; }
+.reply-pill:hover { background: rgba(30,46,37,0.97); }
+.reply-pill .ui-ico { width: 14px; height: 14px; color: var(--accent-2); transition: transform .2s ease; }
+.reply-pill:hover .ui-ico { transform: translateY(2px); }
+.reply-pill .rp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
+.reply-pill.in { animation: reply-pill-in .24s ease; }
+.reply-pill.out { opacity: 0; }
+@keyframes reply-pill-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ---- Switching chats (app/chat.js) ----
+   The chat you open settles in instead of cutting over. */
+.feed.thread-in { animation: thread-in .26s ease; }
+@keyframes thread-in { from { opacity: 0; transform: translateY(5px); } }
+
+/* ---- Starter cards (app/starters.js) ---- */
+.starters-chat { margin: auto; width: 100%; max-width: calc(var(--read-w) + 56px); padding: 0 28px; text-align: center; }
+.starters-chat h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: var(--fg); }
+.starters-chat p { margin: 0 0 20px; font-size: 14px; color: var(--fg-muted); }
+.starters-welcome { margin-top: 28px; }
+.starters-lead { font-size: 12px; color: var(--fg-dim); margin-bottom: 10px; }
+.starter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; text-align: left; }
+.starters-welcome .starter-grid { grid-template-columns: repeat(2, 1fr); }
+.starter-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 14px 14px 13px; border: 0; border-radius: 14px; cursor: pointer;
+  font-family: var(--sans); text-align: left; color: var(--fg);
+  background: rgba(255,255,255,0.035);
+  transition: background-color .15s ease, translate .2s var(--ease-out);
+  animation: starter-in .32s ease backwards; animation-delay: calc(var(--i, 0) * 45ms);
+}
+.starter-card:hover { background: rgba(255,255,255,0.065); translate: 0 -1px; }
+.starter-ico {
+  width: 30px; height: 30px; margin-bottom: 8px; border-radius: 9px;
+  display: grid; place-items: center;
+  color: var(--accent-2); background: rgba(108,199,142,0.10);
+  transition: background-color .15s ease;
+}
+.starter-card:hover .starter-ico { background: rgba(108,199,142,0.18); }
+.starter-ico .ui-ico { width: 16px; height: 16px; }
+.starter-name { font-size: 13.5px; font-weight: 600; }
+.starter-blurb { font-size: 12px; color: var(--fg-muted); }
+@keyframes starter-in { from { opacity: 0; transform: translateY(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .reply-pill, .reply-pill .ui-ico, .starter-card, .starter-ico { transition: none; }
+  .reply-pill.in, .feed.thread-in, .starter-card { animation: none; }
+  .starter-card:hover { translate: none; }
+}
