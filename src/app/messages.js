@@ -610,6 +610,31 @@ function renderThinkingChip() {
   return el;
 }
 
+/* What the Copy button on a reply puts on the clipboard: what Claude *wrote*, as
+ * the markdown it wrote it in, without the action chips between the paragraphs.
+ * Takes saved segments (`text` = one block each) or a live turn's events
+ * (`token` = a piece of the block being written); a tool (an action, an
+ * artifact) ends the block it interrupts. A direct shell run copies its
+ * command and output. `fallback` is the saved text, for replies from before
+ * segments existed. */
+function replyCopyText(items, fallback) {
+  const blocks = [];
+  let cur = '';
+  const close = () => { if (cur.trim()) blocks.push(cur.trim()); cur = ''; };
+  for (const it of (items || [])) {
+    if (!it) continue;
+    if (it.type === 'token') cur += it.text || '';
+    else if (it.type === 'text') { close(); cur = it.text || ''; close(); }
+    else if (it.type === 'shell') {
+      close();
+      blocks.push([it.command || '', it.output || ''].filter((x) => x.trim()).join('\n\n').trim());
+    } else if (it.type === 'tool') close();   // progress ticks etc. don't split a paragraph
+  }
+  close();
+  const out = blocks.filter(Boolean).join('\n\n');
+  return out || String(fallback || '').trim();
+}
+
 /* Render a persisted segment list (text blocks + action chips) into a bubble,
  * in order. Used when reloading a saved conversation. */
 function renderSegments(bubble, segs) {

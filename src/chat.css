@@ -745,12 +745,29 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
   opacity: 0; transform: scale(.9);
   transition: opacity .14s, transform .14s, color .12s;
 }
-/* User rows have no star to push things right — the delete sits at the far end. */
-.msg.user .role .msg-del { margin-left: auto; }
+/* User rows have no star to push things right — copy + delete sit at the far end. */
+.msg.user .role .msg-copy { margin-left: auto; }
 .msg.assistant .role .msg-del { margin-left: 2px; }
 .msg:hover .role .msg-del,
 .msg .role .msg-del:focus-visible { opacity: .55; transform: scale(1); }
 .msg .role .msg-del:hover { opacity: 1; color: var(--danger, #e0645a); transform: scale(1.12); }
+
+/* ---- Message copy (the whole message to the clipboard) ---- */
+/* Same quiet hover affordance as delete; a copy that landed holds green for the
+ * moment its check is shown, then rests again. */
+.msg .role .msg-copy {
+  cursor: pointer; background: none; border: none; padding: 0 2px;
+  color: var(--fg-dim); line-height: 0; display: inline-flex;
+  opacity: 0; transform: scale(.9);
+  transition: opacity .14s, transform .14s, color .12s;
+}
+.msg.assistant .role .msg-copy { margin-left: 2px; }
+/* A shell run has no star either. */
+.msg.assistant.shell .role .msg-copy { margin-left: auto; }
+.msg:hover .role .msg-copy,
+.msg .role .msg-copy:focus-visible { opacity: .55; transform: scale(1); }
+.msg .role .msg-copy:hover { opacity: 1; color: var(--fg); transform: scale(1.12); }
+.msg .role .msg-copy.copied { opacity: 1; color: var(--accent-3); transform: scale(1); }
 
 /* Collapse + fade a message out as it's removed. */
 .msg.removing {
@@ -760,7 +777,7 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
     padding .24s ease, transform .24s ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .msg .role .msg-del { transition: opacity .01s; }
+  .msg .role .msg-del, .msg .role .msg-copy { transition: opacity .01s; transform: none; }
   .msg.removing { transition: none; }
 }
 
@@ -2186,7 +2203,9 @@ body.fx-on .chat-light { opacity: 1; }
   transition: opacity .15s, color .15s, background .15s;
 }
 .task-item:hover .task-icon, .task-item:focus-within .task-icon { opacity: 1; }
-.task-edit:hover { color: var(--fg); background: var(--bg-card); }
+.task-edit:hover, .task-copy:hover { color: var(--fg); background: var(--bg-card); }
+.task-copy { display: inline-flex; align-items: center; justify-content: center; }
+.task-copy.copied { opacity: 1; color: var(--accent-3); }
 .task-del:hover { color: #ff8a8a; background: rgba(255,90,90,0.1); }
 
 @media (prefers-reduced-motion: reduce) {

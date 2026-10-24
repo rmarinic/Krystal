@@ -174,6 +174,12 @@ function taskItem(t) {
     main.appendChild(note);
   }
 
+  const copy = document.createElement('button');
+  copy.className = 'task-icon task-copy';
+  copy.title = tr('tasks.copyTitle');
+  copy.innerHTML = COPY_ICON;
+  copy.onclick = () => copyFromButton(copy, t.title, COPY_ICON);
+
   const edit = document.createElement('button');
   edit.className = 'task-icon task-edit';
   edit.title = tr('tasks.editTitle');
@@ -188,6 +194,7 @@ function taskItem(t) {
 
   li.appendChild(check);
   li.appendChild(main);
+  li.appendChild(copy);
   li.appendChild(edit);
   li.appendChild(del);
   return li;

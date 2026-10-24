@@ -372,6 +372,9 @@ function appendMessage(role, text, files, meta) {
   const star = (role === 'assistant' && !shell)
     ? `<button class="star${meta && meta.favorite ? ' on' : ''}"${meta && meta.id ? '' : ' disabled'} title="${tr('msg.saveReply')}">★</button>`
     : '';
+  // Copy the whole message. Every message has one, a streaming reply included
+  // (it copies what has been written so far).
+  const copy = `<button class="msg-copy" title="${tr('msg.copyTitle')}" aria-label="${tr('msg.copy')}">${COPY_ICON}</button>`;
   // Delete this message from the saved transcript. Only a persisted message (one
   // with a DB id) can be removed; a still-streaming reply has none yet.
   const del = (meta && meta.id)
@@ -382,7 +385,7 @@ function appendMessage(role, text, files, meta) {
   const cut = (meta && meta.partial)
     ? `<div class="msg-cut" title="${escapeHtml(tr('msg.interruptedTip'))}">${escapeHtml(tr('msg.interrupted'))}</div>`
     : '';
-  div.innerHTML = `<div class="role">${roleLabel}${star}${del}</div>${chips}<div class="bubble"></div>${cut}`;
+  div.innerHTML = `<div class="role">${roleLabel}${star}${copy}${del}</div>${chips}<div class="bubble"></div>${cut}`;
   const bubble = div.querySelector('.bubble');
   if (role === 'assistant') {
     if (segs && segs.length) {
@@ -393,14 +396,26 @@ function appendMessage(role, text, files, meta) {
     }
     const starBtn = div.querySelector('.star');
     if (starBtn) starBtn.onclick = () => toggleStar(div, starBtn);
+    div._copyText = replyCopyText(segs, text);   // a live reply's is set on `done`
   } else {
     bubble.textContent = text;
+    div._copyText = text || '';
   }
+  div.querySelector('.msg-copy').onclick = () => copyFromButton(div.querySelector('.msg-copy'), messageCopyText(div), COPY_ICON);
   const delBtn = div.querySelector('.msg-del');
   if (delBtn) delBtn.onclick = () => deleteMessage(div);
   els.feed.appendChild(div);
   if (files && files.length) loadFileChipThumbs(div);
   return div;
+}
+
+/* The text a message's Copy button takes. A reply still streaming has no saved
+ * text yet, so it copies the paragraphs as they read on screen so far. */
+function messageCopyText(div) {
+  if (div._copyText) return div._copyText;
+  const bubble = div.querySelector('.bubble');
+  const parts = [...bubble.querySelectorAll('.seg-text')].map((d) => d.innerText.trim()).filter(Boolean);
+  return parts.length ? parts.join('\n\n') : (bubble.innerText || '').trim();
 }
 
 // File paths that point at an image — used to give attachment chips a thumbnail.

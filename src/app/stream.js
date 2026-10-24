@@ -665,6 +665,7 @@ function handleLiveEvent(live, msg) {
     live.finalText = msg.text;
     if (live.typer) {
       live.typer.finish(msg.text, !!live.stopped);
+      if (live.bubble) live.bubble._copyText = replyCopyText(live.events, msg.text);
       // What this reply changed, as a strip that opens the review panel — its
       // line counts rolling up from zero, since they were just made.
       if (typeof attachTurnChanges === 'function') {

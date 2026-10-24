@@ -542,16 +542,24 @@ function addCopyButton(pre) {
   btn.title = tr('code.copy');
   btn.setAttribute('aria-label', tr('code.copy'));
   btn.innerHTML = COPY_ICON;
-  btn.addEventListener('click', async (e) => {
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const code = pre.querySelector('code');
-    const ok = await copyText((code || pre).textContent || '');
-    if (!ok) return;
-    btn.classList.add('copied');
-    btn.innerHTML = CHECK_ICON;
-    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON; }, 1400);
+    copyFromButton(btn, (code || pre).textContent || '', COPY_ICON);
   });
   pre.appendChild(btn);
+}
+
+/* Copy `text` and let the button that asked answer: its icon turns into a check
+ * for a moment, then goes back to `idle` (the icon it rests with). Every copy
+ * button in the app lands the same way — code blocks, messages, tasks. */
+async function copyFromButton(btn, text, idle) {
+  if (!(await copyText(text))) return false;
+  btn.classList.add('copied');
+  btn.innerHTML = CHECK_ICON;
+  clearTimeout(btn._copiedTimer);     // a second click restarts the moment, not stacks it
+  btn._copiedTimer = setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = idle; }, 1400);
+  return true;
 }
 
 /* Highlight every fenced code block in `scope` and give each a copy button.

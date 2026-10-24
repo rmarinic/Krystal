@@ -1,6 +1,7 @@
 /* Tests for the action chips' ways out (src/app/messages.js): the result links
  * pulled out of a web search's output, and how the Open button treats a file —
- * a click meant to look at a file must never run it.
+ * a click meant to look at a file must never run it. Also what a reply's Copy
+ * button puts on the clipboard.
  *
  * Same approach as the other frontend tests — the file is a classic script that
  * shares one global scope, so it is loaded into a vm context holding just the
@@ -23,11 +24,11 @@ function loadMessages() {
     document: { createElement: () => ({}) }, window: {},
     Set, Map, JSON, String, Array, Math, Date, console,
   };
-  const exported = ['webSearchLinks', 'chipOpenKind', 'chipTimeLabel', 'CHIP_TIME_AFTER_MS'];
+  const exported = ['webSearchLinks', 'chipOpenKind', 'chipTimeLabel', 'CHIP_TIME_AFTER_MS', 'replyCopyText'];
   return vm.runInNewContext(`${src}\n;({ ${exported.join(', ')} })`, ctx, { filename: 'messages.js' });
 }
 
-const { webSearchLinks, chipOpenKind, chipTimeLabel, CHIP_TIME_AFTER_MS } = loadMessages();
+const { webSearchLinks, chipOpenKind, chipTimeLabel, CHIP_TIME_AFTER_MS, replyCopyText } = loadMessages();
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log('  ok  ' + name); }
 
@@ -117,6 +118,39 @@ test('once it is over the clock stays where it stopped', () => {
   const t = { start: 0, end: 7000 };
   assert.strictEqual(chipTimeLabel(t, 7000), '7s');
   assert.strictEqual(chipTimeLabel(t, 60000), '7s');
+});
+
+/* ------------------------------ the reply's copy ---------------------------- */
+
+test('a saved reply copies its paragraphs as markdown, without the chips', () => {
+  const segs = [
+    { type: 'text', text: 'Looking at **the file**.' },
+    { type: 'tool', name: 'Read', input: { file_path: 'a.md' } },
+    { type: 'text', text: '  Done:\n\n- one\n- two\n' },
+  ];
+  assert.strictEqual(replyCopyText(segs, 'ignored'), 'Looking at **the file**.\n\nDone:\n\n- one\n- two');
+});
+
+test('a live turn joins its tokens, and only a tool breaks the paragraph', () => {
+  const evs = [
+    { type: 'token', text: 'Hel' }, { type: 'token', text: 'lo ' },
+    { type: 'agent_progress', tokens: 3 },
+    { type: 'token', text: 'there.' },
+    { type: 'tool', name: 'Bash' },
+    { type: 'tool_result', id: 'x' },
+    { type: 'token', text: 'All set.' },
+  ];
+  assert.strictEqual(replyCopyText(evs, ''), 'Hello there.\n\nAll set.');
+});
+
+test('a shell run copies its command and output', () => {
+  assert.strictEqual(replyCopyText([{ type: 'shell', command: 'git status', output: 'clean\n' }], ''), 'git status\n\nclean');
+});
+
+test('with nothing written it falls back to the saved text', () => {
+  assert.strictEqual(replyCopyText(null, ' old reply '), 'old reply');
+  assert.strictEqual(replyCopyText([{ type: 'tool' }], 'final'), 'final');
+  assert.strictEqual(replyCopyText([], undefined), '');
 });
 
 console.log(`\nchips: ${passed} passed`);
