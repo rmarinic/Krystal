@@ -96,7 +96,12 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
 - **Krystal Cloud account.** Link this computer to your account at app.krystal.rip from
   Settings → Remote: Krystal shows a short code, opens the site, and you confirm it there. The
   computer then shows up on your dashboard, online whenever Krystal is running ("Reachable from
-  krystal.rip", on unless you turn it off), and soon you'll be able to reach it from anywhere.
+  krystal.rip", on unless you turn it off).
+- **Use your computer from anywhere.** At app.krystal.rip, on a phone or in any browser, a linked
+  computer's projects and chats are a tap away: send a message and Claude works on that computer,
+  with the reply appearing as it is written, Stop and permission prompts included. A chat open on
+  the computer shows the same reply as it happens. What acts on the computer's own screen (opening
+  files and links, linking) stays at the computer.
 - **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
   search through every message). Ctrl+F finds words in the open chat, accents or not, and steps
   through every match. Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S lists every
