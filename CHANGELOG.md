@@ -4,6 +4,12 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.35.0
+- **Use your computer from anywhere.** Open app.krystal.rip on your phone or in any browser and pick a linked computer: its projects and chats are there. Send a message and Claude works on that computer, with the reply appearing on the page as it is written. You can stop it, and answer permission prompts and question cards, from there too. If the chat is open on the computer, the same reply appears there as it happens. Anything that acts on the computer's own screen, such as opening a file or a link, and linking or unlinking, can only be done at the computer itself.
+- **Link this computer to your Krystal Cloud account.** Settings → Remote now has an Account section. Press "Link this computer" and Krystal shows a short code and opens app.krystal.rip, where you confirm it. After that the computer appears on your dashboard there, and you can reach it from anywhere. Unlink it from either side whenever you like.
+- **Your computer shows as online at app.krystal.rip.** While Krystal is running, a linked computer stays connected to your account, so the dashboard shows it as online, and as last seen once Krystal closes. Settings → Remote → Account shows how the connection is doing. If the network drops, Krystal reconnects by itself. Turn off "Reachable from krystal.rip" there to stay offline. Unlinking the computer on the dashboard now takes effect here right away.
+- **Phone access over Wi-Fi is gone.** The Remote button, the six-digit pairing code and "connect to another Krystal" have been removed, and Krystal no longer opens a port on your computer. Your phone now reaches your computer through Krystal Cloud instead. If the old feature added a Windows Firewall rule, Krystal removes it. Windows asks you once for permission to do that.
+
 ## v0.34.0
 - **Find in chat.** Press Ctrl+F to search the open chat. Every match is highlighted. Enter (or F3) goes to the next one and Shift+Enter to the previous, and Esc closes the search. It ignores capitals and accents, so "sazetak" finds "Sažetak", and it keeps up with a reply that's still being written.
 - **The face follows the work.** While Claude runs steps, the crystal reacts to each new one: its eyes scan along while Claude reads or searches, it squints while Claude edits a file, its eyes widen when a command starts, and it glances up when work goes to a helper. Its eyes drift over the work while a step runs, and now and then it looks up as if wondering what the step will turn up.
@@ -161,3 +167,7 @@ person clicking Install — plain language, what actually changed.
 - Delete an individual message from a chat's transcript.
 - Watch a delegated sub-agent work live inside its action chip while it runs.
 - Renamed the "Living logo" setting to **Extra effects** and added a subtle glow behind the chat under it.
+
+## Where removed code lives
+Kept here so it can be found again; none of this is release notes.
+- **The phone UI** (`src-tauri/src/webui/`, served by the LAN server in `src-tauri/src/server/`) was removed after commit `d568de5` (2026-10-25), the last one that still has it. Phase 4 of the Krystal Cloud plan ports it into `../krystal-cloud/web`.

@@ -106,8 +106,8 @@ const SETTINGS_TABS = [
     { key: 'discord', get: discordEnabled, set: setDiscord },
     { key: 'discordShareName', sub: true },
   ] },
-  // Custom-rendered tab: start/stop remote access and show the pairing card
-  // (renderRemotePanel in remote.js).
+  // Custom-rendered tab: this computer's Krystal Cloud account — link, unlink
+  // (renderAccountPanel in account.js).
   { id: 'remote', custom: 'remote' },
   // Custom-rendered tab (Claude usage limits); see renderUsagePanel in usage.js.
   { id: 'usage', custom: 'usage' },
@@ -460,7 +460,7 @@ function fillSettingsTab(panel, tabId) {
   panel.innerHTML = '';
   const active = SETTINGS_TABS.find((t) => t.id === tabId) || SETTINGS_TABS[0];
   if (active.custom === 'usage') { renderUsagePanel(panel); return; }   // usage.js
-  if (active.custom === 'remote') { renderRemotePanel(panel); return; }   // remote.js
+  if (active.custom === 'remote') { renderAccountPanel(panel); return; }   // account.js
   if (active.custom === 'runs') { renderRunsPanel(panel); return; }
   if (active.custom === 'keys') { renderShortcutsPanel(panel); return; }   // hotkeys.js
   for (const row of active.rows) panel.appendChild(buildSettingRow(row));

@@ -14,7 +14,6 @@ async function showProjectPicker() {
   if (typeof setRefsThread === 'function') setRefsThread(null);
   showTasksBtn(false);
   showArtifactsBtn(false);
-  showRemoteBtn(false);
   setRunBtn(false);
   els.projectScreen.classList.remove('leaving');
   els.projectScreen.hidden = false;
@@ -81,7 +80,6 @@ const MOVE_ERRORS = {
 };
 
 async function moveProjectFolder(p) {
-  if (remoteBlocks(tr('remote.blocked.moveProject'))) return;
   let path;
   try {
     path = await dialog.open({
@@ -159,7 +157,6 @@ async function enterProject(project, card) {
 els.toProjects.onclick = () => showProjectPicker();
 
 els.newProjectBtn.onclick = async () => {
-  if (remoteBlocks(tr('remote.blocked.newProject'))) return;
   let path;
   try {
     path = await dialog.open({
@@ -305,7 +302,6 @@ function closeDirsPanel() {
 
 async function addProjectFolder() {
   if (!state.project) return;
-  if (remoteBlocks(tr('remote.blocked.addFolder'))) return;
   let path;
   try {
     path = await dialog.open({

@@ -27,20 +27,19 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Fetch the live Anthropic model catalogue (GET /v1/models) so the picker stays
-# current. rustls (no native TLS dep); reqwest is already in the tree via the
-# updater plugin, so this adds little. Only used for the models catalogue.
+# current, and talk to Krystal Cloud (src/cloud/api.rs). rustls (no native TLS
+# dep); reqwest is already in the tree via the updater plugin, so this adds little.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync", "net"] }
-# Phone access (see src/server.rs): a small LAN HTTP/SSE server that serves the
-# mobile UI and proxies it onto the same commands the desktop window uses. hyper,
-# hyper-util, http-body-util and bytes are ALREADY in the tree (reqwest pulls the
-# client half in) — naming them here only turns on the server-side features, so
-# this costs no new crates.
-hyper = { version = "1", default-features = false, features = ["server", "http1"] }
-hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
-http-body-util = "0.1"
-bytes = "1"
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "time", "sync"] }
+# Krystal Cloud's device token lives in Windows Credential Manager, never on
+# disk in the clear (see src/cloud/vault.rs).
+keyring = { version = "3", features = ["windows-native"] }
+# The linked computer's live connection to Krystal Cloud (wss://…/device, see
+# src/cloud/presence.rs). rustls with the same webpki roots reqwest uses, so the
+# TLS stack is the one already in the tree.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["clock"] }
 # Discord Rich Presence — pure-Rust IPC client (no native deps). Talks to the
@@ -48,10 +47,13 @@ chrono = { version = "0.4", features = ["clock"] }
 discord-rich-presence = "0.2"
 
 [dev-dependencies]
-# `tauri/test` gives us a mock app to hang AppState off, so the LAN server in
-# src/server.rs can be started for real in a test and driven over a real socket.
-# A dev-dependency, so the shipped binary never carries it.
+# `tauri/test` gives us a mock app to hang AppState off, so the command bridge in
+# src/remote/ can be driven for real in a test. A dev-dependency, so the shipped
+# binary never carries it.
 tauri = { version = "2", features = ["test"] }
+# Paused, auto-advancing time: the presence tests run hours of heartbeats and
+# backoff in microseconds (src/cloud/presence.rs).
+tokio = { version = "1", features = ["test-util"] }
 
 # Smaller, faster release binary for the one-click app.
 [profile.release]

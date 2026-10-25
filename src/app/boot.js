@@ -18,6 +18,7 @@ if (discordEnabled()) api.setDiscordEnabled(true).catch(() => {});
 populatePickers();
 startModelRefresh();
 startUsage();
+accountBootCheck();   // is this computer still linked to app.krystal.rip?
 showProjectPicker();
 
 // Faint build-version label in the bottom-right corner (purely informational).

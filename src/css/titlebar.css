@@ -46,8 +46,6 @@ body.framed .project-settings { top: 22px; right: calc(92px + var(--wc-w)); }
 body.framed .project-bell { top: 22px; right: calc(141px + var(--wc-w)); }
 body.framed .link-view-bar { padding-right: calc(14px + var(--wc-w)); }
 body.framed .lightbox-x { right: calc(20px + var(--wc-w)); }
-body.framed .remote-bar { padding-right: calc(14px + var(--wc-w)); }
-body.framed.is-remote .win-controls { top: 3px; }
 /* A tall dialog in a short window must not slide under them. */
 body.framed .modal-overlay { padding-top: 56px; }
 @media (prefers-reduced-motion: reduce) {

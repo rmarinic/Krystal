@@ -22,7 +22,7 @@ const tbWin = (() => {
 
 /* Where a press on empty space moves the window. Overlays that cover the whole
  * window (the project picker, first-run, update) lend their top band. */
-const TB_ZONES = '.chat-header, .sidebar-header, .remote-bar, .link-view-bar';
+const TB_ZONES = '.chat-header, .sidebar-header, .link-view-bar';
 const TB_SCREENS = '.project-screen, .onb-overlay, .update-overlay';
 const TB_SCREEN_BAND = 64;
 /* …but never a press meant for something on it. The chat title is excluded

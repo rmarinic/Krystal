@@ -1,21 +1,40 @@
-//! The command bridge: `dispatch` maps a remote call onto the same command
+//! The command bridge: `dispatch` maps a call from outside onto the same command
 //! functions the window invokes.
 
 use super::*;
 
 /* ----------------------------- command bridge ---------------------------- *
- * What turns this from "a phone page" into "another Krystal you can drive": a
- * connected client can call the backend commands by name, so the desktop app can
- * point its own `api` object at this machine and behave exactly as it does
- * locally (see `remote.active` in src/app/core.js).
+ * What lets something other than this window drive Krystal: a caller from
+ * outside names a backend command and passes its arguments as JSON, and gets
+ * back exactly what the window would.
  *
  * An explicit allowlist, not a blanket proxy over everything the window can
- * invoke. Two reasons. The pairing code is the only thing between the LAN and
- * this dispatcher, so the surface should be a decision rather than a side
- * effect. And a handful of commands are about *the machine you are sitting at* —
- * opening a link, this copy's Discord presence, installing Claude Code, starting
- * remote access itself — which would fire on the wrong computer if proxied. The
- * frontend keeps a matching local-only list; this side is what enforces it. */
+ * invoke. Two reasons. Whoever carries calls in is the only thing between the
+ * outside and this dispatcher, so the surface should be a decision rather than
+ * a side effect. And a handful of commands are about *the machine you are
+ * sitting at* — opening a link, this copy's Discord presence, installing Claude
+ * Code, linking this computer to an account — which would fire on the wrong
+ * computer, or hand the keys away, if run for someone elsewhere. Those are
+ * `LOCAL_ONLY`, and `tests/commands.test.js` holds every command to being in
+ * exactly one of the two lists. */
+
+/// Commands that only ever run for the window on this machine: `dispatch` has
+/// no arm for them, on purpose. Every registered command is either here or
+/// handled by `dispatch`/`is_streaming_command` (`tests/commands.test.js`).
+pub const LOCAL_ONLY: &[&str] = &[
+    "open_external", "open_webview", "exe_path", "app_version", "notify",
+    // A chip's Show in folder / Open act on this PC's files.
+    "reveal_path", "open_path",
+    "install_claude", "update_claude", "update_claude_npm", "open_login",
+    "start_login", "submit_login_code", "cancel_login",
+    "set_discord_enabled", "discord_set_project", "discord_set_share_name",
+    // A save dialog and a browser: both reach for *this* machine's screen.
+    "export_artifact", "open_artifact_externally",
+    // Linking this computer to an account. Never from outside: the link is
+    // what lets someone in at all.
+    "cloud_status", "cloud_link_start", "cloud_link_open", "cloud_link_cancel",
+    "cloud_check", "cloud_unlink", "cloud_presence", "cloud_set_reachable",
+];
 
 /// A required string argument (missing reads as empty, which the commands then
 /// reject themselves — the same as a bad call from the window).
@@ -54,10 +73,10 @@ fn as_json<T: serde::Serialize>(v: T) -> Result<Value, String> {
     serde_json::to_value(v).map_err(|e| e.to_string())
 }
 
-/// Run one allowlisted command. `Err` for a command that failed; `Ok(None)` for
-/// one this machine does not expose (which the caller turns into a 404, so a
-/// client can tell "refused" apart from "went wrong").
-pub(super) async fn dispatch<R: Runtime>(
+/// Run one allowlisted command. `Some(Err)` for a command that failed; `None`
+/// for one this machine does not expose, so a caller can tell "refused" apart
+/// from "went wrong".
+pub async fn dispatch<R: Runtime>(
     app: &AppHandle<R>,
     cmd: &str,
     a: &Value,
@@ -80,7 +99,11 @@ pub(super) async fn dispatch<R: Runtime>(
         /* ---- chats ---- */
         "list_threads" => as_json(commands::list_threads(st(), arg_opt_str(a, "project"))),
         "get_thread" => commands::get_thread(st(), arg_str(a, "id")),
-        "create_thread" => commands::create_thread(st(), arg_str(a, "cwd")),
+        // Nudge the window's sidebar so a chat started elsewhere shows up there
+        // without a manual refresh.
+        "create_thread" => commands::create_thread(st(), arg_str(a, "cwd")).inspect(|_| {
+            let _ = app.emit(EV_THREADS, json!({ "project": arg_str(a, "cwd") }));
+        }),
         "branch_thread" => commands::branch_thread(st(), arg_str(a, "id"), arg_opt_i64(a, "messageId")),
         "rewind_files" => {
             commands::rewind_files(st(), arg_str(a, "threadId"), arg_str(a, "ckpt"), arg_opt_bool(a, "dryRun")).await
@@ -160,9 +183,8 @@ pub(super) async fn dispatch<R: Runtime>(
         "remove_pin" => as_json(commands::remove_pin(st(), arg_str(a, "project"), arg_i64(a, "id"))),
         "read_pinned_file" => as_json(commands::read_pinned_file(arg_str(a, "path"))),
         // Artifacts. `open_artifact_externally` is deliberately absent: it opens a
-        // browser window, which would appear on the host's screen rather than
-        // the screen of whoever asked (the frontend blocks it before it gets
-        // here — see `remoteBlocks` in artifacts.js).
+        // browser window, which would appear on this machine's screen rather
+        // than the screen of whoever asked.
         "list_artifacts" => as_json(commands::list_artifacts(st(), arg_str(a, "project"))),
         "get_artifact" => commands::get_artifact(
             st(),
@@ -238,14 +260,14 @@ pub(super) async fn dispatch<R: Runtime>(
         "claude_usage" => as_json(commands::claude_usage().await),
 
         // Not exposed. `chat` and `run_app` stream, so they go through
-        // `/api/stream`; everything else here is deliberately local-only.
+        // `stream`; everything else here is deliberately local-only.
         _ => return None,
     };
     Some(out)
 }
 
-/// Commands reachable over `/api/stream` (they report progress through a
+/// Commands reachable through `stream` (they report progress through a
 /// `Channel` rather than returning once).
-pub(super) fn is_streaming_command(cmd: &str) -> bool {
+pub fn is_streaming_command(cmd: &str) -> bool {
     matches!(cmd, "chat" | "run_app")
 }

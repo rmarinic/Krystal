@@ -29,7 +29,7 @@
   <link rel="stylesheet" href="css/live.css">
   <link rel="stylesheet" href="css/pins.css">
   <link rel="stylesheet" href="css/skills.css">
-  <link rel="stylesheet" href="css/remote.css">
+  <link rel="stylesheet" href="css/account.css">
   <link rel="stylesheet" href="css/artifacts.css">
   <link rel="stylesheet" href="css/notifications.css">
   <link rel="stylesheet" href="css/hotkeys.css">
@@ -57,15 +57,6 @@
     <button class="wc-btn wc-close" id="wc-close" type="button"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></button>
   </div>
 
-  <!-- Shown only while this window is driving another Krystal (see app/remote.js).
-       It is the first child of <body> so the app grid gives it a row of its own
-       above the sidebar and the chat, instead of covering either. -->
-  <div class="remote-bar" id="remote-bar">
-    <span class="remote-bar-dot" aria-hidden="true"></span>
-    <span class="remote-bar-text" id="remote-bar-text"></span>
-    <button class="remote-bar-x" id="remote-disconnect" type="button"></button>
-  </div>
-
   <!-- ===================== Project picker (entry screen) ===================== -->
   <div class="project-screen" id="project-screen" hidden>
     <!-- Language toggle (shown only on the picker; the chat header has its own) -->
@@ -87,9 +78,6 @@
         <p class="project-sub" data-i18n="project.sub">Pick the folder Claude should work in. Each project keeps its own chats, model and history.</p>
         <div class="project-actions">
           <button id="new-project-btn" class="project-init-btn" data-icon="sparkle" data-i18n="project.initBtn">Initialize new project</button>
-          <!-- Work on another computer's projects: connect to a Krystal that has
-               remote access switched on. See app/remote.js. -->
-          <button id="remote-connect-btn" class="project-remote-btn" data-i18n-title="remote.connectTitle" title="Connect to Krystal on another computer"></button>
         </div>
       </div>
       <ul class="project-list" id="project-list"></ul>
@@ -154,9 +142,6 @@
         <span data-i18n="artifacts.label">Artifacts</span>
         <span class="tasks-count" id="artifacts-count" hidden></span>
       </button>
-      <!-- Remote access: serve this app on the local network so a phone, tablet
-           or another Krystal can carry on the conversation. See app/remote.js. -->
-      <button class="remote-btn foot-item" id="remote-btn" hidden title="Use Krystal from another device on this network"></button>
     </div>
   </aside>
 
@@ -480,18 +465,6 @@
     </div>
   </div>
 
-  <!-- ============ Connect to Krystal on another computer =================== -->
-  <!-- Address + the pairing code that machine is showing. See app/remote.js. -->
-  <div class="modal-overlay" id="remote-overlay" hidden>
-    <div class="init-modal remote-modal" role="dialog" aria-modal="true" aria-labelledby="remote-title">
-      <header class="init-head">
-        <div class="init-title" id="remote-title" data-icon="monitor" data-i18n="remote.title">Connect to another computer</div>
-        <button class="init-x" id="remote-close" data-i18n-title="remote.close" title="Close">×</button>
-      </header>
-      <div class="init-body" id="remote-body"></div>
-    </div>
-  </div>
-
   <!-- ============= Run panel: start the project locally & watch output ====== -->
   <div class="modal-overlay" id="run-overlay" hidden>
     <div class="init-modal run-modal" role="dialog" aria-modal="true" aria-labelledby="run-modal-title">
@@ -650,7 +623,8 @@
   <script defer src="app/usage.js"></script>
   <script defer src="app/orchestrator.js"></script>
   <script defer src="app/pins.js"></script>
-  <script defer src="app/remote.js"></script>
+  <script defer src="app/mirror.js"></script>
+  <script defer src="app/account.js"></script>
   <script defer src="app/notifications.js"></script>
   <script defer src="app/palette.js"></script>
   <script defer src="app/find.js"></script>

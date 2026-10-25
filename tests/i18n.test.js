@@ -1,6 +1,5 @@
 /* Both languages say everything: every string the app shows exists in EN and
- * HR, with the same {placeholders}, and none is left empty. Covers the desktop
- * dictionary (src/i18n.js) and the phone's own (src-tauri/src/webui/app.js).
+ * HR, with the same {placeholders}, and none is left empty (src/i18n.js).
  *
  * Run: node tests/i18n.test.js
  */
@@ -81,8 +80,6 @@ function checkDictionary(label, dict) {
 
 checkDictionary('desktop', objectLiteralAfter(
   fs.readFileSync(path.join(root, 'src', 'i18n.js'), 'utf8'), 'const dict ='));
-checkDictionary('phone', objectLiteralAfter(
-  fs.readFileSync(path.join(root, 'src-tauri', 'src', 'webui', 'app.js'), 'utf8'), 'const STRINGS ='));
 
 if (failures) {
   console.log(`\n${failures} i18n check(s) failed`);
