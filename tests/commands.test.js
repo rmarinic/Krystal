@@ -3,8 +3,9 @@
  *
  *   src-tauri/src/*.rs   the #[tauri::command] fn and its parameters
  *   main.rs              its entry in generate_handler!
- *   server/bridge.rs `dispatch` the hand-written bridge a phone or another Krystal
- *                        reaches it through, which reads each argument by name
+ *   remote/bridge.rs     `dispatch`, the hand-written bridge a caller from outside
+ *                        reaches it through, which reads each argument by name —
+ *                        or `LOCAL_ONLY`, the commands it must never reach
  *   src/app/*.js         the invoke('cmd', { … }) calls, whose keys Tauri maps
  *                        onto the parameters (snake_case → camelCase)
  *
@@ -92,17 +93,19 @@ function registeredCommands() {
   return splitTop(balanced(src, start, { open: '[', close: ']' })).map((p) => p.split('::').pop());
 }
 
-/* server/bridge.rs `dispatch`: [{ name, calls, keys }] for each arm. */
+const bridgeSrc = () => read(path.join(rsDir, 'remote', 'bridge.rs'));
+
+/* remote/bridge.rs `dispatch`: [{ name, calls, keys }] for each arm. */
 function dispatchArms() {
-  const src = read(path.join(rsDir, 'server', 'bridge.rs'));
+  const src = bridgeSrc();
   const from = src.indexOf('let out = match cmd {');
   const to = src.indexOf('_ => return None', from);
-  assert.ok(from > 0 && to > from, "can't find the match in server/bridge.rs dispatch");
+  assert.ok(from > 0 && to > from, "can't find the match in remote/bridge.rs dispatch");
   const body = src.slice(from, to);
   const heads = [...body.matchAll(/^\s+"(\w+)" =>/gm)];
   return heads.map((h, n) => {
     const text = body.slice(h.index, n + 1 < heads.length ? heads[n + 1].index : body.length);
-    const call = text.match(/(?:commands|server)::(\w+)\(/);
+    const call = text.match(/commands::(\w+)\(/);
     const keys = [
       ...[...text.matchAll(/arg_\w+\(a, "(\w+)"\)/g)].map((k) => k[1]),
       ...[...text.matchAll(/a\.get\("(\w+)"\)/g)].map((k) => k[1]),
@@ -111,20 +114,18 @@ function dispatchArms() {
   });
 }
 
-/* server/bridge.rs `is_streaming_command`: the commands reached over /api/stream. */
+/* remote/bridge.rs `is_streaming_command`: the commands reached through `stream`. */
 function streamingCommands() {
-  const src = read(path.join(rsDir, 'server', 'bridge.rs'));
-  const m = src.match(/fn is_streaming_command[\s\S]*?matches!\(cmd,([^)]*)\)/);
-  assert.ok(m, "can't find is_streaming_command in server/bridge.rs");
+  const m = bridgeSrc().match(/fn is_streaming_command[\s\S]*?matches!\(cmd,([^)]*)\)/);
+  assert.ok(m, "can't find is_streaming_command in remote/bridge.rs");
   return [...m[1].matchAll(/"(\w+)"/g)].map((x) => x[1]);
 }
 
-/* core.js LOCAL_ONLY_COMMANDS: what the desktop never sends to another machine. */
+/* remote/bridge.rs `LOCAL_ONLY`: what is never run for a caller from outside. */
 function localOnlyCommands() {
-  const src = read('src/app/core.js');
-  const m = src.match(/LOCAL_ONLY_COMMANDS = new Set\(\[([\s\S]*?)\]\)/);
-  assert.ok(m, "can't find LOCAL_ONLY_COMMANDS in core.js");
-  return [...m[1].replace(/\/\/.*$/gm, '').matchAll(/'(\w+)'/g)].map((x) => x[1]);
+  const m = bridgeSrc().match(/pub const LOCAL_ONLY: &\[&str\] = &\[([\s\S]*?)\];/);
+  assert.ok(m, "can't find LOCAL_ONLY in remote/bridge.rs");
+  return [...m[1].replace(/\/\/.*$/gm, '').matchAll(/"(\w+)"/g)].map((x) => x[1]);
 }
 
 /* Every invoke('cmd', …) in the desktop frontend: [{ file, cmd, keys|null }].
@@ -211,11 +212,11 @@ check('dispatch passes every required argument', () => {
   assert.deepStrictEqual(bad, []);
 });
 
-check('every command is either bridged for remote callers or marked local-only', () => {
+check('every command is either bridged for callers from outside or marked local-only', () => {
   const bridged = new Set([...arms.map((a) => a.name), ...streaming, ...localOnly]);
   const neither = registered.filter((c) => !bridged.has(c));
-  assert.deepStrictEqual(neither, [], 'a remote desktop calling these gets "command not available remotely" — '
-    + 'add a dispatch arm in server/bridge.rs, or list them in LOCAL_ONLY_COMMANDS (core.js)');
+  assert.deepStrictEqual(neither, [], 'decide whether these may be run from outside: '
+    + 'add a dispatch arm in remote/bridge.rs, or list them in LOCAL_ONLY there');
 });
 
 check('nothing is both bridged and local-only', () => {
@@ -244,8 +245,8 @@ check("every invoke() argument is one of the command's parameters", () => {
   assert.deepStrictEqual(bad, []);
 });
 
-// Channels are left out: a call bound for another Krystal drops its Channel on
-// purpose (`compact` in api.js), and the host's dispatch supplies its own.
+// Channels are left out: `dispatch` supplies its own (`compact_thread`), and
+// `stream` builds the one a streaming command reports through.
 check('every invoke() passes the arguments its command requires', () => {
   const bad = [];
   for (const c of invokeCalls()) {

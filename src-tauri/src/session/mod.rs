@@ -49,9 +49,9 @@ const IDLE_TIMEOUT_SECS: u64 = 30 * 60;
 static INTERRUPTS: AtomicU64 = AtomicU64::new(0);
 
 /// The event a session feeds back into its *own* stream when a permission prompt
-/// is answered. The answer arrives through a command (the window, the phone or a
-/// connected Krystal), not through the turn — but only the turn holds the channel
-/// every view is listening on. Looping it through the stream lets `run_turn`
+/// is answered. The answer arrives through a command (from the window, or from
+/// outside through the command bridge), not through the turn — but only the
+/// turn holds the channel every view is listening on. Looping it through the stream lets `run_turn`
 /// announce it there, in order, to all of them at once.
 pub const PERMISSION_ANSWERED: &str = "krystal_permission_answered";
 

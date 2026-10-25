@@ -69,7 +69,7 @@ pub async fn stop_chat(
 /// withdrawn because the turn was stopped, or the turn ended. That is a late
 /// click, not a failure, so it is reported rather than raised. The turn itself
 /// tells every view the prompt is settled (a `permission_gone` event), so the
-/// window, the phone and a connected Krystal all drop the card together.
+/// window and whoever is driving the turn from outside drop the card together.
 #[tauri::command]
 pub async fn answer_permission(
     state: State<'_, AppState>,

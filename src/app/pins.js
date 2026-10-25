@@ -82,7 +82,6 @@ async function refreshPins() {
 /* Pick one or more files and pin them. */
 async function addPins() {
   if (!state.project) return;
-  if (remoteBlocks(tr('remote.blocked.pin'))) return;
   let picked;
   try {
     picked = await dialog.open({

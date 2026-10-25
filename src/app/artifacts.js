@@ -432,7 +432,6 @@ async function renderedFor(art) {
  * artifact is self-contained by construction, so the saved file opens on any
  * machine, offline, with nothing else alongside it. */
 async function saveArtifactAs(art, version) {
-  if (remoteBlocks(tr('remote.blocked.saveArtifact'))) return;
   // A diagram is saved as the SVG on screen, not as the mermaid source behind
   // it: the file is for someone who hasn't got a renderer.
   let rendered;
@@ -468,7 +467,6 @@ async function saveArtifactAs(art, version) {
 /* Open the artifact in the real browser — full screen, its own window, and the
  * same file anyone else would get if you sent it to them. */
 async function openArtifactOutside(art, version) {
-  if (remoteBlocks(tr('remote.blocked.openArtifact'))) return;
   try {
     const rendered = await renderedFor(art);
     await api.openArtifactExternally(

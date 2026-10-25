@@ -27,7 +27,7 @@
 }
 .sidebar-foot .foot-item > svg { width: 16px; height: 16px; flex: none; opacity: .8; }
 /* The label takes the room, so whatever follows it sits at the row's end. */
-.sidebar-foot .foot-item > span:not([class]), .sidebar-foot .remote-label-text {
+.sidebar-foot .foot-item > span:not([class]) {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sidebar-foot .foot-item:hover:not(:disabled) { color: var(--fg); background: rgba(255,255,255,0.045); }

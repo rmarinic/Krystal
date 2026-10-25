@@ -110,9 +110,6 @@ function attachPastedImage(blob, name) {
    Images get a thumbnail read back through the backend. */
 function attachDroppedPath(path) {
   if (!path) return;
-  // The path is on THIS computer; a Krystal we're connected to could not open it.
-  // (Pasting still works — that travels as data and is saved over there.)
-  if (typeof remoteBlocks === 'function' && remoteBlocks(tr('remote.blocked.dropFile'))) return;
   attachSavedPath(path);
 }
 

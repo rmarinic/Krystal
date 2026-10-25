@@ -93,10 +93,9 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
 - **Run button.** Start the project's own run command and watch its output live.
 - **Notifications.** A bell collects what happened in chats you weren't looking at, and Windows
   notifies you when a reply finishes or needs your permission while the app is in the background.
-- **Remote access.** Use Krystal from your phone's browser, or from another computer's Krystal,
-  over your own Wi-Fi. On the phone it can sit on the Home Screen and open like an app. It's off
-  until you turn it on, a new six-digit code is issued each time, and Krystal checks the Windows
-  Firewall and offers to fix it.
+- **Krystal Cloud account.** Link this computer to your account at app.krystal.rip from
+  Settings → Remote: Krystal shows a short code, opens the site, and you confirm it there. The
+  computer then shows up on your dashboard, and soon you'll be able to reach it from anywhere.
 - **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
   search through every message). Ctrl+F finds words in the open chat, accents or not, and steps
   through every match. Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S lists every
@@ -207,7 +206,8 @@ WebView2 (src/)                       Rust (src-tauri/src/)
                                         claude/       flags, prompts, event parsing ──► claude CLI
                                         artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
                                         db/           krystal.db (SQLite)
-                                        server/       opt-in LAN server for phone / remote (HTTP + SSE)
+                                        cloud/        linking to app.krystal.rip ──► Krystal Cloud
+                                        remote/       commands reachable from outside (for the relay)
                                         catalog.rs    live model list
   updater.js ── checks ─────────────►  GitHub Releases (signed latest.json)
 ```
@@ -246,9 +246,9 @@ asking is up to the **mode** you pick per chat, from **Full access** (nothing ch
 (no changes at all). Your own permission rules in `.claude/settings*.json` apply as they would
 in a terminal. **Only open projects on folders you trust Claude to work in.**
 
-Remote access is off by default. When it's on, it's reachable only on your local network,
-behind a one-time pairing code that locks after ten wrong guesses, and it stops when Krystal
-closes.
+Krystal opens no port on your computer. Linking it to app.krystal.rip is your choice, made with
+a code you confirm while signed in there. The key that link creates lives in Windows Credential
+Manager, never in a file or in the app's window, and unlinking (here or on the dashboard) ends it.
 
 ## Project layout
 
@@ -266,7 +266,8 @@ closes.
 | `src-tauri/src/session/` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db/` | SQLite store, one file per concern (threads, turns, projects, tasks, pins, artifacts, …) |
-| `src-tauri/src/server/`, `src-tauri/src/webui/` | remote access server and phone UI |
+| `src-tauri/src/cloud/` | linking this computer to Krystal Cloud (app.krystal.rip); the key lives in Credential Manager |
+| `src-tauri/src/remote/` | the commands a caller from outside may run, and a turn as a stream of events |
 | `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
 | `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |
 | `src-tauri/src/util.rs` | the few helpers several modules share |

@@ -113,7 +113,6 @@
   width: 340px; max-width: calc(100vw - 36px);
   pointer-events: none;
 }
-body.is-remote .toasts { top: 95px; }
 .toast {
   position: relative; overflow: hidden; pointer-events: auto;
   margin-bottom: 10px; box-sizing: border-box;

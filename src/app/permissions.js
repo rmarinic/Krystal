@@ -16,7 +16,7 @@
  * A turn can be waiting on several at once (parallel tool calls, sub-agents), so
  * each live turn keeps a queue (`live.permissions`) and the card shows the front
  * of it. The queue lives on the liveTurn like everything else about a turn in
- * flight, so it survives switching chats and a turn mirrored from the phone gets
+ * flight, so it survives switching chats and a turn mirrored from outside gets
  * it for free. */
 
 function permissionQueue(live) { return live.permissions || (live.permissions = []); }

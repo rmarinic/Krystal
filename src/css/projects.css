@@ -158,6 +158,11 @@
 .project-title::before { content: "$ "; color: var(--accent-2); text-shadow: 0 0 8px rgba(108,199,142,0.5); }
 .project-sub { margin: 0 auto 22px; max-width: 540px; font-size: 14px; line-height: 1.6; color: var(--fg-muted); }
 
+/* The row under the picker's title that holds "Initialize new project". */
+.project-actions {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; flex-wrap: wrap;
+}
 .project-init-btn {
   font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer;
   color: #0a0f0b; background: linear-gradient(135deg, var(--accent-3), var(--accent-2));

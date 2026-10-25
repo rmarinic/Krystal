@@ -56,7 +56,7 @@ function paletteItems() {
   add('settings', 'gear', tr('palette.settings'), () => openSettings());
   add('settings', 'command', tr('palette.shortcuts'), () => openSettings('keys'), { keys: ['Ctrl', 'S'] });
   add('settings', 'chart', tr('palette.usage'), () => openSettings('usage'));
-  add('settings', 'monitor', tr('palette.remote'), () => openSettings('remote'));
+  add('settings', 'monitor', tr('palette.account'), () => openSettings('remote'));
   add('settings', 'language', tr('palette.language'),
     () => window.I18N.setLang(window.I18N.getLang() === 'en' ? 'hr' : 'en'));
   return out;

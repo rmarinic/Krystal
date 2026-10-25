@@ -1,6 +1,6 @@
 //! Tauri command handlers — the IPC surface the frontend talks to. Every
-//! command is also reachable from a phone or another Krystal through
-//! `server/bridge.rs`'s `dispatch` (see the four-place rule in CLAUDE.md).
+//! command is either reachable from outside through `remote/bridge.rs`'s
+//! `dispatch` or listed in its `LOCAL_ONLY` (see the four-place rule in CLAUDE.md).
 //!
 //! One file per concern; each `pub use`s up here, so callers keep writing
 //! `commands::foo` and `main.rs`'s `generate_handler!` finds every command where
@@ -92,8 +92,8 @@ pub struct AppState {
     pub suggestions: std::sync::Mutex<bool>,
     /// Warm `claude` processes, one per chat (see `session/`).
     pub sessions: session::Pool,
-    /// Remote access — the LAN HTTP server (see `server/`). Off until started.
-    pub remote: crate::server::RemoteServer,
+    /// This computer's link to a Krystal Cloud account (see `cloud/`).
+    pub cloud: std::sync::Arc<crate::cloud::CloudLink>,
 }
 
 impl AppState {

@@ -5,11 +5,17 @@
 mod artifacts;
 mod catalog;
 mod claude;
+mod cloud;
 mod commands;
 mod db;
 mod discord;
+mod legacy;
 mod models;
-mod server;
+// Commands reachable from outside the window. The Krystal Cloud relay (phase 4)
+// is what will call them; until it lands, only their tests do, so nothing in it
+// counts as used yet.
+#[allow(dead_code, unused_imports)]
+mod remote;
 mod session;
 mod skills;
 mod util;
@@ -63,6 +69,10 @@ fn main() {
             // Seed the model catalogue from the last cache (instant + offline);
             // the frontend refreshes it live via `refresh_models` at boot.
             let models = catalog::load_cache(&dir).unwrap_or_else(models::seed_models);
+            // The old LAN server's firewall rule, if it is still there.
+            legacy::remove_old_firewall_rule(&dir);
+            let cloud = cloud::new_link();
+            cloud::wire_events(app.handle(), &cloud);
             app.manage(AppState {
                 db: std::sync::Mutex::new(conn),
                 caps,
@@ -77,7 +87,7 @@ fn main() {
                 ui_lang: std::sync::Mutex::new("en".to_string()),
                 suggestions: std::sync::Mutex::new(true),
                 sessions: Default::default(),
-                remote: Default::default(),
+                cloud,
             });
             Ok(())
         })
@@ -174,11 +184,12 @@ fn main() {
             commands::set_discord_enabled,
             commands::discord_set_project,
             commands::discord_set_share_name,
-            server::remote_start,
-            server::remote_stop,
-            server::remote_status,
-            server::remote_firewall_status,
-            server::remote_firewall_allow,
+            cloud::cloud_status,
+            cloud::cloud_link_start,
+            cloud::cloud_link_open,
+            cloud::cloud_link_cancel,
+            cloud::cloud_check,
+            cloud::cloud_unlink,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Krystal")
@@ -188,9 +199,8 @@ fn main() {
             // sure the drop actually happens before the process goes away.
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
                 let state = app.state::<AppState>();
-                // Remote access is bound to a LAN port — it must not outlive the
-                // window either, or the port stays held until the process dies.
-                state.remote.shutdown();
+                // A link waiting on the browser stops polling with the window.
+                state.cloud.shutdown();
                 state.login.cancel();
                 tauri::async_runtime::block_on(state.sessions.retire_all());
             }

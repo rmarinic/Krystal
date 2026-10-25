@@ -34,11 +34,8 @@ const api = {
   setSuggestions(enabled) { return invoke('set_suggestions', { enabled }); },
   setOrchestration(id, enabled, subModel) { return invoke('set_orchestration', { id, enabled, subModel }); },
   clear(id) { return invoke('clear_thread', { id }); },
-  // `onProgress({ chars, thought })` as the summary is written. Only locally: the
-  // phone server runs compact as a plain call (a Channel would send this to its
-  // streaming endpoint), so a remote compact just waits.
+  // `onProgress({ chars, thought })` as the summary is written.
   compact(id, onProgress) {
-    if (remote.active) return invoke('compact_thread', { id });
     // The command requires its channel, so one goes along even when nobody listens.
     const onEvent = new Channel();
     onEvent.onmessage = onProgress || (() => {});
@@ -108,11 +105,14 @@ const api = {
     return invoke('open_artifact_externally', { project, artId, version, rendered, ext });
   },
   saveAttachment(name, dataBase64) { return invoke('save_attachment', { name, dataBase64 }); },
-  remoteStart(port) { return invoke('remote_start', { port }); },
-  remoteStop() { return invoke('remote_stop'); },
-  remoteStatus() { return invoke('remote_status'); },
-  remoteFirewallStatus() { return invoke('remote_firewall_status'); },
-  remoteFirewallAllow() { return invoke('remote_firewall_allow'); },
+  // Krystal Cloud: each answers with the link's status (see cloud/link.rs) —
+  // never the token, which stays in the backend.
+  cloudStatus() { return invoke('cloud_status'); },
+  cloudLinkStart() { return invoke('cloud_link_start'); },
+  cloudLinkOpen() { return invoke('cloud_link_open'); },
+  cloudLinkCancel() { return invoke('cloud_link_cancel'); },
+  cloudCheck() { return invoke('cloud_check'); },
+  cloudUnlink() { return invoke('cloud_unlink'); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

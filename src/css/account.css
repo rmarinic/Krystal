@@ -1,0 +1,52 @@
+/* account.css — Settings → Remote → Account: linking this computer to
+ * app.krystal.rip (app/account.js).
+ * index.html links the stylesheets in order and that order is the cascade, so a
+ * rule moved to another file can change what wins. */
+
+.account-state { font-size: 12px; color: var(--fg-muted); line-height: 1.55; }
+.account-state:empty { display: none; }
+/* A change of state crossfades in place (the shared list-swap shape, scoped
+   here: list-swap itself only applies to .sidebar-list). */
+.account-state.account-swap { animation: list-swap .22s ease; }
+
+/* Linking: the code waits on you at app.krystal.rip — amber and perfectly still,
+   like the permission prompt. Nothing pulses while it waits. */
+.account-wait {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 18px 14px 14px; border-radius: var(--radius);
+  border: 1px solid var(--warn-bd); background: var(--warn-bg);
+}
+.account-code {
+  font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: .08em;
+  color: var(--warn); user-select: all;
+}
+.account-hint { font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+/* Linked: a state, not an event, so its dot holds still. */
+.account-linked { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--fg); }
+.account-linked b { font-weight: 600; }
+.account-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); }
+.account-ask { margin-top: 8px; font-size: 12px; color: var(--fg-muted); }
+
+/* Something went wrong — said plainly, with the way on right below it. What the
+   user did themselves (unlinked) is news, not a fault, so it isn't amber. */
+.account-problem { font-size: 12px; color: var(--warn); }
+.account-problem.said { color: var(--fg-muted); }
+
+.account-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.account-btn {
+  font-family: var(--sans); font-size: 11.5px; font-weight: 600; cursor: pointer;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 7px 14px; transition: background .15s, color .15s, border-color .15s;
+}
+.account-btn:hover { color: var(--fg); border-color: var(--accent-2); }
+.account-btn.primary { color: #0a0f0b; background: var(--accent-2); border-color: transparent; }
+.account-btn.primary:hover { background: var(--accent-3); }
+.account-btn.danger:hover { color: var(--fg); border-color: #e07a5a; }
+.account-btn:disabled { opacity: .6; cursor: progress; }
+
+@media (prefers-reduced-motion: reduce) {
+  .account-btn { transition: none; }
+  .account-state.account-swap { animation: none; }
+}
