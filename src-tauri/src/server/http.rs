@@ -12,13 +12,17 @@ pub(super) fn full(bytes: impl Into<Bytes>) -> Body {
 }
 
 fn text_response(status: StatusCode, mime: &str, body: &str) -> Response<Body> {
+    bytes_response(status, mime, Bytes::from(body.to_owned()))
+}
+
+fn bytes_response(status: StatusCode, mime: &str, body: Bytes) -> Response<Body> {
     Response::builder()
         .status(status)
         .header("content-type", mime)
         // One person over one LAN: caching would only ever serve a stale UI
         // after an app update.
         .header("cache-control", "no-store")
-        .body(full(body.to_owned()))
+        .body(full(body))
         .unwrap()
 }
 
@@ -113,16 +117,21 @@ pub(super) fn query_param(query: &str, key: &str) -> Option<String> {
 
 /// The embedded UI, as a (mime, body) pair — or `None` if the path isn't one of
 /// ours. Everything here is public: the shell is the PIN prompt.
-pub(super) fn static_asset(method: &Method, path: &str) -> Option<(&'static str, &'static str)> {
+pub(super) fn static_asset(method: &Method, path: &str) -> Option<(&'static str, &'static [u8])> {
     if method != Method::GET {
         return None;
     }
+    let js = "text/javascript; charset=utf-8";
     match path {
-        "/" | "/index.html" => Some(("text/html; charset=utf-8", INDEX_HTML)),
-        "/app.css" => Some(("text/css; charset=utf-8", APP_CSS)),
-        "/app.js" => Some(("text/javascript; charset=utf-8", APP_JS)),
-        "/vendor/marked.js" => Some(("text/javascript; charset=utf-8", MARKED_JS)),
-        "/vendor/purify.js" => Some(("text/javascript; charset=utf-8", PURIFY_JS)),
+        "/" | "/index.html" => Some(("text/html; charset=utf-8", INDEX_HTML.as_bytes())),
+        "/app.css" => Some(("text/css; charset=utf-8", APP_CSS.as_bytes())),
+        "/app.js" => Some((js, APP_JS.as_bytes())),
+        "/vendor/marked.js" => Some((js, MARKED_JS.as_bytes())),
+        "/vendor/purify.js" => Some((js, PURIFY_JS.as_bytes())),
+        "/manifest.webmanifest" => Some(("application/manifest+json", MANIFEST.as_bytes())),
+        "/icons/apple-touch-icon.png" => Some(("image/png", APPLE_TOUCH_ICON)),
+        "/icons/icon-192.png" => Some(("image/png", ICON_192)),
+        "/icons/icon-512.png" => Some(("image/png", ICON_512)),
         _ => None,
     }
 }
@@ -164,7 +173,7 @@ pub(super) async fn handle<R: Runtime>(
     // Static half: the app shell. No token needed — the shell IS the PIN prompt,
     // and it holds nothing but markup until a token has been traded for.
     if let Some((mime, body)) = static_asset(&method, &path) {
-        return Ok(text_response(StatusCode::OK, mime, body));
+        return Ok(bytes_response(StatusCode::OK, mime, Bytes::from_static(body)));
     }
     if method == Method::GET && path == "/favicon.ico" {
         return Ok(Response::builder()

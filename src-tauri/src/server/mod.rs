@@ -78,6 +78,11 @@ const APP_JS: &str = include_str!("../webui/app.js");
 // has no `src/` folder next to it.
 const MARKED_JS: &str = include_str!("../../../src/vendor/marked.min.js");
 const PURIFY_JS: &str = include_str!("../../../src/vendor/purify.min.js");
+// What "Add to Home Screen" reads to turn the page into an app on the phone.
+const MANIFEST: &str = include_str!("../webui/manifest.webmanifest");
+const APPLE_TOUCH_ICON: &[u8] = include_bytes!("../webui/icons/apple-touch-icon.png");
+const ICON_192: &[u8] = include_bytes!("../webui/icons/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../webui/icons/icon-512.png");
 
 /* -------------------------------- state ---------------------------------- */
 
@@ -824,6 +829,7 @@ mod tests {
     fn the_ui_is_served_and_nothing_else_is() {
         let (mime, body) = static_asset(&Method::GET, "/").expect("index");
         assert!(mime.starts_with("text/html"));
+        let body = std::str::from_utf8(body).unwrap();
         assert!(body.contains("pin-input"), "the shell should carry the PIN gate");
 
         assert!(static_asset(&Method::GET, "/app.css").is_some());
@@ -836,6 +842,47 @@ mod tests {
         assert!(static_asset(&Method::GET, "/vendor/../app.js").is_none());
         // Only GET serves the shell; a POST to `/` must fall through to routing.
         assert!(static_asset(&Method::POST, "/").is_none());
+    }
+
+    /// Every quoted value after `attr` in `text` (`href="…"`, `"src": "…"`).
+    fn quoted_after<'a>(text: &'a str, attr: &str) -> Vec<&'a str> {
+        text.match_indices(attr)
+            .filter_map(|(i, _)| {
+                let rest = &text[i + attr.len()..];
+                let rest = &rest[rest.find('"')? + 1..];
+                Some(&rest[..rest.find('"')?])
+            })
+            .collect()
+    }
+
+    /// The page, its manifest and the server's table only agree by convention: a
+    /// file linked but not served is a broken icon on the phone, or no Add to
+    /// Home Screen app at all.
+    #[test]
+    fn everything_the_shell_links_to_is_served() {
+        let mut wanted: Vec<String> = Vec::new();
+        for attr in ["href=", "src="] {
+            for v in quoted_after(INDEX_HTML, attr) {
+                if !v.starts_with("data:") && !v.contains("://") {
+                    wanted.push(format!("/{}", v.trim_start_matches('/')));
+                }
+            }
+        }
+        let manifest: Value = serde_json::from_str(MANIFEST).expect("manifest is JSON");
+        for icon in manifest["icons"].as_array().expect("manifest icons") {
+            wanted.push(icon["src"].as_str().unwrap().to_string());
+        }
+        assert!(wanted.iter().any(|p| p == "/manifest.webmanifest"), "{wanted:?}");
+        assert!(wanted.iter().any(|p| p == "/icons/apple-touch-icon.png"), "{wanted:?}");
+        for path in &wanted {
+            let (mime, body) = static_asset(&Method::GET, path)
+                .unwrap_or_else(|| panic!("{path} is linked but not served"));
+            assert!(!body.is_empty(), "{path}");
+            if path.ends_with(".png") {
+                assert_eq!(mime, "image/png");
+                assert!(body.starts_with(b"\x89PNG"), "{path} is not a PNG");
+            }
+        }
     }
 
     #[test]

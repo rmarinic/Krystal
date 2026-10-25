@@ -10,7 +10,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Krystal">
   <title>Krystal</title>
+  <!-- Add to Home Screen: the manifest names the app and its icons; iOS reads
+       its own apple-touch-icon instead, and needs it opaque (it rounds the
+       corners itself and paints anything transparent black). -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0f0b'/><g transform='translate(16 16) scale(.04) translate(-540 -512)'><path fill='%23a8ecbf' d='M300 296l55-58v548h-55zM410 500L632 250h69L410 577.5z'/><path fill='%236cc78e' d='M355 238l55 58v490h-55zM410 577.5L701 250h69L410 655zM590 452l190 322h-69L548.5 499z'/><path fill='%232f7d55' d='M548.5 499L711 774h-69L507 546z'/></g></svg>">
   <link rel="stylesheet" href="app.css">
   <script defer src="vendor/marked.js"></script>

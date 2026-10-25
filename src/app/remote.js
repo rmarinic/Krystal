@@ -131,6 +131,7 @@ function fillRemoteHostState(el) {
         `</div>` +
       `</div>` +
       `<div class="remote-note">${escapeHtml(tr('remote.note'))}</div>` +
+      `<div class="remote-note">${escapeHtml(tr('remote.homeScreen'))}</div>` +
       `<div class="remote-fw" hidden></div>` +
       `<div class="remote-reach"></div>` +
     `</div>`;
