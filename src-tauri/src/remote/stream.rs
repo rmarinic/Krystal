@@ -115,17 +115,18 @@ fn chat_stream<R: Runtime>(
 
     // Tell the desktop a turn it did not start is beginning, and with what — it
     // needs the user's message to render the bubble above the reply.
-    let _ = app.emit(EV_TURN_START, json!({ "threadId": thread_id, "text": text }));
+    let turn = uuid::Uuid::new_v4().to_string();
+    let _ = app.emit(EV_TURN_START, json!({ "threadId": thread_id, "turn": turn, "text": text }));
 
     // `Channel::send` serialises to `InvokeResponseBody::Json(String)` — already
     // exactly the JSON the desktop's channel callback receives, so the same text
     // goes to both the caller and the window (as a Tauri event).
     let sink = tx.clone();
     let mirror = app.clone();
-    let mirror_id = thread_id.clone();
+    let (mirror_id, mirror_turn) = (thread_id.clone(), turn.clone());
     let channel: Channel<Value> = Channel::new(move |payload| {
         if let InvokeResponseBody::Json(raw) = payload {
-            let _ = mirror.emit(EV_TURN, json!({ "threadId": mirror_id, "raw": raw }));
+            let _ = mirror.emit(EV_TURN, json!({ "threadId": mirror_id, "turn": mirror_turn, "raw": raw }));
             let _ = sink.send(raw);
         }
         Ok(())
@@ -140,7 +141,8 @@ fn chat_stream<R: Runtime>(
         // this is the cue that the turn itself is over, either way. Both sides get
         // it, so neither is left with a spinner that never settles.
         let raw = closing_frame(outcome.map(|_| Value::Null)).to_string();
-        let _ = app.emit(EV_TURN, json!({ "threadId": thread_id, "raw": raw }));
+        let _ = app.emit(EV_TURN, json!({ "threadId": thread_id, "turn": turn, "raw": raw }));
+        let _ = app.emit(EV_TURN_END, json!({ "threadId": thread_id, "turn": turn }));
         let _ = tx.send(raw);
         // Dropping `tx` ends the stream; the caller sees it close.
     });

@@ -11,10 +11,8 @@ mod db;
 mod discord;
 mod legacy;
 mod models;
-// Commands reachable from outside the window. The Krystal Cloud relay (phase 4)
-// is what will call them; until it lands, only their tests do, so nothing in it
-// counts as used yet.
-#[allow(dead_code, unused_imports)]
+// Commands reachable from outside the window, called by the Krystal Cloud relay
+// (cloud/relay.rs).
 mod remote;
 mod session;
 mod skills;

@@ -3,8 +3,8 @@
 //!
 //! The window talks to the backend over Tauri IPC, which nothing off this machine
 //! can reach. Whatever carries a call in from elsewhere (the Krystal Cloud relay,
-//! phase 4) hands it to this module as a command name plus JSON arguments, and
-//! gets JSON back — or, for a turn, a stream of events. Same command functions
+//! `cloud/relay.rs`) hands it to this module as a command name plus JSON
+//! arguments, and gets JSON back — or, for a turn, a stream of events. Same command functions
 //! the window calls, same database, same warm `claude` sessions: whatever drives
 //! this machine from outside is another view of one app, not a second app.
 //!
@@ -29,11 +29,16 @@ use crate::commands::{self, AppState};
  * chat. These carry it; `src/app/mirror.js` listens and replays the turn through
  * exactly the same live-turn machinery a locally-typed one goes through. */
 
-/// A turn began from outside: `{ threadId, text }`.
+/// A turn began from outside: `{ threadId, turn, text }`. `turn` names this one
+/// turn in all three events, so a turn's late words can't land on the next.
 const EV_TURN_START: &str = "remote-turn-start";
-/// One event of that turn, verbatim: `{ threadId, raw }` (`raw` is the JSON the
-/// caller receives, unparsed — the window parses it itself).
+/// One event of that turn, verbatim: `{ threadId, turn, raw }` (`raw` is the
+/// JSON the caller receives, unparsed — the window parses it itself).
 const EV_TURN: &str = "remote-turn";
+/// The turn is over, after its last event: `{ threadId, turn }`. A turn's story
+/// can go on after `done` (the first reply's title comes after it), so this,
+/// not `done`, is where the window stops listening.
+const EV_TURN_END: &str = "remote-turn-end";
 /// A chat was created from outside: `{ project }`.
 const EV_THREADS: &str = "remote-threads-changed";
 
@@ -44,18 +49,19 @@ pub use bridge::{dispatch, is_streaming_command, LOCAL_ONLY};
 pub use stream::stream;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /* These stand the bridge up against a mock Tauri app holding a throwaway
      * AppState, and call it the way a carrier would: a name and JSON in, JSON
-     * (or a stream of events) out. */
+     * (or a stream of events) out. The relay's tests (cloud/relay.rs) borrow
+     * the mock app to drive it through a fake socket. */
 
     use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
     use tauri::Listener;
 
     /// A mock app carrying a real (temporary, on-disk) AppState.
-    fn mock_app(dir: &std::path::Path) -> tauri::App<MockRuntime> {
+    pub(crate) fn mock_app(dir: &std::path::Path) -> tauri::App<MockRuntime> {
         let app = mock_builder()
             .build(mock_context(noop_assets()))
             .expect("build the mock app");
@@ -81,9 +87,9 @@ mod tests {
     }
 
     /// A scratch directory that cleans itself up.
-    struct TempDir(std::path::PathBuf);
+    pub(crate) struct TempDir(pub(crate) std::path::PathBuf);
     impl TempDir {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             let p = std::env::temp_dir().join(format!("krystal-remote-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&p).unwrap();
             TempDir(p)
@@ -208,7 +214,7 @@ mod tests {
         let dir = TempDir::new();
         let app = mock_app(&dir.0);
         let (tx, mut rx) = mpsc::unbounded_channel::<(String, String)>();
-        for ev in [EV_TURN_START, EV_TURN] {
+        for ev in [EV_TURN_START, EV_TURN, EV_TURN_END] {
             let tx = tx.clone();
             app.listen(ev, move |e| {
                 let _ = tx.send((ev.to_string(), e.payload().to_string()));
@@ -223,12 +229,23 @@ mod tests {
         let (first, start) = rx.recv().await.unwrap();
         assert_eq!(first, EV_TURN_START);
         let start: Value = serde_json::from_str(&start).unwrap();
-        assert_eq!(start, json!({ "threadId": "t1", "text": "hi" }));
-        let (second, turn) = rx.recv().await.unwrap();
-        assert_eq!(second, EV_TURN);
-        let turn: Value = serde_json::from_str(&turn).unwrap();
-        let raw: Value = serde_json::from_str(turn["raw"].as_str().unwrap()).unwrap();
-        assert_eq!(raw["type"], json!("error"));
+        let id = start["turn"].as_str().expect("the turn has an id").to_string();
+        assert_eq!(start, json!({ "threadId": "t1", "turn": id, "text": "hi" }));
+        // Every event after it names the same turn; the end comes last of all,
+        // after the stream's own closing event.
+        let mut seen = Vec::new();
+        loop {
+            let (name, payload) = rx.recv().await.unwrap();
+            let payload: Value = serde_json::from_str(&payload).unwrap();
+            assert_eq!((payload["threadId"].as_str(), payload["turn"].as_str()), (Some("t1"), Some(id.as_str())));
+            if name == EV_TURN_END {
+                break;
+            }
+            assert_eq!(name, EV_TURN);
+            seen.push(serde_json::from_str::<Value>(payload["raw"].as_str().unwrap()).unwrap());
+        }
+        assert_eq!(seen.last().unwrap()["type"], json!("error"), "{seen:?}");
+        assert!(rx.try_recv().is_err(), "nothing after the end");
     }
 
     #[tokio::test]

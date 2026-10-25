@@ -1,10 +1,10 @@
 /* mirror.js — a turn started from outside this window, painted here live
    Part of the chat frontend; shares one global scope (see core.js).
 
-   Whatever drives this machine from elsewhere (today nothing does; the Krystal
-   Cloud relay will) runs its turns through src-tauri/src/remote/, which forwards
-   each event to this window. This file replays them so an open chat shows the
-   turn as it happens. */
+   Whatever drives this machine from elsewhere (the Krystal Cloud relay,
+   src-tauri/src/cloud/relay.rs) runs its turns through src-tauri/src/remote/,
+   which forwards each event to this window. This file replays them so an open
+   chat shows the turn as it happens. */
 
 /* --------------------------- mirroring a turn ---------------------------- */
 /* Whoever drives this machine from outside and this window are two views of one
@@ -16,8 +16,15 @@
  * the Activity panel, the sidebar's live mark, the agent inspector — needs to
  * know the turn came from somewhere else. */
 
-function remoteTurnStarted(threadId, text) {
-  if (!threadId || state.live.has(threadId)) return;   // already streaming here
+/* The turns being mirrored, by the backend's turn id, from `remote-turn-start`
+ * to `remote-turn-end`. Not `state.live`: a turn leaves that at `done`, but its
+ * story goes on — the first reply's real title comes after `done`, which a turn
+ * typed here still hears through the Channel it holds. The id keeps one turn's
+ * late words off the next turn in the same chat. */
+const mirroredTurns = new Map();
+
+function remoteTurnStarted(threadId, turn, text) {
+  if (!threadId || !turn || state.live.has(threadId)) return;   // already streaming here
   const onScreen = threadId === state.activeId;
   const live = {
     threadId, userText: text || '', userFiles: [],
@@ -30,11 +37,18 @@ function remoteTurnStarted(threadId, text) {
     startedAt: Date.now(),   // the working line's clock counts from here
     remote: true,
   };
+  mirroredTurns.set(turn, live);
   state.live.set(threadId, live);
   if (typeof liveTurnStarted === 'function') liveTurnStarted(live);
   if (onScreen) {
-    stickToBottom = true;             // watch it arrive, as if it were typed here
+    // What `startTurn` does for a message typed here, minus the flight from
+    // the composer: this one didn't come from it, so the lamp appears in place
+    // (`attachLiveTyper` → `lightAnchor`) instead of rising from it.
+    if (typeof clearStarters === 'function') clearStarters();   // the first message is here
+    hideSuggestion();                  // the next message has been chosen elsewhere
+    stickToBottom = true;              // watch it arrive, as if it were typed here
     appendMessage('user', live.userText, [], null);
+    mascotTurnBegan();                 // the face hops and looks up after it
     attachLiveTyper(live);
     scrollFeed();
   }
@@ -42,21 +56,37 @@ function remoteTurnStarted(threadId, text) {
   if (state.view === 'threads') renderSidebar();
 }
 
-function remoteTurnEvent(threadId, raw) {
-  const live = state.live.get(threadId);
+function remoteTurnEvent(turn, raw) {
+  const live = mirroredTurns.get(turn);
   if (!live) return;                   // not a turn we're tracking
   let msg;
   try { msg = JSON.parse(raw); } catch (_) { return; }
+  // Once the turn has landed only its late title has anything left to say. The
+  // stream's own closing `error`, after the turn's, would land it twice.
+  if (live.finalized && msg.type !== 'title') return;
   handleLiveEvent(live, msg);
+}
+
+function remoteTurnEnded(turn) {
+  const live = mirroredTurns.get(turn);
+  if (!live) return;
+  mirroredTurns.delete(turn);
+  // A turn that ended without a `done` or an `error` still ends here, so no
+  // spinner outlives it.
+  if (!live.finalized) finishLive(live);
 }
 
 listen('remote-turn-start', (e) => {
   const p = e && e.payload;
-  if (p) remoteTurnStarted(p.threadId, p.text);
+  if (p) remoteTurnStarted(p.threadId, p.turn, p.text);
 });
 listen('remote-turn', (e) => {
   const p = e && e.payload;
-  if (p) remoteTurnEvent(p.threadId, p.raw);
+  if (p) remoteTurnEvent(p.turn, p.raw);
+});
+listen('remote-turn-end', (e) => {
+  const p = e && e.payload;
+  if (p) remoteTurnEnded(p.turn);
 });
 // A chat created from outside should appear in the sidebar straight away.
 listen('remote-threads-changed', (e) => {

@@ -1,9 +1,11 @@
 //! Presence: while this computer is linked and "Reachable from krystal.rip" is
 //! on, one outgoing WebSocket to `wss://app.krystal.rip/device` keeps it online
-//! on the dashboard. Phase 4's relay will ride the same socket.
+//! on the dashboard. The relay rides the same socket: from v2, whatever the
+//! cloud sends that isn't presence's goes to `relay::Relay`, and what that has
+//! to say goes out through the same loop.
 //!
-//! The contract is `../krystal-cloud/PROTOCOL.md` (protocol v1), implemented
-//! exactly:
+//! The contract is `../krystal-cloud/PROTOCOL.md` (protocol v1; v2 adds the
+//! relay, see `relay`), implemented exactly:
 //!
 //!   - Connect with the device token as a bearer, in the header only, and no
 //!     `Origin`. A `401` at the handshake means the token is dead.
@@ -37,6 +39,7 @@ use tokio::time::{sleep, sleep_until, timeout, Instant};
 
 use super::api::Net;
 use super::link::{Link, API_VERSION};
+use super::relay::{Handler, Relay};
 use super::vault::Vault;
 use super::wire::{Frame, Refused, Socket, Wire, CLOSE_WITHIN};
 
@@ -137,6 +140,8 @@ pub struct Presence<A: Account, W: Wire> {
     /// A socket is open — what `shutdown` waits on to see the goodbye sent.
     open: watch::Sender<bool>,
     on_change: OnceLock<OnChange>,
+    /// What runs the relay's requests. Until it's set, the relay is off.
+    handler: OnceLock<Arc<dyn Handler>>,
 }
 
 /// How staying connected ended, for the outer loop.
@@ -189,6 +194,7 @@ impl<A: Account, W: Wire> Presence<A, W> {
             quit: watch::channel(false).0,
             open: watch::channel(false).0,
             on_change: OnceLock::new(),
+            handler: OnceLock::new(),
         })
     }
 
@@ -196,6 +202,12 @@ impl<A: Account, W: Wire> Presence<A, W> {
     /// window's `cloud-presence` event.
     pub fn on_change(&self, f: impl Fn(Value) + Send + Sync + 'static) {
         let _ = self.on_change.set(Box::new(f));
+    }
+
+    /// Run the relay's requests with `handler` (the app's own commands), from
+    /// the next welcome on.
+    pub fn serve(&self, handler: Arc<dyn Handler>) {
+        let _ = self.handler.set(handler);
     }
 
     // A poisoned lock still holds a perfectly good state.
@@ -336,7 +348,7 @@ impl<A: Account, W: Wire> Presence<A, W> {
 
         // Until the welcome, nothing counts as online.
         let deadline = Instant::now() + WELCOME_WITHIN;
-        let every = loop {
+        let welcome = loop {
             let frame = tokio::select! {
                 biased;
                 _ = w.changed() => {
@@ -354,15 +366,17 @@ impl<A: Account, W: Wire> Presence<A, W> {
                 Frame::Text(t) => {
                     let m = read(&t);
                     if m["type"] == "welcome" {
-                        let name = m["name"].as_str();
-                        self.account.named(token, name, m["account"]["email"].as_str());
-                        let beat = m["heartbeat"].as_u64().unwrap_or(DEFAULT_HEARTBEAT);
-                        break Duration::from_secs(beat.clamp(5, 300));
+                        break m;
                     }
                 }
                 Frame::Other => {}
             }
         };
+        self.account.named(token, welcome["name"].as_str(), welcome["account"]["email"].as_str());
+        let beat = welcome["heartbeat"].as_u64().unwrap_or(DEFAULT_HEARTBEAT);
+        let every = Duration::from_secs(beat.clamp(5, 300));
+        // This socket's requests: they end with it (dropping `relay` stops them).
+        let (mut relay, mut outbox) = Relay::new(self.handler.get().cloned(), &welcome);
         self.set(Conn::Online);
         let welcomed = Instant::now();
 
@@ -383,8 +397,9 @@ impl<A: Account, W: Wire> Presence<A, W> {
                         match m["type"].as_str() {
                             Some("pong") => pong_due = None,
                             Some("renamed") => self.account.named(token, m["name"].as_str(), None),
-                            // Later phases add types; an older desktop ignores them.
-                            _ => {}
+                            // The relay's frames. It ignores a type it doesn't
+                            // know, as the protocol asks: later versions add them.
+                            _ => relay.frame(&m),
                         }
                     }
                     Frame::Other => {}
@@ -400,6 +415,12 @@ impl<A: Account, W: Wire> Presence<A, W> {
                     let now = Instant::now();
                     pong_due = Some(now + PONG_WITHIN);
                     next_ping = now + every;
+                }
+                // After the heartbeat: a busy stream never holds up a ping.
+                Some(text) = outbox.recv() => {
+                    if sock.send(text).await.is_err() {
+                        return Ended::Lost { welcomed: Some(welcomed) };
+                    }
                 }
             }
         }
@@ -423,7 +444,7 @@ fn closed(code: Option<u16>, welcomed: Option<Instant>) -> Ended {
 }
 
 /// A frame's JSON, or `Null` for one that isn't.
-fn read(text: &str) -> Value {
+pub(super) fn read(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or(Value::Null)
 }
 
@@ -457,214 +478,7 @@ fn off_mark(dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::VecDeque;
-    use std::future::Future;
-    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-
-    /* ---------------------------- the fakes ----------------------------- *
-     * `FakeWire` hands out scripted dials: a refusal, or one end of a fake
-     * socket whose other end (`Cloud`) the test plays. Time is tokio's paused
-     * clock, which jumps ahead whenever everything is waiting — so a day of
-     * heartbeats runs in microseconds, and `Instant`s still say when. */
-
-    /// What the desktop put on the wire.
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    enum Sent {
-        Text(String),
-        Close(u16),
-    }
-
-    struct FakeSocket {
-        rx: UnboundedReceiver<Frame>,
-        tx: UnboundedSender<Sent>,
-    }
-
-    impl Socket for FakeSocket {
-        fn send(&mut self, text: String) -> impl Future<Output = Result<(), ()>> + Send {
-            let r = self.tx.send(Sent::Text(text)).map_err(|_| ());
-            async move { r }
-        }
-        async fn recv(&mut self) -> Frame {
-            self.rx.recv().await.unwrap_or(Frame::Closed(None))
-        }
-        fn close(&mut self, code: u16) -> impl Future<Output = ()> + Send {
-            let _ = self.tx.send(Sent::Close(code));
-            async {}
-        }
-    }
-
-    /// The cloud's end of one fake socket.
-    struct Cloud {
-        tx: UnboundedSender<Frame>,
-        rx: UnboundedReceiver<Sent>,
-    }
-
-    impl Cloud {
-        fn say(&self, v: Value) {
-            let _ = self.tx.send(Frame::Text(v.to_string()));
-        }
-        fn welcome(&self, heartbeat: u64) {
-            self.say(json!({
-                "type": "welcome", "deviceId": "dev-1", "name": "MARIN-PC",
-                "account": { "email": "you@example.com" }, "apiVersion": 1, "heartbeat": heartbeat,
-            }));
-        }
-        fn close(&self, code: u16) {
-            let _ = self.tx.send(Frame::Closed(Some(code)));
-        }
-        /// The next thing the desktop sent (waiting in virtual time).
-        async fn heard(&mut self) -> Sent {
-            timeout(Duration::from_secs(24 * 3600), self.rx.recv())
-                .await
-                .expect("the desktop says something")
-                .expect("the socket is still there")
-        }
-        /// Read the hello and answer with a welcome.
-        async fn accept(&mut self, heartbeat: u64) {
-            let Sent::Text(t) = self.heard().await else { panic!("expected a hello") };
-            assert_eq!(read(&t)["type"], "hello");
-            self.welcome(heartbeat);
-        }
-    }
-
-    enum Dial {
-        Refuse(Refused),
-        Accept(FakeSocket),
-    }
-
-    #[derive(Default)]
-    struct WireState {
-        script: Mutex<VecDeque<Dial>>,
-        /// The token and the (virtual) moment of every dial.
-        dials: Mutex<Vec<(String, Instant)>>,
-    }
-
-    #[derive(Clone, Default)]
-    struct FakeWire(Arc<WireState>);
-
-    impl FakeWire {
-        fn refuse(&self, r: Refused) -> &Self {
-            self.0.script.lock().unwrap().push_back(Dial::Refuse(r));
-            self
-        }
-        fn socket(&self) -> Cloud {
-            let (to_desk, rx) = unbounded_channel();
-            let (tx, from_desk) = unbounded_channel();
-            self.0.script.lock().unwrap().push_back(Dial::Accept(FakeSocket { rx, tx }));
-            Cloud { tx: to_desk, rx: from_desk }
-        }
-        fn dials(&self) -> usize {
-            self.0.dials.lock().unwrap().len()
-        }
-        fn tokens(&self) -> Vec<String> {
-            self.0.dials.lock().unwrap().iter().map(|d| d.0.clone()).collect()
-        }
-        /// Whole seconds between consecutive dials.
-        fn gaps(&self) -> Vec<u64> {
-            let d = self.0.dials.lock().unwrap();
-            d.windows(2).map(|w| (w[1].1 - w[0].1).as_secs()).collect()
-        }
-    }
-
-    impl Wire for FakeWire {
-        type Socket = FakeSocket;
-        fn connect(&self, token: String) -> impl Future<Output = Result<FakeSocket, Refused>> + Send {
-            self.0.dials.lock().unwrap().push((token, Instant::now()));
-            // Nothing scripted: nothing answers.
-            let next = self.0.script.lock().unwrap().pop_front();
-            async move {
-                match next {
-                    Some(Dial::Accept(s)) => Ok(s),
-                    Some(Dial::Refuse(r)) => Err(r),
-                    None => Err(Refused::Offline),
-                }
-            }
-        }
-        fn jitter(&self) -> f64 {
-            1.0
-        }
-    }
-
-    /// The link's side, recording what the connection told it.
-    struct FakeAccount {
-        key: watch::Sender<Option<String>>,
-        revoked: Mutex<Vec<String>>,
-        named: Mutex<Vec<(String, Option<String>)>>,
-    }
-
-    impl FakeAccount {
-        fn linked(token: &str) -> Arc<Self> {
-            Arc::new(Self {
-                key: watch::channel(Some(token.to_string())).0,
-                revoked: Mutex::default(),
-                named: Mutex::default(),
-            })
-        }
-        fn link(&self, token: Option<&str>) {
-            self.key.send_replace(token.map(str::to_string));
-        }
-        fn names(&self) -> Vec<String> {
-            self.named.lock().unwrap().iter().map(|n| n.0.clone()).collect()
-        }
-    }
-
-    impl Account for FakeAccount {
-        fn key(&self) -> watch::Receiver<Option<String>> {
-            self.key.subscribe()
-        }
-        fn revoked(&self, token: &str) {
-            self.revoked.lock().unwrap().push(token.to_string());
-            self.key.send_replace(None);
-        }
-        fn named(&self, _token: &str, name: Option<&str>, email: Option<&str>) {
-            if let Some(n) = name {
-                self.named.lock().unwrap().push((n.to_string(), email.map(str::to_string)));
-            }
-        }
-    }
-
-    type Feed = UnboundedReceiver<Value>;
-
-    struct Rig {
-        p: Arc<Presence<FakeAccount, FakeWire>>,
-        account: Arc<FakeAccount>,
-        wire: FakeWire,
-        feed: Feed,
-    }
-
-    impl Rig {
-        fn new() -> Self {
-            let account = FakeAccount::linked("the-device-token");
-            let wire = FakeWire::default();
-            let p = Presence::new(account.clone(), wire.clone(), true, "0.35.0".into());
-            let (tx, feed) = unbounded_channel();
-            p.on_change(move |s| {
-                let _ = tx.send(s);
-            });
-            Self { p, account, wire, feed }
-        }
-        fn start(&self) {
-            tokio::spawn(self.p.clone().run());
-        }
-        fn conn(&self) -> String {
-            self.p.status()["conn"].as_str().unwrap().to_string()
-        }
-        /// Wait (in virtual time) until the connection reports `conn`.
-        async fn until(&mut self, conn: &str) {
-            let wait = async {
-                while self.conn() != conn {
-                    self.feed.recv().await.expect("the feed stays open");
-                }
-            };
-            timeout(Duration::from_secs(24 * 3600), wait)
-                .await
-                .unwrap_or_else(|_| panic!("never {conn}; still {}", self.conn()));
-        }
-        /// Let everything that can run, run, and the clock move on by `d`.
-        async fn idle(&self, d: Duration) {
-            sleep(d).await;
-        }
-    }
+    use super::super::fakes::*;
 
     /* ---------------------------- connecting ---------------------------- */
 

@@ -30,8 +30,9 @@ use tokio::sync::watch;
 use super::api::{Net, Offline, Reply, Verb};
 use super::vault::{Linked, Vault};
 
-/// The version of the device API this build speaks.
-pub const API_VERSION: u32 = 1;
+/// The version of the device API this build speaks: 2, the live connection
+/// with the relay (`relay`).
+pub const API_VERSION: u32 = 2;
 
 /// How much longer to wait between polls each time the cloud says `slow-down`
 /// (RFC 8628's step).
@@ -857,7 +858,7 @@ mod tests {
         let body = body.as_ref().unwrap();
         assert_eq!(body["name"], "MARIN-PC");
         assert_eq!(body["appVersion"], "0.34.0");
-        assert_eq!(body["apiVersion"], 1);
+        assert_eq!(body["apiVersion"], API_VERSION);
         assert_eq!(body["platform"], std::env::consts::OS);
 
         let done = settled(&mut rx).await;

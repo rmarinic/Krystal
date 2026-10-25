@@ -3,7 +3,8 @@
 //! kept in Windows Credential Manager (`vault`); and, while linked and the
 //! "Reachable from krystal.rip" switch is on, the live connection that keeps it
 //! online on the dashboard (`presence`, over `wire` to `wss://…/device`). The
-//! relay that lets a phone reach this computer will ride that same socket.
+//! relay that lets someone signed in there drive this computer rides that same
+//! socket (`relay`, which hands each request to `crate::remote`).
 //!
 //! The window drives it through the `cloud_*` commands below and hears about
 //! changes it didn't ask for on two events: `cloud-link` (a poll landing, a link
@@ -19,10 +20,13 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::AppState;
 
 mod api;
+#[cfg(test)]
+mod fakes;
 mod link;
 #[cfg(test)]
 mod live;
 mod presence;
+mod relay;
 mod vault;
 mod wire;
 
@@ -100,9 +104,11 @@ pub fn wire_events(app: &AppHandle, link: &CloudLink) {
     });
 }
 
-/// Forward the live connection's changes as `cloud-presence`, and start it:
-/// from here on it follows the link and the switch by itself.
+/// Forward the live connection's changes as `cloud-presence`, hand the relay
+/// this app's commands, and start it: from here on it follows the link and
+/// the switch by itself.
 pub fn start_presence(app: &AppHandle, presence: &Arc<CloudPresence>) {
+    presence.serve(Arc::new(relay::AppHandler(app.clone())));
     let app = app.clone();
     presence.on_change(move |status| {
         let _ = app.emit(EV_PRESENCE, status);

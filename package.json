@@ -7,7 +7,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "tauri": "tauri",
-    "test": "node tests/agents-store.test.js && node tests/account.test.js && node tests/permissions.test.js && node tests/queue.test.js && node tests/review.test.js && node tests/chips.test.js && node tests/livemd.test.js && node tests/notifications.test.js && node tests/hotkeys.test.js && node tests/palette.test.js && node tests/find.test.js && node tests/light.test.js && node tests/mascot.test.js && node tests/starters.test.js && node tests/activity.test.js && node tests/worklight.test.js && node tests/usage.test.js && node tests/working.test.js && node tests/commands.test.js && node tests/i18n.test.js && node tests/boot.test.js && node tests/globals.test.js"
+    "test": "node tests/agents-store.test.js && node tests/account.test.js && node tests/permissions.test.js && node tests/queue.test.js && node tests/review.test.js && node tests/chips.test.js && node tests/livemd.test.js && node tests/notifications.test.js && node tests/hotkeys.test.js && node tests/palette.test.js && node tests/find.test.js && node tests/light.test.js && node tests/mascot.test.js && node tests/starters.test.js && node tests/activity.test.js && node tests/worklight.test.js && node tests/usage.test.js && node tests/working.test.js && node tests/mirror.test.js && node tests/commands.test.js && node tests/i18n.test.js && node tests/boot.test.js && node tests/globals.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

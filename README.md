@@ -207,8 +207,8 @@ WebView2 (src/)                       Rust (src-tauri/src/)
                                         claude/       flags, prompts, event parsing ──► claude CLI
                                         artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
                                         db/           krystal.db (SQLite)
-                                        cloud/        linking + live connection ──► Krystal Cloud (wss)
-                                        remote/       commands reachable from outside (for the relay)
+                                        cloud/        linking + live connection + relay ──► Krystal Cloud (wss)
+                                        remote/       commands reachable from outside (what the relay runs)
                                         catalog.rs    live model list
   updater.js ── checks ─────────────►  GitHub Releases (signed latest.json)
 ```
@@ -269,8 +269,8 @@ from krystal.rip" switch closes it.
 | `src-tauri/src/session/` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db/` | SQLite store, one file per concern (threads, turns, projects, tasks, pins, artifacts, …) |
-| `src-tauri/src/cloud/` | linking this computer to Krystal Cloud (app.krystal.rip), and the live connection that keeps it online there; the key lives in Credential Manager |
-| `src-tauri/src/remote/` | the commands a caller from outside may run, and a turn as a stream of events |
+| `src-tauri/src/cloud/` | linking this computer to Krystal Cloud (app.krystal.rip), the live connection that keeps it online there, and the relay over that connection that lets someone signed in there drive it; the key lives in Credential Manager |
+| `src-tauri/src/remote/` | the commands a caller from outside (the relay) may run, and a turn as a stream of events, mirrored live to the window |
 | `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
 | `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |
 | `src-tauri/src/util.rs` | the few helpers several modules share |
