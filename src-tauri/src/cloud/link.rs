@@ -83,7 +83,7 @@ impl Problem {
 #[derive(Clone, Debug, PartialEq)]
 enum Phase {
     NotLinked,
-    Linking { code: String, link_url: String },
+    Linking { code: String },
     Linked(Linked),
 }
 
@@ -103,7 +103,6 @@ pub(super) enum Outcome {
 struct Started {
     code: String,
     poll_secret: String,
-    link_url: String,
     expires_in: u64,
     interval: u64,
 }
@@ -249,9 +248,10 @@ impl<N: Net, V: Vault> Link<N, V> {
             Ok(s) => {
                 let (tx, rx) = watch::channel(false);
                 g.cancel = Some(tx);
-                g.phase = Phase::Linking { code: s.code, link_url: s.link_url.clone() };
+                // Nothing opens by itself: the code is shown, and the panel's
+                // button opens app.krystal.rip, where it is entered.
+                g.phase = Phase::Linking { code: s.code };
                 drop(g);
-                self.net.open(&s.link_url);
                 let me = Arc::clone(self);
                 tauri::async_runtime::spawn(async move {
                     let outcome =
@@ -333,13 +333,10 @@ impl<N: Net, V: Vault> Link<N, V> {
         self.status()
     }
 
-    /// "Open again": the confirm page, for a browser tab that got closed.
-    pub fn open_again(&self) {
-        let url = match &self.lock().phase {
-            Phase::Linking { link_url, .. } => link_url.clone(),
-            _ => return,
-        };
-        self.net.open(&url);
+    /// The panel's "Open app.krystal.rip": the cloud's front page, where the
+    /// code is entered once signed in.
+    pub fn open_site(&self) {
+        self.net.open_site();
     }
 
     /// Ask the cloud, quietly, whether the link still holds. A 401 means it was
@@ -473,15 +470,14 @@ fn read_start(r: &Reply) -> Result<Started, Problem> {
         return Err(Problem::Failed);
     }
     let text = |k: &str| r.body[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-    let (Some(code), Some(poll_secret), Some(link_url)) =
-        (text("code"), text("pollSecret"), text("linkUrl"))
-    else {
+    // `linkUrl` (the confirm page for this code) is no longer used: the code
+    // is entered on app.krystal.rip itself.
+    let (Some(code), Some(poll_secret)) = (text("code"), text("pollSecret")) else {
         return Err(Problem::Failed);
     };
     Ok(Started {
         code,
         poll_secret,
-        link_url,
         expires_in: r.body["expiresIn"].as_u64().unwrap_or(600),
         interval: r.body["interval"].as_u64().unwrap_or(3),
     })
@@ -637,8 +633,8 @@ mod tests {
             async {}
         }
 
-        fn open(&self, url: &str) {
-            self.0.opened.lock().unwrap().push(url.to_string());
+        fn open_site(&self) {
+            self.0.opened.lock().unwrap().push("site".to_string());
         }
     }
 
@@ -848,10 +844,9 @@ mod tests {
         let first = rx.recv().await.unwrap();
         assert_eq!(first["state"], "linking");
         assert_eq!(first["code"], "KRY-7F3Q-AB2C");
-        assert_eq!(
-            net.0.opened.lock().unwrap().as_slice(),
-            ["https://app.krystal.rip/link?code=KRY-7F3Q-AB2C"]
-        );
+        assert!(net.0.opened.lock().unwrap().is_empty(), "nothing opens by itself");
+        link.open_site();
+        assert_eq!(net.0.opened.lock().unwrap().as_slice(), ["site"], "the button opens the site");
 
         // What it asked to be linked as.
         let (body, _) = &net.calls_to("/api/link/start")[0];

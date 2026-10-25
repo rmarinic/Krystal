@@ -2,9 +2,11 @@
    Part of the chat frontend; shares one global scope (see core.js).
 
    Linking puts this computer on your Krystal Cloud account, so you can see it
-   at app.krystal.rip and, once the relay lands, reach it from anywhere. The
-   whole flow runs in the backend (src-tauri/src/cloud/): it asks the cloud for a
-   short code, opens the confirm page in the browser and waits for you there.
+   at app.krystal.rip and use it from anywhere. The whole flow runs in the
+   backend (src-tauri/src/cloud/): it asks the cloud for a short code and waits
+   for you to enter it at app.krystal.rip, signed in. Nothing opens by itself;
+   the panel's button opens the site. The sidebar's "Link a device" row (shown
+   while not linked) opens this panel and starts a link, so the code is there.
    This window only ever sees the link's status —
      { state: 'notLinked' | 'linking' | 'linked', linked, email, deviceName,
        code, problem }
@@ -43,7 +45,7 @@ function accountView(s, asking) {
   if (st.state === 'linking') {
     return {
       kind: 'linking', code: st.code || '', problem: null,
-      actions: [{ act: 'open', key: 'account.openAgain' }, { act: 'cancel', key: 'account.cancel' }],
+      actions: [{ act: 'open', key: 'account.openSite' }, { act: 'cancel', key: 'account.cancel' }],
     };
   }
   if (st.state === 'linked') {
@@ -164,7 +166,26 @@ function accountApply(next) {
   if (was.state === 'linking' && next.state === 'linked') accountLanded();
   if (was.state === 'linked' && next.state === 'notLinked' && next.problem === 'unlinkedRemotely') accountGone();
   accountPaint(was.state !== next.state || was.problem !== next.problem);
+  accountFootSync();
 }
+
+/* ------------------------- the sidebar's "Link a device" ------------------- */
+
+/* The row is there only while this computer isn't linked (Settings keeps the
+ * rest). It stays hidden until the first status arrives, so it never flashes. */
+function accountFootSync() {
+  const btn = typeof els === 'object' && els ? els.linkBtn : null;
+  if (btn) btn.hidden = !!accountStatus.linked;
+}
+
+/* Settings → Remote → Account, with a link already started, so the code is
+ * the first thing on screen. A link already waiting is just shown again. */
+function accountLinkFromFoot() {
+  openSettings('remote');
+  if (accountStatus.state === 'notLinked') accountAct('start');
+}
+
+if (typeof els === 'object' && els && els.linkBtn) els.linkBtn.onclick = accountLinkFromFoot;
 
 /* ---------------------------- the live connection ------------------------- */
 

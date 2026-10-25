@@ -42,8 +42,8 @@ impl Net for NoBrowser {
     fn sleep(&self, d: Duration) -> impl std::future::Future<Output = ()> + Send {
         self.0.sleep(d)
     }
-    fn open(&self, url: &str) {
-        self.1.lock().unwrap().push(url.to_string());
+    fn open_site(&self) {
+        self.1.lock().unwrap().push("site".to_string());
     }
 }
 

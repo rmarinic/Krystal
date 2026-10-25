@@ -159,6 +159,7 @@ const els = {
   emptyInit: $('#empty-init'),
   usageChip: $('#usage-chip'),
   artifactsBtn: $('#artifacts-btn'),
+  linkBtn: $('#link-btn'),
   artifactsCount: $('#artifacts-count'),
   artifactOverlay: $('#artifact-overlay'),
   artifactList: $('#artifact-list'),

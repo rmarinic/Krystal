@@ -8,7 +8,7 @@
  * ============================================================ */
 
 /* A small section pinned to the bottom of the sidebar: the project's places —
- * Activity, Tasks, Artifacts, Remote — as quiet rows of the same family as the
+ * Activity, Tasks, Artifacts, and Link a device while not linked — as quiet rows of the same family as the
  * chat rows above. No cards: an icon, a label, the count or state at the far
  * end, and a tint on hover. margin-top:auto pushes it below the thread list;
  * the divider only appears when a row is actually visible (no empty box on

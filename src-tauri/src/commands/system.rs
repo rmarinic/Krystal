@@ -35,11 +35,20 @@ pub fn open_external(url: String) -> CmdResult {
     if !ok_scheme || !safe {
         return Err("refused to open this link".into());
     }
-    std::process::Command::new("explorer.exe")
-        .arg(&url)
+    browser_command(&url)
         .spawn()
         .map_err(|e| format!("could not open the link: {e}"))?;
     Ok(json!({ "ok": true }))
+}
+
+/// What hands a URL to the default browser. Not `explorer.exe <url>`: Explorer
+/// reads `=` and `,` in its argument as its own switches (it is built for
+/// `/select,path`), so a URL with a query string opened a folder (Documents)
+/// instead. `url.dll`'s FileProtocolHandler passes the URL on whole.
+fn browser_command(url: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new("rundll32.exe");
+    cmd.arg("url.dll,FileProtocolHandler").arg(url);
+    cmd
 }
 
 /// What "Open" on an action chip may do with a file Claude touched. Opening
@@ -209,6 +218,16 @@ pub fn open_webview(app: tauri::AppHandle, url: String) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_link_goes_to_the_browser_whole_not_through_explorer() {
+        // Explorer read the `=` in `?code=` as a switch and opened Documents.
+        let url = "https://app.krystal.rip/link?code=KRY-7F3Q,AB2C&x=1";
+        let cmd = browser_command(url);
+        assert_eq!(cmd.get_program(), "rundll32.exe");
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+        assert_eq!(args, ["url.dll,FileProtocolHandler", url], "the URL is one argument, untouched");
+    }
 
     #[test]
     fn chip_paths_become_windows_paths_or_are_refused() {

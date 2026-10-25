@@ -64,8 +64,9 @@ pub trait Net: Send + Sync + 'static {
     /// Wait. Real time here; virtual time in the tests.
     fn sleep(&self, d: Duration) -> impl Future<Output = ()> + Send;
 
-    /// Open the confirm page in the default browser.
-    fn open(&self, url: &str);
+    /// Open the cloud's own front page (app.krystal.rip) in the default
+    /// browser. Nothing opens by itself: this is the panel's button.
+    fn open_site(&self);
 }
 
 /// The real thing: reqwest (rustls) against `base_url()`.
@@ -118,11 +119,7 @@ impl Net for HttpNet {
         tokio::time::sleep(d)
     }
 
-    fn open(&self, url: &str) {
-        // Only ever our own confirm page: the URL comes back from the server, and
-        // a link that points anywhere else is not one this app opens.
-        if url.starts_with(&format!("{}/", self.base)) {
-            let _ = crate::commands::open_external(url.to_string());
-        }
+    fn open_site(&self) {
+        let _ = crate::commands::open_external(format!("{}/", self.base));
     }
 }

@@ -124,7 +124,7 @@
       <ul class="sidebar-list" id="thread-list"></ul>
     </div>
 
-    <!-- Bottom-left: the project's places, as quiet rows — what Claude ran (Activity), Tasks, Artifacts, Remote -->
+    <!-- Bottom-left: the project's places, as quiet rows — what Claude ran (Activity), Tasks, Artifacts, and Link a device while this computer isn't linked -->
     <div class="sidebar-foot">
       <button class="activity-btn foot-item" id="activity-btn" hidden disabled data-i18n-title="activity.btnTitle" title="What Claude ran: the commands and sub-agents behind each reply. Open it to see what's happening">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
@@ -141,6 +141,11 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M8 20h8"/></svg>
         <span data-i18n="artifacts.label">Artifacts</span>
         <span class="tasks-count" id="artifacts-count" hidden></span>
+      </button>
+      <!-- Link this computer to app.krystal.rip: shown while it isn't linked. See app/account.js. -->
+      <button class="link-btn foot-item" id="link-btn" hidden data-i18n-title="account.footTitle" title="Link this computer to your account at app.krystal.rip, to use it from anywhere">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+        <span data-i18n="account.footLabel">Link a device</span>
       </button>
     </div>
   </aside>

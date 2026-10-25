@@ -4,6 +4,11 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.35.1
+- **Linking shows the code and waits.** Pressing Link in Settings → Remote no longer opened File Explorer instead of the browser. Krystal now just shows the code. Press "Open app.krystal.rip", sign in, and enter the code there.
+- **Link a device from the sidebar.** While this computer isn't linked, the bottom left has a "Link a device" row that opens the Account settings with a code ready.
+- **Links in replies open in the browser.** A link with a `?` in it could open a folder instead of the page.
+
 ## v0.35.0
 - **Use your computer from anywhere.** Open app.krystal.rip on your phone or in any browser and pick a linked computer: its projects and chats are there. Send a message and Claude works on that computer, with the reply appearing on the page as it is written. You can stop it, and answer permission prompts and question cards, from there too. If the chat is open on the computer, the same reply appears there as it happens. Anything that acts on the computer's own screen, such as opening a file or a link, and linking or unlinking, can only be done at the computer itself.
 - **Link this computer to your Krystal Cloud account.** Settings → Remote now has an Account section. Press "Link this computer" and Krystal shows a short code and opens app.krystal.rip, where you confirm it. After that the computer appears on your dashboard there, and you can reach it from anywhere. Unlink it from either side whenever you like.

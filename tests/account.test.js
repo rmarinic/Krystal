@@ -70,11 +70,12 @@ test('not linked offers to link', () => {
   assert.strictEqual(v.actions[0].key, 'account.link');
 });
 
-test('linking shows the code, with Open again and Cancel', () => {
+test('linking shows the code, with Open app.krystal.rip and Cancel', () => {
   const v = accountView(status({ state: 'linking', code: 'KRY-7F3Q-AB2C' }));
   assert.strictEqual(v.kind, 'linking');
   assert.strictEqual(v.code, 'KRY-7F3Q-AB2C');
   assert.strictEqual(acts(v), 'open,cancel');
+  assert.strictEqual(v.actions[0].key, 'account.openSite');
 });
 
 test('linked offers Unlink, and Unlink asks first', () => {
@@ -355,6 +356,56 @@ test('launch stays quiet when the link holds, or there is none', async () => {
 });
 
 /* -------------------------- the live connection -------------------------- */
+
+/* ------------------------- the sidebar's Link a device ------------------- */
+
+console.log('\nLink a device');
+
+function footRow() {
+  const btn = { hidden: true, onclick: null };
+  return { btn, els: { linkBtn: btn } };
+}
+
+test('the row waits for the first status, then shows only while not linked', () => {
+  const { btn, els } = footRow();
+  const ctx = load({ els, showTip: () => {} });
+  assert.strictEqual(btn.hidden, true, 'no flash before the backend has said anything');
+  ctx.accountApply(status());
+  assert.strictEqual(btn.hidden, false);
+  ctx.accountApply(status({ state: 'linking', code: 'K' }));
+  assert.strictEqual(btn.hidden, false, 'still there while the code waits');
+  ctx.accountApply(status({ state: 'linked', linked: true, email: 'a@b.c' }));
+  assert.strictEqual(btn.hidden, true);
+  ctx.accountApply(status({ problem: 'unlinkedRemotely' }));
+  assert.strictEqual(btn.hidden, false, 'back once the link is gone');
+});
+
+test('the row opens Settings → Remote with a link started, and never opens the browser', async () => {
+  const { btn, els } = footRow();
+  const opened = [];
+  let started = 0;
+  let sites = 0;
+  const ctx = load({
+    els,
+    openSettings: (tab) => opened.push(tab),
+    api: {
+      cloudCheck: () => new Promise(() => {}),
+      cloudLinkStart: async () => { started++; return status({ state: 'linking', code: 'KRY-1' }); },
+      cloudLinkOpen: async () => { sites++; },
+    },
+  });
+  ctx.accountApply(status());
+  await btn.onclick();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepStrictEqual(opened, ['remote']);
+  assert.strictEqual(started, 1);
+  assert.strictEqual(sites, 0, 'the site opens only from its own button');
+  // Pressed again while the code waits: the panel again, not a second link.
+  await btn.onclick();
+  assert.strictEqual(started, 1);
+  await ctx.accountAct('open');
+  assert.strictEqual(sites, 1);
+});
 
 console.log('\nthe live connection');
 

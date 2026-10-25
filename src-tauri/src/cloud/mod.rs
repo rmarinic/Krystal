@@ -125,17 +125,17 @@ pub fn cloud_status(state: tauri::State<'_, AppState>) -> Value {
     state.cloud.status()
 }
 
-/// Ask for a code, open app.krystal.rip in the browser and start waiting.
+/// Ask for a code and start waiting for it to be entered at app.krystal.rip.
 #[tauri::command]
 pub async fn cloud_link_start(state: tauri::State<'_, AppState>) -> Result<Value, String> {
     let link = state.cloud.clone();
     Ok(link.start().await)
 }
 
-/// "Open again": the confirm page, if a link is waiting on it.
+/// "Open app.krystal.rip": the cloud's front page, in the browser.
 #[tauri::command]
 pub fn cloud_link_open(state: tauri::State<'_, AppState>) {
-    state.cloud.open_again();
+    state.cloud.open_site();
 }
 
 #[tauri::command]
