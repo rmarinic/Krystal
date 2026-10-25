@@ -94,6 +94,9 @@ pub struct AppState {
     pub sessions: session::Pool,
     /// This computer's link to a Krystal Cloud account (see `cloud/`).
     pub cloud: std::sync::Arc<crate::cloud::CloudLink>,
+    /// The live connection that keeps this computer online at app.krystal.rip
+    /// while it is linked and reachable (see `cloud/presence.rs`).
+    pub presence: std::sync::Arc<crate::cloud::CloudPresence>,
 }
 
 impl AppState {

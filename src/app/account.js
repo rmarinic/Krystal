@@ -10,9 +10,18 @@
        code, problem }
    — never the device token, which stays in Windows Credential Manager.
 
+   Once linked, "Reachable from krystal.rip" keeps one connection open from the
+   backend (cloud/presence.rs) so the computer shows as online there. Its state
+   arrives as { reachable, conn } on `cloud-presence`; conn is one of off,
+   connecting, online, offline, elsewhere, update, failed.
+
    Feel: waiting on you is amber and still, like a permission prompt (nothing
    pulses while the code waits to be confirmed). Linking landing is felt like a
-   reply landing: the face is happy and KRYSTAL glows once. */
+   reply landing: the face is happy and KRYSTAL glows once. The connection is a
+   state, not an event, so its dot holds still: no heartbeat on a timer, though
+   the socket pings every 30 s. It lights once when the cloud welcomes it (the
+   connection landing), cools slowly when it drops, and is amber only when
+   staying reachable needs you (another Krystal took over, an update). */
 
 /* Last status we heard. Cached so the panel paints instantly when Settings
  * rebuilds it (it builds every tab on open to measure them). */
@@ -21,6 +30,7 @@ let accountAsking = false;      // Unlink has been pressed once: "sure?"
 let accountBusy = null;         // the action whose answer we're waiting on
 let accountPanel = null;        // the panel on screen, if any
 let accountChecking = null;     // the quiet check in flight, so re-renders don't re-ask
+let accountPresence = { reachable: true, conn: 'off' };   // the live connection, last heard
 
 /* Problems that came from the user's own choice (or happened elsewhere) say so,
  * and offer to link again rather than to "try again". */
@@ -50,6 +60,21 @@ function accountView(s, asking) {
     kind: 'idle', problem: problem ? 'account.problem.' + problem : null,
     actions: [{ act: 'start', key, tone: 'primary' }],
   };
+}
+
+/* What the connection line says, and the dot's tone: `on` (green, online),
+ * `idle` (still grey: off, on its way, or out of reach and retrying by itself)
+ * or `warn` (amber: staying reachable needs you). Pure, tested. */
+const PRESENCE_TONE = {
+  online: 'on', connecting: 'idle', offline: 'idle', off: 'idle',
+  elsewhere: 'warn', update: 'warn', failed: 'warn',
+};
+function presenceView(p) {
+  const st = p || {};
+  if (!st.reachable) return { tone: 'idle', key: 'account.presence.off' };
+  // Off while the switch is on is the instant before the first dial.
+  const conn = PRESENCE_TONE[st.conn] && st.conn !== 'off' ? st.conn : 'connecting';
+  return { tone: PRESENCE_TONE[conn], key: 'account.presence.' + conn };
 }
 
 /* ------------------------------- the panel -------------------------------- */
@@ -91,13 +116,24 @@ function accountPaint(swap) {
         `<div class="account-hint">${escapeHtml(tr('account.confirmThere'))}</div>` +
       `</div>`;
   } else if (v.kind === 'linked') {
+    const p = presenceView(accountPresence);
+    const on = !!accountPresence.reachable;
     html =
       `<div class="account-linked">` +
-        `<span class="account-dot" aria-hidden="true"></span>` +
+        `<span class="account-dot tone-${p.tone}" aria-hidden="true"></span>` +
         `<span>${tr('account.linkedAs', {
           email: `<b>${escapeHtml(s.email || '')}</b>`,
           name: `<b>${escapeHtml(s.deviceName || '')}</b>`,
         })}</span>` +
+      `</div>` +
+      `<div class="account-conn" data-key="${p.key}">${escapeHtml(tr(p.key))}</div>` +
+      `<div class="account-reach">` +
+        `<div class="settings-text">` +
+          `<div class="settings-name">${escapeHtml(tr('account.reach.name'))}</div>` +
+          `<div class="settings-desc">${escapeHtml(tr('account.reach.desc'))}</div>` +
+        `</div>` +
+        `<button class="settings-switch${on ? ' on' : ''}" type="button" role="switch" aria-checked="${on}" ` +
+          `title="${escapeHtml(tr(on ? 'settings.on' : 'settings.off'))}"><span class="switch-knob"></span></button>` +
       `</div>` +
       (v.ask ? `<div class="account-ask">${escapeHtml(tr('account.unlinkAsk'))}</div>` : '');
   } else if (v.problem) {
@@ -107,6 +143,8 @@ function accountPaint(swap) {
   body.innerHTML = html;
   body.dataset.kind = v.kind;
   if (swap) replayClass(body, 'account-swap');
+  const sw = body.querySelector && body.querySelector('.settings-switch');
+  if (sw) sw.onclick = () => accountReach(sw);
 
   acts.innerHTML = v.actions.map((a) =>
     `<button class="account-btn${a.tone ? ' ' + a.tone : ''}" type="button" data-act="${a.act}"` +
@@ -116,14 +154,60 @@ function accountPaint(swap) {
 }
 
 /* Take a status from the backend and show it. Linking that just succeeded
- * lands the way a reply does. */
+ * lands the way a reply does; a link ended at app.krystal.rip (found by the
+ * quiet check, or by the live connection being turned away) says so once. */
 function accountApply(next) {
   if (!next || typeof next !== 'object') return;
   const was = accountStatus;
   accountStatus = next;
   if (next.state !== 'linked') accountAsking = false;
   if (was.state === 'linking' && next.state === 'linked') accountLanded();
+  if (was.state === 'linked' && next.state === 'notLinked' && next.problem === 'unlinkedRemotely') accountGone();
   accountPaint(was.state !== next.state || was.problem !== next.problem);
+}
+
+/* ---------------------------- the live connection ------------------------- */
+
+/* Take the connection's state and show it, in place: the line crossfades and
+ * the dot changes tone; nothing else on the panel moves. Online after anything
+ * else is the connection landing, so the dot lights once. */
+function accountPresenceApply(next) {
+  if (!next || typeof next !== 'object') return;
+  const was = presenceView(accountPresence);
+  accountPresence = next;
+  const now = presenceView(next);
+  const panel = accountPanel;
+  const body = panel && panel.isConnected && panel.querySelector('.account-state');
+  const line = body && body.querySelector && body.querySelector('.account-conn');
+  if (!line) return;   // not linked, or no panel on screen: the next paint has it
+  const dot = body.querySelector('.account-dot');
+  if (dot) {
+    dot.className = 'account-dot tone-' + now.tone;
+    if (now.tone === 'on' && was.tone !== 'on' && motionOK()) replayClass(dot, 'land');
+  }
+  if (line.dataset.key !== now.key) {
+    line.dataset.key = now.key;
+    line.textContent = tr(now.key);
+    replayClass(line, 'account-swap');
+  }
+  const sw = body.querySelector('.settings-switch');
+  if (sw) accountSwitchShow(sw, !!next.reachable);
+}
+
+function accountSwitchShow(sw, on) {
+  sw.classList.toggle('on', on);
+  sw.setAttribute('aria-checked', String(on));
+  sw.title = tr(on ? 'settings.on' : 'settings.off');
+}
+
+/* The switch answers at once (the knob slides); the backend remembers it and
+ * opens or closes the connection, and its answer settles the line. */
+async function accountReach(sw) {
+  const next = !accountPresence.reachable;
+  accountSwitchShow(sw, next);
+  let p = null;
+  try { p = await api.cloudSetReachable(next); } catch (_) { p = { ...accountPresence }; }
+  accountPresenceApply(p);
 }
 
 async function accountAct(act) {
@@ -172,13 +256,22 @@ function accountCheck() {
 }
 
 /* On launch: the status first (so the panel is right however soon it opens),
- * then the check — and if the link was ended from app.krystal.rip while Krystal
- * was closed, say so once. */
+ * then the check, which says so (through accountApply) if the link was ended
+ * from app.krystal.rip while Krystal was closed. */
 async function accountBootCheck() {
   try { accountApply(await api.cloudStatus()); } catch (_) { return; }
+  api.cloudPresence().then(accountPresenceApply).catch(() => {});
   if (!accountStatus.linked) return;
-  const s = await accountCheck();
-  if (!s || s.problem !== 'unlinkedRemotely') return;
+  await accountCheck();
+}
+
+/* The link was ended at app.krystal.rip. Raised once, as a notice, unless the
+ * Account panel is on screen, where the panel already says it. */
+function accountGone() {
+  const overlay = typeof els === 'object' && els ? els.settingsOverlay : null;
+  const onScreen = accountPanel && accountPanel.isConnected && settingsTab === 'remote' &&
+    !(overlay && overlay.hidden);
+  if (onScreen) return;
   const text = tr('account.problem.unlinkedRemotely');
   const shown = typeof showNotice === 'function' && showNotice({
     id: 'account-unlinked', tone: 'warn', icon: '!',
@@ -190,5 +283,7 @@ async function accountBootCheck() {
 
 // A poll landing, or a check finding the link gone, while nobody asked.
 listen('cloud-link', (e) => accountApply(e && e.payload));
+// The live connection changing: dialling, welcomed, dropped, turned away.
+listen('cloud-presence', (e) => accountPresenceApply(e && e.payload));
 
 window.addEventListener('i18n:changed', () => accountPaint(false));

@@ -1,15 +1,16 @@
 //! Krystal Cloud (app.krystal.rip) — the desktop's half: linking this computer
 //! to an account (`link`), over the HTTP layer in `api`, with the device token
-//! kept in Windows Credential Manager (`vault`).
-//!
-//! Presence and the relay that lets a phone reach this computer through the
-//! cloud come later; they will use the same token, over
-//! `wss://app.krystal.rip/device`.
+//! kept in Windows Credential Manager (`vault`); and, while linked and the
+//! "Reachable from krystal.rip" switch is on, the live connection that keeps it
+//! online on the dashboard (`presence`, over `wire` to `wss://…/device`). The
+//! relay that lets a phone reach this computer will ride that same socket.
 //!
 //! The window drives it through the `cloud_*` commands below and hears about
-//! changes it didn't ask for (a poll landing, a link found gone) on the
-//! `cloud-link` event. Both only ever carry `Link::status()`.
+//! changes it didn't ask for on two events: `cloud-link` (a poll landing, a link
+//! found gone) carries `Link::status()`, `cloud-presence` carries
+//! `Presence::status()`. Neither ever carries the token.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -21,13 +22,21 @@ mod api;
 mod link;
 #[cfg(test)]
 mod live;
+mod presence;
 mod vault;
+mod wire;
 
 /// The link this app runs with: the real network, the real credential store.
 pub type CloudLink = link::Link<api::HttpNet, vault::Keyring>;
 
+/// The live connection this app runs with: that link, over a real WebSocket.
+pub type CloudPresence = presence::Presence<CloudLink, wire::WsWire>;
+
 /// The window's event for a status change it didn't ask for.
 const EV_LINK: &str = "cloud-link";
+
+/// The window's event for a change in the live connection.
+const EV_PRESENCE: &str = "cloud-presence";
 
 /// What to call this computer on the dashboard: the computer name if the OS
 /// offers one. Best effort; the dashboard can rename it.
@@ -54,6 +63,17 @@ pub fn new_link() -> Arc<CloudLink> {
     )
 }
 
+/// The live connection for `link`, against the same cloud, with the switch as
+/// it was left (`dir` is the app data folder).
+pub fn new_presence(link: &Arc<CloudLink>, dir: &Path) -> Arc<CloudPresence> {
+    presence::Presence::new(
+        link.clone(),
+        wire::WsWire::new(&api::base_url()),
+        presence::load_reachable(dir),
+        crate::commands::app_version().to_string(),
+    )
+}
+
 /// A link that can never reach anything, for tests that need an `AppState`.
 #[cfg(test)]
 pub fn for_tests() -> Arc<CloudLink> {
@@ -66,12 +86,28 @@ pub fn for_tests() -> Arc<CloudLink> {
     )
 }
 
+/// A live connection that never dials (its switch is off), for the same.
+#[cfg(test)]
+pub fn presence_for_tests(link: &Arc<CloudLink>) -> Arc<CloudPresence> {
+    presence::Presence::new(link.clone(), wire::WsWire::new("http://127.0.0.1:9"), false, "0.0.0".into())
+}
+
 /// Forward every status change the window didn't ask for as `cloud-link`.
 pub fn wire_events(app: &AppHandle, link: &CloudLink) {
     let app = app.clone();
     link.on_change(move |status| {
         let _ = app.emit(EV_LINK, status);
     });
+}
+
+/// Forward the live connection's changes as `cloud-presence`, and start it:
+/// from here on it follows the link and the switch by itself.
+pub fn start_presence(app: &AppHandle, presence: &Arc<CloudPresence>) {
+    let app = app.clone();
+    presence.on_change(move |status| {
+        let _ = app.emit(EV_PRESENCE, status);
+    });
+    tauri::async_runtime::spawn(presence.clone().run());
 }
 
 /* -------------------------------- commands -------------------------------- */
@@ -112,4 +148,17 @@ pub async fn cloud_check(state: tauri::State<'_, AppState>) -> Result<Value, Str
 pub async fn cloud_unlink(state: tauri::State<'_, AppState>) -> Result<Value, String> {
     let link = state.cloud.clone();
     Ok(link.unlink().await)
+}
+
+/// The live connection: `{ reachable, conn }`.
+#[tauri::command]
+pub fn cloud_presence(state: tauri::State<'_, AppState>) -> Value {
+    state.presence.status()
+}
+
+/// "Reachable from krystal.rip": remembered, then followed at once.
+#[tauri::command]
+pub fn cloud_set_reachable(state: tauri::State<'_, AppState>, on: bool) -> Value {
+    presence::save_reachable(&state.data_dir, on);
+    state.presence.set_reachable(on)
 }

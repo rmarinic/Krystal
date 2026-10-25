@@ -110,6 +110,37 @@ test('a missing status reads as not linked', () => {
   assert.strictEqual(accountView(null).kind, 'idle');
 });
 
+/* ------------------------------ presenceView ----------------------------- */
+
+console.log('\nconnection view');
+const { presenceView } = load();
+const CONNS = ['off', 'connecting', 'online', 'offline', 'elsewhere', 'update', 'failed'];
+
+test('online is green; on its way or retrying by itself is still grey', () => {
+  assert.deepStrictEqual({ ...presenceView({ reachable: true, conn: 'online' }) }, { tone: 'on', key: 'account.presence.online' });
+  for (const conn of ['connecting', 'offline']) {
+    assert.deepStrictEqual({ ...presenceView({ reachable: true, conn }) }, { tone: 'idle', key: 'account.presence.' + conn });
+  }
+});
+
+test('amber only when staying reachable needs you', () => {
+  for (const conn of ['elsewhere', 'update', 'failed']) {
+    assert.strictEqual(presenceView({ reachable: true, conn }).tone, 'warn', conn);
+  }
+});
+
+test('the switch off reads as off, whatever the socket is still doing', () => {
+  for (const conn of CONNS) {
+    assert.deepStrictEqual({ ...presenceView({ reachable: false, conn }) }, { tone: 'idle', key: 'account.presence.off' });
+  }
+});
+
+test('off with the switch on is the moment before the first dial', () => {
+  assert.strictEqual(presenceView({ reachable: true, conn: 'off' }).key, 'account.presence.connecting');
+  assert.strictEqual(presenceView({ reachable: true, conn: 'from-the-future' }).key, 'account.presence.connecting');
+  assert.strictEqual(presenceView(null).key, 'account.presence.off');
+});
+
 /* ------------------------------ the strings ------------------------------ */
 
 console.log('\nstrings');
@@ -137,6 +168,9 @@ test('every key account.js can ask for is in both languages', () => {
     if (v.problem) used.add(v.problem);
     for (const a of v.actions) used.add(a.key);
   }
+  for (const conn of CONNS) {
+    for (const reachable of [true, false]) used.add(presenceView({ reachable, conn }).key);
+  }
   const missing = [...used].filter((k) => !en.has(k) || !hr.has(k));
   assert.deepStrictEqual(missing, []);
 });
@@ -147,6 +181,19 @@ test('every problem the backend can report has words', () => {
   assert.ok(codes.length >= 7, `only ${codes.length} problem codes found in link.rs`);
   const { en, hr } = keys();
   const missing = codes.filter((c) => !en.has('account.problem.' + c) || !hr.has('account.problem.' + c));
+  assert.deepStrictEqual(missing, []);
+});
+
+test('every connection state the backend can report has words and a tone', () => {
+  const rs = read('src-tauri', 'src', 'cloud', 'presence.rs');
+  const body = rs.slice(rs.indexOf('fn code(self)'), rs.indexOf('/* --------------------------------- the seam'));
+  const codes = [...body.matchAll(/=> "(\w+)",/g)].map((m) => m[1]);
+  assert.ok(codes.length >= 7, `only ${codes.length} connection states found in presence.rs`);
+  assert.deepStrictEqual([...codes].sort(), [...CONNS].sort(), 'tests/account.test.js knows every state');
+  const { en, hr } = keys();
+  const toneless = codes.filter((c) => c !== 'off' && presenceView({ reachable: true, conn: c }).key !== 'account.presence.' + c);
+  assert.deepStrictEqual(toneless, [], 'account.js names every state');
+  const missing = codes.filter((c) => !en.has('account.presence.' + c) || !hr.has('account.presence.' + c));
   assert.deepStrictEqual(missing, []);
 });
 
@@ -174,11 +221,35 @@ function fakePanel() {
         return b;
       });
     },
+    // The connection's line, dot and switch: one element per paint, so a
+    // change made in place can be told from a repaint.
+    querySelector(sel) {
+      const cls = sel.slice(1);
+      if (!this.innerHTML.includes(`class="${cls}`)) return null;
+      if (this.paintedFor !== this.innerHTML) { this.kids = {}; this.paintedFor = this.innerHTML; }
+      return (this.kids[cls] = this.kids[cls] || fakeEl(this.innerHTML, cls));
+    },
   });
   return {
     isConnected: true, parts,
     set innerHTML(_) {},
     querySelector(sel) { return part(sel.slice(1)); },
+  };
+}
+
+function fakeEl(html, cls) {
+  const tag = html.match(new RegExp(`<\\w+ class="(${cls}[^"]*)"([^>]*)>([^<]*)`));
+  const classes = new Set(tag[1].split(' '));
+  const key = (tag[2].match(/data-key="([^"]+)"/) || [])[1];
+  return {
+    dataset: key ? { key } : {}, textContent: tag[3], title: '', attrs: {},
+    get className() { return [...classes].join(' '); },
+    set className(v) { classes.clear(); v.split(' ').forEach((c) => classes.add(c)); },
+    classList: {
+      toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); },
+      contains: (c) => classes.has(c),
+    },
+    setAttribute(k, v) { this.attrs[k] = v; },
   };
 }
 
@@ -254,6 +325,7 @@ test('launch says so once when the link was ended at app.krystal.rip', async () 
   const ctx = load({
     api: {
       cloudStatus: async () => status({ state: 'linked', linked: true }),
+      cloudPresence: async () => ({ reachable: true, conn: 'connecting' }),
       cloudCheck: async () => status({ problem: 'unlinkedRemotely' }),
     },
     showNotice: (n) => { notices.push(n); return true; },
@@ -266,7 +338,7 @@ test('launch says so once when the link was ended at app.krystal.rip', async () 
 test('launch stays quiet when the link holds, or there is none', async () => {
   let checks = 0;
   const quiet = load({
-    api: { cloudStatus: async () => status(), cloudCheck: async () => { checks++; return status(); } },
+    api: { cloudStatus: async () => status(), cloudPresence: async () => ({ reachable: true, conn: 'off' }), cloudCheck: async () => { checks++; return status(); } },
     showNotice: () => { throw new Error('nothing to say'); },
   });
   await quiet.accountBootCheck();
@@ -274,11 +346,109 @@ test('launch stays quiet when the link holds, or there is none', async () => {
   const linked = load({
     api: {
       cloudStatus: async () => status({ state: 'linked', linked: true }),
+      cloudPresence: async () => ({ reachable: true, conn: 'online' }),
       cloudCheck: async () => status({ state: 'linked', linked: true }),
     },
     showNotice: () => { throw new Error('nothing to say'); },
   });
   await linked.accountBootCheck();
+});
+
+/* -------------------------- the live connection -------------------------- */
+
+console.log('\nthe live connection');
+
+/* A linked panel on screen, with replayClass recording what it replays. */
+function linkedPanel(extra) {
+  const replayed = [];
+  const ctx = load({
+    api: { cloudCheck: () => new Promise(() => {}), ...(extra && extra.api) },
+    replayClass: (el, cls) => replayed.push(cls),
+    ...(extra && { showNotice: extra.showNotice }),
+  });
+  const panel = fakePanel();
+  ctx.renderAccountPanel(panel);
+  ctx.accountApply(status({ state: 'linked', linked: true, email: 'you@example.com' }));
+  replayed.length = 0;
+  const body = panel.parts['account-state'];
+  return { ctx, panel, body, replayed, el: (cls) => body.querySelector('.' + cls) };
+}
+
+test('linked shows the connection and the switch; not linked shows neither', () => {
+  const { ctx, body, el } = linkedPanel();
+  assert.ok(el('account-conn'), 'the connection line');
+  assert.ok(el('settings-switch'), 'the switch');
+  assert.ok(body.innerHTML.includes('account.reach.name'));
+  ctx.accountApply(status());
+  assert.strictEqual(el('account-conn'), null);
+  assert.strictEqual(el('settings-switch'), null);
+});
+
+test('the connection changes in place: the line crossfades, the dot changes tone', () => {
+  const { ctx, body, el, replayed } = linkedPanel();
+  const painted = body.innerHTML;
+  ctx.accountPresenceApply({ reachable: true, conn: 'offline' });
+  assert.strictEqual(body.innerHTML, painted, 'no repaint of the panel');
+  assert.strictEqual(el('account-conn').textContent, 'account.presence.offline');
+  assert.strictEqual(el('account-dot').className, 'account-dot tone-idle');
+  assert.deepStrictEqual(replayed, ['account-swap']);
+  // The same words again: nothing moves.
+  ctx.accountPresenceApply({ reachable: true, conn: 'offline' });
+  assert.deepStrictEqual(replayed, ['account-swap']);
+});
+
+test('the dot lights once when the connection lands, and holds still after', () => {
+  const { ctx, el, replayed } = linkedPanel();
+  ctx.accountPresenceApply({ reachable: true, conn: 'connecting' });
+  ctx.accountPresenceApply({ reachable: true, conn: 'online' });
+  assert.strictEqual(el('account-dot').className, 'account-dot tone-on');
+  assert.strictEqual(replayed.filter((c) => c === 'land').length, 1);
+  ctx.accountPresenceApply({ reachable: true, conn: 'online' });
+  assert.strictEqual(replayed.filter((c) => c === 'land').length, 1, 'still online is not news');
+  ctx.accountPresenceApply({ reachable: true, conn: 'elsewhere' });
+  assert.strictEqual(el('account-dot').className, 'account-dot tone-warn');
+});
+
+test('the switch answers at once, then the backend settles it', async () => {
+  const asked = [];
+  let answer;
+  const { ctx, el } = linkedPanel({
+    api: { cloudSetReachable: (on) => { asked.push(on); return new Promise((r) => { answer = r; }); } },
+  });
+  ctx.accountPresenceApply({ reachable: true, conn: 'online' });
+  const sw = el('settings-switch');
+  const pressed = sw.onclick();
+  assert.strictEqual(sw.classList.contains('on'), false, 'the knob moved before any answer');
+  assert.strictEqual(sw.attrs['aria-checked'], 'false');
+  assert.deepStrictEqual(asked, [false]);
+  answer({ reachable: false, conn: 'off' });
+  await pressed;
+  assert.strictEqual(el('account-conn').textContent, 'account.presence.off');
+});
+
+test('the connection arrives on cloud-presence, and a panel opened later shows it', () => {
+  const ctx = load({ api: { cloudCheck: () => new Promise(() => {}) } });
+  ctx.listeners['cloud-presence']({ payload: { reachable: false, conn: 'off' } });
+  const panel = fakePanel();
+  ctx.renderAccountPanel(panel);
+  ctx.accountApply(status({ state: 'linked', linked: true }));
+  const sw = panel.parts['account-state'].querySelector('.settings-switch');
+  assert.ok(!sw.classList.contains('on'));
+  assert.ok(panel.parts['account-state'].innerHTML.includes('account.presence.off'));
+});
+
+test('a link ended while Krystal runs says so once, unless the panel already does', () => {
+  const notices = [];
+  const showNotice = (n) => { notices.push(n); return true; };
+  const away = load({ showNotice });
+  away.accountApply(status({ state: 'linked', linked: true }));
+  away.listeners['cloud-link']({ payload: status({ problem: 'unlinkedRemotely' }) });
+  away.listeners['cloud-link']({ payload: status({ problem: 'unlinkedRemotely' }) });
+  assert.strictEqual(notices.length, 1);
+
+  const { ctx } = linkedPanel({ showNotice });
+  ctx.listeners['cloud-link']({ payload: status({ problem: 'unlinkedRemotely' }) });
+  assert.strictEqual(notices.length, 1, 'the panel on screen says it itself');
 });
 
 /* ----------------------------- modal stacking ---------------------------- */

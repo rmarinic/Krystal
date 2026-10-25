@@ -60,6 +60,7 @@ mod tests {
             .build(mock_context(noop_assets()))
             .expect("build the mock app");
         let conn = crate::db::open(&dir.join("krystal.db")).expect("open the test db");
+        let cloud = crate::cloud::for_tests();
         app.manage(AppState {
             db: std::sync::Mutex::new(conn),
             caps: crate::claude::Caps { pandoc: false, python_docx: false },
@@ -73,7 +74,8 @@ mod tests {
             ui_lang: std::sync::Mutex::new("en".into()),
             suggestions: std::sync::Mutex::new(false),
             sessions: Default::default(),
-            cloud: crate::cloud::for_tests(),
+            cloud: cloud.clone(),
+            presence: crate::cloud::presence_for_tests(&cloud),
         });
         app
     }

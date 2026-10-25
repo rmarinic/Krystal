@@ -6,6 +6,7 @@ person clicking Install — plain language, what actually changed.
 
 ## Unreleased
 - **Link this computer to your Krystal Cloud account.** Settings → Remote now has an Account section. Press "Link this computer" and Krystal shows a short code and opens app.krystal.rip, where you confirm it. After that the computer appears on your dashboard there, and soon you'll be able to reach it from anywhere. Unlink it from either side whenever you like.
+- **Your computer shows as online at app.krystal.rip.** While Krystal is running, a linked computer stays connected to your account, so the dashboard shows it as online, and as last seen once Krystal closes. Settings → Remote → Account shows how the connection is doing. If the network drops, Krystal reconnects by itself. Turn off "Reachable from krystal.rip" there to stay offline. Unlinking the computer on the dashboard now takes effect here right away.
 - **Phone access over Wi-Fi is gone.** The Remote button, the six-digit pairing code and "connect to another Krystal" have been removed, and Krystal no longer opens a port on your computer. Reaching your computer from a phone will come back through Krystal Cloud instead. If the old feature added a Windows Firewall rule, Krystal removes it. Windows asks you once for permission to do that.
 
 ## v0.34.0

@@ -28,6 +28,33 @@
 .account-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); }
 .account-ask { margin-top: 8px; font-size: 12px; color: var(--fg-muted); }
 
+/* The live connection (cloud/presence.rs) gives the dot its tone: green online,
+   still grey while off, on its way or retrying by itself, amber when staying
+   reachable needs you. It never beats with the heartbeat. Catch fast, release
+   slow: it lights in .2s and cools over 1.2s when the connection drops (a
+   transition runs at the duration of the state it goes *to*). */
+.account-dot { position: relative; transition: background-color 1.2s ease; }
+.account-dot.tone-idle { background: var(--fg-dim); }
+.account-dot.tone-on { background: var(--accent-2); transition-duration: .2s; }
+.account-dot.tone-warn { background: var(--warn); transition-duration: .2s; }
+/* The connection landing (the cloud's welcome): one soft light from the dot
+   itself — edgeless, opacity only, gone in about a second. */
+.account-dot::after {
+  content: ''; position: absolute; inset: -10px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(108, 199, 142, .45) 0%, rgba(108, 199, 142, 0) 70%);
+  opacity: 0;
+}
+.account-dot.land::after { animation: account-dot-land 1.2s ease-out; }
+@keyframes account-dot-land { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+
+/* What the connection is doing, under the link it belongs to (aligned with the
+   text after the dot). Crossfades in place when it changes. */
+.account-conn { margin: 4px 0 0 16px; font-size: 12px; color: var(--fg-muted); }
+.account-conn.account-swap { animation: list-swap .22s ease; }
+
+/* "Reachable from krystal.rip": the same switch as every other setting. */
+.account-reach { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+
 /* Something went wrong — said plainly, with the way on right below it. What the
    user did themselves (unlinked) is news, not a fault, so it isn't amber. */
 .account-problem { font-size: 12px; color: var(--warn); }
@@ -49,4 +76,7 @@
 @media (prefers-reduced-motion: reduce) {
   .account-btn { transition: none; }
   .account-state.account-swap { animation: none; }
+  /* The tone still changes; it just doesn't travel or light up. */
+  .account-dot { transition: none; }
+  .account-dot.land::after, .account-conn.account-swap { animation: none; }
 }

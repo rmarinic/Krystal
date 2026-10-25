@@ -33,7 +33,7 @@ pub const LOCAL_ONLY: &[&str] = &[
     // Linking this computer to an account. Never from outside: the link is
     // what lets someone in at all.
     "cloud_status", "cloud_link_start", "cloud_link_open", "cloud_link_cancel",
-    "cloud_check", "cloud_unlink",
+    "cloud_check", "cloud_unlink", "cloud_presence", "cloud_set_reachable",
 ];
 
 /// A required string argument (missing reads as empty, which the commands then

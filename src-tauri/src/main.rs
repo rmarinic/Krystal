@@ -73,6 +73,8 @@ fn main() {
             legacy::remove_old_firewall_rule(&dir);
             let cloud = cloud::new_link();
             cloud::wire_events(app.handle(), &cloud);
+            let presence = cloud::new_presence(&cloud, &dir);
+            cloud::start_presence(app.handle(), &presence);
             app.manage(AppState {
                 db: std::sync::Mutex::new(conn),
                 caps,
@@ -88,6 +90,7 @@ fn main() {
                 suggestions: std::sync::Mutex::new(true),
                 sessions: Default::default(),
                 cloud,
+                presence,
             });
             Ok(())
         })
@@ -190,6 +193,8 @@ fn main() {
             cloud::cloud_link_cancel,
             cloud::cloud_check,
             cloud::cloud_unlink,
+            cloud::cloud_presence,
+            cloud::cloud_set_reachable,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Krystal")
@@ -201,6 +206,9 @@ fn main() {
                 let state = app.state::<AppState>();
                 // A link waiting on the browser stops polling with the window.
                 state.cloud.shutdown();
+                // Close the live connection properly, so the dashboard greys
+                // this computer at once instead of when it next looks.
+                tauri::async_runtime::block_on(state.presence.shutdown());
                 state.login.cancel();
                 tauri::async_runtime::block_on(state.sessions.retire_all());
             }

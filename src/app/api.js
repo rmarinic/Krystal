@@ -113,6 +113,9 @@ const api = {
   cloudLinkCancel() { return invoke('cloud_link_cancel'); },
   cloudCheck() { return invoke('cloud_check'); },
   cloudUnlink() { return invoke('cloud_unlink'); },
+  // The live connection (cloud/presence.rs): { reachable, conn }.
+  cloudPresence() { return invoke('cloud_presence'); },
+  cloudSetReachable(on) { return invoke('cloud_set_reachable', { on }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

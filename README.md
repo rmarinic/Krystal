@@ -95,7 +95,8 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   notifies you when a reply finishes or needs your permission while the app is in the background.
 - **Krystal Cloud account.** Link this computer to your account at app.krystal.rip from
   Settings → Remote: Krystal shows a short code, opens the site, and you confirm it there. The
-  computer then shows up on your dashboard, and soon you'll be able to reach it from anywhere.
+  computer then shows up on your dashboard, online whenever Krystal is running ("Reachable from
+  krystal.rip", on unless you turn it off), and soon you'll be able to reach it from anywhere.
 - **Keyboard first.** Ctrl+K opens a command palette (chats, projects, actions, settings, and a
   search through every message). Ctrl+F finds words in the open chat, accents or not, and steps
   through every match. Ctrl+Q / Ctrl+E move back and forward through chats, and Ctrl+S lists every
@@ -206,7 +207,7 @@ WebView2 (src/)                       Rust (src-tauri/src/)
                                         claude/       flags, prompts, event parsing ──► claude CLI
                                         artifacts.rs  MCP artifact tool (same exe, --krystal-mcp-artifacts)
                                         db/           krystal.db (SQLite)
-                                        cloud/        linking to app.krystal.rip ──► Krystal Cloud
+                                        cloud/        linking + live connection ──► Krystal Cloud (wss)
                                         remote/       commands reachable from outside (for the relay)
                                         catalog.rs    live model list
   updater.js ── checks ─────────────►  GitHub Releases (signed latest.json)
@@ -249,6 +250,8 @@ in a terminal. **Only open projects on folders you trust Claude to work in.**
 Krystal opens no port on your computer. Linking it to app.krystal.rip is your choice, made with
 a code you confirm while signed in there. The key that link creates lives in Windows Credential
 Manager, never in a file or in the app's window, and unlinking (here or on the dashboard) ends it.
+Being online there is one connection Krystal makes *out* to app.krystal.rip, and the "Reachable
+from krystal.rip" switch closes it.
 
 ## Project layout
 
@@ -266,7 +269,7 @@ Manager, never in a file or in the app's window, and unlinking (here or on the d
 | `src-tauri/src/session/` | warm per-chat `claude` processes, stop and rewind |
 | `src-tauri/src/artifacts.rs` | the artifact MCP server |
 | `src-tauri/src/db/` | SQLite store, one file per concern (threads, turns, projects, tasks, pins, artifacts, …) |
-| `src-tauri/src/cloud/` | linking this computer to Krystal Cloud (app.krystal.rip); the key lives in Credential Manager |
+| `src-tauri/src/cloud/` | linking this computer to Krystal Cloud (app.krystal.rip), and the live connection that keeps it online there; the key lives in Credential Manager |
 | `src-tauri/src/remote/` | the commands a caller from outside may run, and a turn as a stream of events |
 | `src-tauri/src/models.rs`, `catalog.rs` | models, efforts, modes, live model list |
 | `src-tauri/src/skills.rs`, `discord.rs` | skill discovery, optional Discord presence |

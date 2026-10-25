@@ -16,6 +16,10 @@
 //! Neither does the token. What the window sees is `status()`: the state, the
 //! code while linking, the account's email and this computer's name once
 //! linked, and a `problem` to say plainly when something went wrong.
+//!
+//! The live connection (`presence`) follows the link through `key()`: the
+//! token while linked, `None` otherwise. It reports back through `revoked`
+//! (the same as a 401 here) and `named` (what the dashboard calls us).
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
@@ -133,11 +137,15 @@ pub struct Link<N: Net, V: Vault> {
     app_version: String,
     inner: Mutex<Inner>,
     on_change: OnceLock<OnChange>,
+    /// The token the live connection should use: the device token while
+    /// linked, `None` otherwise. Updated with every change of phase.
+    key: watch::Sender<Option<String>>,
 }
 
 impl<N: Net, V: Vault> Link<N, V> {
     pub fn new(net: N, vault: V, device_name: String, app_version: String) -> Arc<Self> {
         let phase = vault.load().map(Phase::Linked).unwrap_or(Phase::NotLinked);
+        let (key, _) = watch::channel(token_of(&phase));
         Arc::new(Self {
             net,
             vault,
@@ -145,6 +153,7 @@ impl<N: Net, V: Vault> Link<N, V> {
             app_version,
             inner: Mutex::new(Inner { phase, problem: None, attempt: 0, cancel: None }),
             on_change: OnceLock::new(),
+            key,
         })
     }
 
@@ -155,9 +164,27 @@ impl<N: Net, V: Vault> Link<N, V> {
     }
 
     fn changed(&self) {
+        self.publish_key();
         if let Some(f) = self.on_change.get() {
             f(self.status());
         }
+    }
+
+    /// Follow the token: the live connection opens, closes or swaps when it
+    /// changes. Never handed to the window — only to `presence`.
+    pub fn key(&self) -> watch::Receiver<Option<String>> {
+        self.key.subscribe()
+    }
+
+    fn publish_key(&self) {
+        let now = token_of(&self.lock().phase);
+        self.key.send_if_modified(|k| {
+            let fresh = *k != now;
+            if fresh {
+                *k = now;
+            }
+            fresh
+        });
     }
 
     // A poisoned lock still holds a perfectly good state.
@@ -319,48 +346,58 @@ impl<N: Net, V: Vault> Link<N, V> {
     /// cloud having a bad moment, changes nothing — that isn't the link's fault.
     pub async fn check(&self) -> Value {
         // Bound first, so the lock is released before `status()` takes it again.
-        let held = match &self.lock().phase {
-            Phase::Linked(l) => Some(l.device_token.clone()),
-            _ => None,
-        };
+        let held = token_of(&self.lock().phase);
         let Some(token) = held else { return self.status() };
-        let reply = self.net.call(Verb::Get, "/api/device", None, Some(token.clone())).await;
-        let mut g = self.lock();
-        // Unlinked (or relinked) here while the check was out: not ours to touch.
-        let Phase::Linked(l) = &mut g.phase else {
-            drop(g);
-            return self.status();
-        };
-        if l.device_token != token {
-            drop(g);
-            return self.status();
-        }
-        let changed = match reply {
-            Ok(r) if r.status == 401 => {
-                self.vault.clear();
-                g.phase = Phase::NotLinked;
-                g.problem = Some(Problem::UnlinkedRemotely);
-                true
-            }
+        match self.net.call(Verb::Get, "/api/device", None, Some(token.clone())).await {
+            Ok(r) if r.status == 401 => self.revoked(&token),
+            // Renamed on the dashboard, or the account's email changed.
             Ok(r) if r.status == 200 => {
-                // Renamed on the dashboard, or the account's email changed.
-                let email = r.body["account"]["email"].as_str().unwrap_or(&l.email).to_string();
-                let name = r.body["name"].as_str().unwrap_or(&l.name).to_string();
-                let fresh = email != l.email || name != l.name;
-                if fresh {
-                    l.email = email;
-                    l.name = name;
-                    let _ = self.vault.save(l);
-                }
-                fresh
+                self.named(&token, r.body["name"].as_str(), r.body["account"]["email"].as_str())
             }
-            _ => false,
-        };
-        drop(g);
-        if changed {
-            self.changed();
+            _ => {}
         }
         self.status()
+    }
+
+    /// The cloud says `token` is dead — a 401 from `GET /api/device`, or the
+    /// live connection refused or closed as `device-revoked`: forget it and say
+    /// it was unlinked at app.krystal.rip. A token that is no longer the one
+    /// held (unlinked or relinked here meanwhile) is not ours to act on.
+    pub fn revoked(&self, token: &str) {
+        {
+            let mut g = self.lock();
+            if !holds(&g, token) {
+                return;
+            }
+            self.vault.clear();
+            g.phase = Phase::NotLinked;
+            g.problem = Some(Problem::UnlinkedRemotely);
+        }
+        self.changed();
+    }
+
+    /// What the cloud calls this computer and its account now (`GET
+    /// /api/device`, or the live connection's `welcome` / `renamed`). The
+    /// dashboard owns the name, so its word wins; kept in the vault with the
+    /// rest of the link.
+    pub fn named(&self, token: &str, name: Option<&str>, email: Option<&str>) {
+        let mut g = self.lock();
+        if !holds(&g, token) {
+            return;
+        }
+        let Phase::Linked(l) = &mut g.phase else { return };
+        let pick = |v: Option<&str>, was: &str| {
+            v.map(str::trim).filter(|v| !v.is_empty()).unwrap_or(was).to_string()
+        };
+        let (name, email) = (pick(name, &l.name), pick(email, &l.email));
+        if name == l.name && email == l.email {
+            return;
+        }
+        l.name = name;
+        l.email = email;
+        let _ = self.vault.save(l);
+        drop(g);
+        self.changed();
     }
 
     /// Unlink from this side. The token is forgotten here first, whatever the
@@ -383,6 +420,8 @@ impl<N: Net, V: Vault> Link<N, V> {
                 }
             }
         };
+        // The live connection closes now, not after the cloud has answered.
+        self.publish_key();
         let told = matches!(
             self.net.call(Verb::Post, "/api/device/unlink", None, Some(token)).await,
             Ok(r) if r.status == 200 || r.status == 401
@@ -403,6 +442,19 @@ impl<N: Net, V: Vault> Link<N, V> {
         g.attempt += 1;
         g.stop_polling();
     }
+}
+
+/// The token a phase holds, if it is linked.
+fn token_of(phase: &Phase) -> Option<String> {
+    match phase {
+        Phase::Linked(l) => Some(l.device_token.clone()),
+        _ => None,
+    }
+}
+
+/// Whether the link still holds `token` — the one a call was made with.
+fn holds(g: &Inner, token: &str) -> bool {
+    matches!(&g.phase, Phase::Linked(l) if l.device_token == token)
 }
 
 /// Back to Not linked, saying why.
@@ -999,5 +1051,64 @@ mod tests {
         let s = link.unlink().await;
         assert_eq!((s["state"].as_str(), s["problem"].as_str()), (Some("notLinked"), Some("unlinkedHereOnly")));
         assert_eq!(vault.load(), None);
+    }
+
+    /* --------------------- what the live connection sees ---------------- */
+
+    #[tokio::test]
+    async fn the_key_follows_the_link() {
+        let net = FakeNet::default();
+        net.answer("/api/link/start", Ok(started()))
+            .answer("/api/link/poll", Ok(approved()))
+            .answer("/api/device/unlink", Ok(ok(json!({ "ok": true }))));
+        let (link, mut rx) = link_with(&net, MemVault::default());
+        let key = link.key();
+        assert_eq!(*key.borrow(), None);
+        link.start().await;
+        assert_eq!(*key.borrow(), None, "linking holds no token yet");
+        settled(&mut rx).await;
+        assert_eq!(key.borrow().as_deref(), Some("the-device-token"));
+        link.unlink().await;
+        assert_eq!(*key.borrow(), None);
+    }
+
+    #[tokio::test]
+    async fn a_revoked_connection_unlinks_exactly_like_a_401() {
+        let (link, vault, mut rx) = already_linked(&FakeNet::default());
+        let key = link.key();
+        link.revoked("the-device-token");
+        let s = link.status();
+        assert_eq!((s["state"].as_str(), s["problem"].as_str()), (Some("notLinked"), Some("unlinkedRemotely")));
+        assert_eq!(vault.load(), None, "the token is forgotten");
+        assert_eq!(*key.borrow(), None, "and the connection let go of it");
+        assert_eq!(rx.recv().await.unwrap(), s);
+
+        let net = FakeNet::default();
+        net.answer("/api/device", Ok(err(401, "device-revoked")));
+        let (by_check, _, _) = already_linked(&net);
+        assert_eq!(by_check.check().await, s, "the same as a check finding it gone");
+    }
+
+    #[tokio::test]
+    async fn word_about_a_token_no_longer_held_changes_nothing() {
+        let (link, vault, mut rx) = already_linked(&FakeNet::default());
+        link.revoked("an-old-token");
+        link.named("an-old-token", Some("Elsewhere"), None);
+        assert_eq!(link.status()["state"], "linked");
+        assert_eq!(vault.load(), Some(linked()));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_name_from_the_cloud_is_kept_and_announced_once() {
+        let (link, vault, mut rx) = already_linked(&FakeNet::default());
+        link.named("the-device-token", Some("Home PC"), None);
+        assert_eq!(rx.recv().await.unwrap()["deviceName"], "Home PC");
+        let kept = vault.load().unwrap();
+        assert_eq!((kept.name.as_str(), kept.email.as_str()), ("Home PC", "you@example.com"));
+        link.named("the-device-token", Some("Home PC"), Some("you@example.com"));
+        link.named("the-device-token", Some("  "), None);
+        assert!(rx.try_recv().is_err(), "the same name again is not news");
+        assert_eq!(link.status()["deviceName"], "Home PC");
     }
 }
