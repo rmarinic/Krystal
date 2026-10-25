@@ -18,8 +18,13 @@
                       agent glances up hopefully. When the step hands back its
                       result it nods once. Both are rate-limited, so parallel steps
                       don't stack;
-     • the reply    — its mouth moves with the words the typer actually reveals:
-                      open on letters, closed at a space or full stop;
+     • the reply    — it talks: the words the typer reveals give it syllables to
+                      say (one per vowel group, a pause where a sentence ends),
+                      and it says them at a speaking pace, each one an open and a
+                      shut. Text streams far faster than anyone talks, so it only
+                      ever owes the text a few syllables (MASCOT_VOICE_MAX): it
+                      keeps a steady rhythm while words flow and falls quiet soon
+                      after they stop;
      • it lands     — happy eyes, KRYSTAL ripples once, then it settles to rest
                       with a blink;
      • needs you    — a permission prompt (in any chat) turns it amber, looking
@@ -54,13 +59,16 @@ const MASCOT_LOOK = [4, 3];        // how far the eyes travel at full look
 const MASCOT_GREEN = [143, 224, 170], MASCOT_AMBER = [240, 178, 104], MASCOT_RED = [236, 122, 122];
 // [catch, release]: fast toward a new expression, slow letting go of it.
 const MASCOT_TAU = { lx: [0.11, 0.16], ly: [0.11, 0.16], open: [0.07, 0.12], happy: [0.12, 0.45],
-  smile: [0.18, 0.4], droop: [0.2, 0.5], mw: [0.1, 0.2], glow: [0.14, 0.9], tilt: [0.18, 0.45], talk: [0.035, 0.06] };
+  smile: [0.18, 0.4], droop: [0.2, 0.5], mw: [0.1, 0.2], glow: [0.14, 0.9], tilt: [0.18, 0.45], talk: [0.035, 0.04] };
 const MASCOT_IDLE_MS = 3 * 60 * 1000;   // no input and no turn for this long: it dozes
 const MASCOT_DONE_MS = 1500;            // happy after a reply lands, then rest
 const MASCOT_ERROR_MS = 6000;           // red after a failure, unless you look sooner
 const MASCOT_TYPING_MS = 1500;          // still watching this long after the last key
 const MASCOT_NOD_GAP_MS = 350;          // parallel tool results shouldn't stack nods
 const MASCOT_FIDGET_MS = [3500, 10000]; // a fidget comes somewhere in this window after the last
+const MASCOT_SYLLABLE_MS = [150, 230];  // one syllable, open then shut: about five a second
+const MASCOT_PAUSE_MS = 260;            // the mouth rests this long where a sentence ends
+const MASCOT_VOICE_MAX = 4;             // syllables it may owe the text, so it stops soon after the text does
 const MASCOT_STEP_GAP_MS = 300;         // parallel steps starting together get one reaction
 // How long each kind of step's reaction lasts (see mascotApplyReaction).
 const MASCOT_REACTION_MS = { look: 600, change: 650, run: 450, agent: 800, other: 350 };
@@ -79,7 +87,8 @@ const mascot = {
   ptrAt: null,      // the pointer in client coordinates, while it's in the window
   caret: 0.6,       // how far along the line the caret is, 0..1
   glance: null,     // { x, y, happy, until } — a look somewhere for a moment
-  talk: 0,          // the mouth's target, set by each stretch of revealed text
+  talk: 0,          // the mouth's target, set each frame by the voice while it writes
+  voice: mascotVoice(),   // the syllables the revealed text has given it to say
   idle: { smile: 0, tilt: 0 },   // the resting face's current fidget: a touch more or less smile, a tilt
   react: null,      // { kind, at } — the reaction to the step that just started
   steps: [],        // ids of the steps already reacted to (a step's event comes twice)
@@ -206,10 +215,43 @@ function mascotFidget(mood, r) {
   return { kind: 'tilt', tilt: (r() * 2 - 1) * 4 };
 }
 
-/* How open the mouth wants to be for a stretch of revealed text: open on letters,
- * closed where a word or sentence ends — so it moves with the words, not a clock. */
-function mascotTalkFor(chunk) {
-  return /[\s.,;:!?—…)\]]$/.test(chunk) ? 0.08 : 0.85;
+/* The face's voice: what the revealed text has given it to say ('s' a syllable,
+ * 'p' a pause) and the one it is saying now. */
+function mascotVoice() {
+  return { queue: [], cur: null };
+}
+
+/* Revealed text gives it something to say: a syllable per vowel group, and a
+ * pause where a sentence or line ends. It never owes more than MASCOT_VOICE_MAX
+ * syllables — text streams much faster than speech, and a long debt would keep
+ * it talking well after the words stopped. */
+function mascotVoiceFeed(v, chunk) {
+  const syllables = (chunk.match(/[aeiouyáéíóúàèìòùäëïöüâêîôû]+/gi) || []).length;
+  for (let i = 0; i < syllables && v.queue.length < MASCOT_VOICE_MAX; i++) v.queue.push('s');
+  if (/[.!?…]\s*$|\n/.test(chunk) && v.queue[v.queue.length - 1] !== 'p') v.queue.push('p');
+}
+
+/* One step of the voice, pure: how open the mouth is now. Each syllable opens and
+ * shuts within its first 60%, then the mouth stays shut for the rest, so even a
+ * full queue reads as separate syllables, never as a mouth held open. `r` gives
+ * each syllable its own length and size, so the rhythm doesn't tick. */
+function mascotVoiceStep(v, dt, r) {
+  if (!v.cur && v.queue.length) {
+    const [lo, hi] = MASCOT_SYLLABLE_MS;
+    v.cur = v.queue.shift() === 'p'
+      ? { pause: true, t: 0, dur: MASCOT_PAUSE_MS, amp: 0 }
+      : { pause: false, t: 0, dur: lo + r() * (hi - lo), amp: 0.55 + r() * 0.4 };
+  }
+  if (!v.cur) return 0;
+  const p = v.cur.t / v.cur.dur;
+  const open = v.cur.pause || p >= 0.6 ? 0 : v.cur.amp * Math.sin(Math.PI * p / 0.6);
+  v.cur.t += dt * 1000;
+  if (v.cur.t >= v.cur.dur) v.cur = null;
+  return open;
+}
+
+function mascotVoiceBusy(v) {
+  return !!v.cur || v.queue.length > 0;
 }
 
 /* ------------------------------ drawing -------------------------------- */
@@ -337,7 +379,9 @@ function mascotFrame(now) {
   const env = { now, t: now / 1000, still, waiting, ptr: still ? null : mascotPointer() };
   const glancing = !!(mascot.glance && now < mascot.glance.until);
   const reacting = !!(mascot.react && now - mascot.react.at < (MASCOT_REACTION_MS[mascot.react.kind] || 0));
-  env.busy = glancing || (!still && !waiting && (reacting || mascot.mood === 'thinking' || mascot.mood === 'working'));
+  const talking = mascot.mood === 'writing' && mascotVoiceBusy(mascot.voice);
+  if (mascot.mood === 'writing' && !still) mascot.talk = mascotVoiceStep(mascot.voice, dt, Math.random);
+  env.busy = glancing || (!still && !waiting && (reacting || talking || mascot.mood === 'thinking' || mascot.mood === 'working'));
   const more = mascotStep(mascot.face, mascotTarget(mascot, env), dt, env);
   mascot.insts.forEach(mascotDraw);
   if (more) mascot.raf = requestAnimationFrame(mascotFrame);
@@ -478,15 +522,21 @@ function mascotTurnBegan() {
 function mascotMode(mode) {
   const mood = mode === 'streaming' ? 'writing' : mode;
   if (mascot.mood === mood) return;
-  if (mood !== 'writing') mascot.talk = 0;
+  if (mood !== 'writing') mascotHush();
   mascotSetMood(mood);
 }
 
-/* Text was revealed: the mouth moves with it. */
+/* Text was revealed: it gives the face more to say. */
 function mascotWords(chunk) {
   if (!chunk || mascot.mood !== 'writing') return;
-  mascot.talk = mascotTalkFor(chunk);
+  mascotVoiceFeed(mascot.voice, chunk);
   mascotWake();
+}
+
+/* Nothing more to say: the mouth shuts and whatever it still owed is dropped. */
+function mascotHush() {
+  mascot.talk = 0;
+  mascot.voice = mascotVoice();
 }
 
 /* A tool on screen handed back its result: one nod. */
@@ -519,7 +569,7 @@ function mascotTool(msg) {
 /* The turn on screen ended: happy if it landed, red if it failed, plain rest if
  * you stopped it. */
 function mascotTurnEnded(live) {
-  mascot.talk = 0;
+  mascotHush();
   mascot.lastAct = performance.now();
   if (live && live.stopped) { mascotSetMood('rest'); return; }
   if (live && live.failed) {
@@ -535,7 +585,7 @@ function mascotTurnEnded(live) {
 
 /* The view left the turn (switched chats): nothing on screen is running. */
 function mascotRest() {
-  mascot.talk = 0;
+  mascotHush();
   if (['thinking', 'working', 'writing'].includes(mascot.mood)) mascotSetMood('rest');
 }
 

@@ -33,7 +33,7 @@ function load() {
     state: { live: new Map() },
     console, Math,
   };
-  return vm.runInNewContext(`${src}\n;({ mascot, mascotFace, mascotTarget, mascotStep, mascotTalkFor, mascotFidget, mascotToolKind, mascotApplyReaction, mascotTool, MASCOT_REACTION_MS, MASCOT_GREEN, MASCOT_AMBER, MASCOT_RED,
+  return vm.runInNewContext(`${src}\n;({ mascot, mascotFace, mascotTarget, mascotStep, mascotVoice, mascotVoiceFeed, mascotVoiceStep, mascotVoiceBusy, MASCOT_VOICE_MAX, mascotFidget, mascotToolKind, mascotApplyReaction, mascotTool, MASCOT_REACTION_MS, MASCOT_GREEN, MASCOT_AMBER, MASCOT_RED,
     mascotTurnBegan, mascotTurnEnded, mascotMode, mascotRest, mascotWords, mascotActivity, mascotNod })`,
     ctx, { filename: 'mascot.js' });
 }
@@ -145,10 +145,42 @@ check('a glance looks away for its moment, then lets go', () => {
   near(M.mascotTarget(m, { now: 500, t: 0, waiting: true }).lx, 0, 1e-9, 'glanced away while waiting on you');
 });
 
-check('the mouth opens on letters and closes where a word ends', () => {
-  ok(M.mascotTalkFor('wor') > 0.5, 'closed mid-word');
-  ok(M.mascotTalkFor('ld ') < 0.2, 'open at a space');
-  ok(M.mascotTalkFor('end.') < 0.2, 'open at a full stop');
+check('revealed text gives it syllables to say, never more than a few, and a pause at a full stop', () => {
+  const v = M.mascotVoice();
+  M.mascotVoiceFeed(v, 'hel');
+  ok(v.queue.length === 1, `one vowel group is not one syllable (${v.queue.length})`);
+  M.mascotVoiceFeed(v, 'a long stretch of words arriving all at once');
+  ok(v.queue.filter((x) => x === 's').length === M.MASCOT_VOICE_MAX, `owed too much or too little (${v.queue.length})`);
+  M.mascotVoiceFeed(v, 'end.');
+  ok(v.queue[v.queue.length - 1] === 'p', 'no pause at the end of a sentence');
+  M.mascotVoiceFeed(v, ' ');
+  ok(v.queue.filter((x) => x === 'p').length === 1, 'pauses stacked');
+  const w = M.mascotVoice(); M.mascotVoiceFeed(w, '```');
+  ok(w.queue.length === 0, 'talked over text with nothing to say');
+});
+
+check('fed faster than speech, it still talks in separate syllables at a speaking pace', () => {
+  const v = M.mascotVoice();
+  let opens = 0, wasOpen = false, openFor = 0, longest = 0;
+  for (let i = 0; i < 180; i++) {   // three seconds of a reply pouring in every frame
+    M.mascotVoiceFeed(v, 'streaming words ');
+    const open = M.mascotVoiceStep(v, 1 / 60, () => 0.5) > 0.2;
+    if (open && !wasOpen) opens++;
+    openFor = open ? openFor + 1 : 0;
+    longest = Math.max(longest, openFor);
+    wasOpen = open;
+  }
+  ok(opens >= 10 && opens <= 18, `not a speaking pace (${opens} syllables in 3s)`);
+  ok(longest * 1000 / 60 < 200, `the mouth stayed open ${Math.round(longest * 1000 / 60)}ms`);
+});
+
+check('when the words stop it falls quiet within a second, and stops asking for frames', () => {
+  const v = M.mascotVoice();
+  for (let i = 0; i < 30; i++) M.mascotVoiceFeed(v, 'more words ');
+  let last = 1;
+  for (let i = 0; i < 60; i++) last = M.mascotVoiceStep(v, 1 / 60, Math.random);
+  ok(!M.mascotVoiceBusy(v), 'still talking a second after the words stopped');
+  ok(last === 0, 'mouth left open');
 });
 
 check('a turn: thinking → working → writing → done; stopped rests, failed is red until you act', () => {
@@ -156,9 +188,9 @@ check('a turn: thinking → working → writing → done; stopped rests, failed 
   M.mascotTurnBegan(); ok(m.mood === 'thinking', 'send did not start thinking');
   M.mascotMode('working'); ok(m.mood === 'working', 'tool did not focus');
   M.mascotMode('streaming'); ok(m.mood === 'writing', 'streaming is not writing');
-  M.mascotWords('hel'); ok(m.talk > 0.5, 'words did not move the mouth');
+  M.mascotWords('hel'); ok(m.voice.queue.length > 0, 'words gave it nothing to say');
   M.mascotTurnEnded({}); ok(m.mood === 'done', 'a landed reply is not done');
-  ok(m.talk === 0, 'mouth left open');
+  ok(m.talk === 0 && !M.mascotVoiceBusy(m.voice), 'mouth left open, or still owing words');
   M.mascotTurnBegan(); M.mascotTurnEnded({ stopped: true, failed: true });
   ok(m.mood === 'rest', 'a stopped turn is not rest');
   M.mascotTurnBegan(); M.mascotTurnEnded({ failed: true });
@@ -170,7 +202,7 @@ check('a turn: thinking → working → writing → done; stopped rests, failed 
 check('switching away from a running turn rests the face; words outside writing are ignored', () => {
   const m = M.mascot;
   M.mascotTurnBegan(); M.mascotRest(); ok(m.mood === 'rest', 'still thinking after the view left');
-  M.mascotWords('abc'); ok(m.talk === 0, 'talking at rest');
+  M.mascotWords('abc'); ok(!M.mascotVoiceBusy(m.voice), 'talking at rest');
 });
 
 check('fidgets: never while waiting or dozing; working may ponder, other busy moods only blink; at rest a small smile, look or tilt', () => {
