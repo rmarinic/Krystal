@@ -4,8 +4,8 @@
 //! cloud sends that isn't presence's goes to `relay::Relay`, and what that has
 //! to say goes out through the same loop.
 //!
-//! The contract is `../krystal-cloud/PROTOCOL.md` (protocol v1; v2 adds the
-//! relay, see `relay`), implemented exactly:
+//! The contract is `../krystal-cloud/PROTOCOL.md` (protocol v2; its relay half
+//! is `relay`), implemented exactly:
 //!
 //!   - Connect with the device token as a bearer, in the header only, and no
 //!     `Origin`. A `401` at the handshake means the token is dead.

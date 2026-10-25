@@ -3,13 +3,15 @@
 //! the socket; it runs through `crate::remote`, the same commands the window
 //! calls, and the answer goes back up the same way.
 //!
-//! The framing is protocol v2, the cloud's `worker/frames.js` (and `relay.js`,
-//! which adds `window` and `maxFrame` to the welcome), implemented exactly:
+//! The contract is `../krystal-cloud/PROTOCOL.md`, "Relaying (apiVersion 2)"
+//! (cloud end `worker/frames.js`), implemented exactly:
 //!
 //!   ← `{"type":"call",   "id", "command", "args", "from"}` a plain command
 //!   ← `{"type":"stream", "id", "command", "args", "from"}` a chat turn, the RUN button
-//!   → `{"type":"result", "id", "ok": true, "value"}`, or `"ok": false` with an
-//!     `"error"` (and `"code": "not-allowed"` for what this computer won't run)
+//!   → `{"type":"result", "id", "ok": true, "value"}`, or `"ok": false` with a
+//!     `"code"`: `failed` (the command said why, in `error`), `not-allowed`
+//!     (this computer won't run it for anyone elsewhere) or `refused` (a stream
+//!     that couldn't start, `error` says why)
 //!   → `{"type":"events", "id", "events": […], "end": bool}` a stream's events
 //!   ← `{"type":"ack", "id", "frames": n}` n `events` frames reached the browser
 //!   ← `{"type":"cancel", "id"}` nobody is listening any more
@@ -18,8 +20,11 @@
 //! A call is answered once, with a `result`. A stream is answered with `events`
 //! frames, in order, the last one `end: true`. A stream refused before it began
 //! (a chat that is busy, a missing argument) gets one `result` with `ok: false`
-//! instead. At most `window` `events` frames of one stream go unacknowledged;
-//! what arrives meanwhile waits and goes out together in the next frame.
+//! instead. Every frame wakes the cloud and is billed, so a stream's events are
+//! batched: a frame goes once its oldest event is `BATCH_AFTER` old, once it
+//! holds `BATCH_BYTES`, or when the stream ends. At most `window` `events`
+//! frames of one stream go unacknowledged; what arrives meanwhile waits and
+//! goes out together in the next frame.
 //!
 //! A `cancel` only stops the sending. A turn goes on (stopping it is a call of
 //! its own, `stop_chat`) and so does a call, whose answer is then dropped.
@@ -38,6 +43,7 @@ use tauri::{AppHandle, Runtime};
 use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time::{sleep_until, Duration, Instant};
 
 use crate::remote::{is_streaming_command, LOCAL_ONLY};
 
@@ -59,6 +65,15 @@ const MAX_ASSEMBLED: usize = 32 << 20;
 
 /// The smallest `maxFrame` honoured: a part has to leave room for its data.
 const MIN_FRAME: usize = 4 << 10;
+
+/// A stream's frame goes once its oldest event has waited this long…
+const BATCH_AFTER: Duration = Duration::from_millis(50);
+
+/// …or once it holds this much, whichever comes first.
+const BATCH_BYTES: usize = 64 << 10;
+
+/// The most JSON text one `part` carries.
+const PART_BYTES: usize = 256 << 10;
 
 /// What a refusal says when this computer won't run the command for anyone
 /// elsewhere. The code is what the cloud reads; the words are for a log.
@@ -194,7 +209,7 @@ impl Relay {
         let task = tokio::spawn(async move {
             let answer = match answer {
                 Ok(running) => running.await,
-                Err(why) => return send(&out, &rid, refused(&rid, why), max),
+                Err(why) => return send(&out, &rid, not_allowed(&rid, why), max),
             };
             if !flag.load(Ordering::SeqCst) {
                 send(&out, &rid, result_frame(&rid, answer), max);
@@ -207,8 +222,8 @@ impl Relay {
         let events = if LOCAL_ONLY.contains(&command.as_str()) { None } else { handler.stream(&command, args) };
         let rx = match events {
             Some(Ok(rx)) => rx,
-            None => return send(&self.out, &id, refused(&id, NOT_ALLOWED), self.max_frame),
-            Some(Err(e)) => return send(&self.out, &id, failed(&id, &e), self.max_frame),
+            None => return send(&self.out, &id, not_allowed(&id, NOT_ALLOWED), self.max_frame),
+            Some(Err(e)) => return send(&self.out, &id, refused(&id, &e), self.max_frame),
         };
         let (acked, acks) = watch::channel(0);
         let task = tokio::spawn(forward(id.clone(), rx, acks, self.out.clone(), self.window, self.max_frame));
@@ -235,14 +250,38 @@ async fn forward(
     window: u64,
     max_frame: usize,
 ) {
+    let cap = BATCH_BYTES.min(max_frame);
     let mut waiting: VecDeque<String> = VecDeque::new();
+    let mut bytes = 0;
+    // When the oldest event still waiting arrived. Left over from a full
+    // frame, it is already old enough: those go as soon as the window lets them.
+    let mut oldest = Instant::now();
     let mut over = false;
     let mut sent: u64 = 0;
     loop {
         if waiting.is_empty() && !over {
             match rx.recv().await {
-                Some(ev) => waiting.push_back(ev),
+                Some(ev) => {
+                    oldest = Instant::now();
+                    bytes = ev.len();
+                    waiting.push_back(ev);
+                }
                 None => over = true,
+            }
+        }
+        // Gather until the oldest is `BATCH_AFTER` old, the batch is full, or
+        // the stream is over.
+        let due = oldest + BATCH_AFTER;
+        while !over && bytes < cap {
+            tokio::select! {
+                ev = rx.recv() => match ev {
+                    Some(ev) => {
+                        bytes += ev.len();
+                        waiting.push_back(ev);
+                    }
+                    None => over = true,
+                },
+                _ = sleep_until(due) => break,
             }
         }
         // Room in the window; whatever arrived meanwhile goes in the same frame.
@@ -259,7 +298,8 @@ async fn forward(
                 }
             }
         }
-        let (frame, end) = events_frame(&id, &mut waiting, over, max_frame);
+        let (frame, end) = events_frame(&id, &mut waiting, over, cap);
+        bytes = waiting.iter().map(String::len).sum();
         for text in pieces(frame, &id, max_frame) {
             if out.send(text).is_err() {
                 return;
@@ -275,18 +315,24 @@ async fn forward(
 /* ---------------------------------- frames ---------------------------------- */
 
 /// This computer won't run that for anyone elsewhere; `why` is for a log.
-fn refused(id: &str, why: &str) -> String {
+fn not_allowed(id: &str, why: &str) -> String {
     json!({ "type": "result", "id": id, "ok": false, "code": NOT_ALLOWED, "error": why }).to_string()
 }
 
+/// A stream that couldn't start: busy, a missing argument.
+fn refused(id: &str, error: &str) -> String {
+    json!({ "type": "result", "id": id, "ok": false, "code": "refused", "error": error }).to_string()
+}
+
+/// A command that ran and said why it couldn't do it.
 fn failed(id: &str, error: &str) -> String {
-    json!({ "type": "result", "id": id, "ok": false, "error": error }).to_string()
+    json!({ "type": "result", "id": id, "ok": false, "code": "failed", "error": error }).to_string()
 }
 
 /// A call's answer. `None` is a command this computer doesn't expose.
 fn result_frame(id: &str, answer: Option<Result<Value, String>>) -> String {
     match answer {
-        None => refused(id, NOT_ALLOWED),
+        None => not_allowed(id, NOT_ALLOWED),
         Some(Err(e)) => failed(id, &e),
         Some(Ok(value)) => {
             let text = json!({ "type": "result", "id": id, "ok": true, "value": value }).to_string();
@@ -295,14 +341,14 @@ fn result_frame(id: &str, answer: Option<Result<Value, String>>) -> String {
     }
 }
 
-/// The next `events` frame: as many waiting events as fit in `max_frame`
-/// (always at least one), and whether it is the stream's last.
-fn events_frame(id: &str, waiting: &mut VecDeque<String>, over: bool, max_frame: usize) -> (String, bool) {
+/// The next `events` frame: as many waiting events as fit in `cap` (always at
+/// least one), and whether it is the stream's last.
+fn events_frame(id: &str, waiting: &mut VecDeque<String>, over: bool, cap: usize) -> (String, bool) {
     const TAIL: &str = r#"],"end":false}"#;
     let mut text = format!(r#"{{"type":"events","id":{},"events":["#, Value::from(id));
     let mut n = 0;
     while let Some(ev) = waiting.front() {
-        if n > 0 && text.len() + 1 + ev.len() + TAIL.len() > max_frame {
+        if n > 0 && text.len() + 1 + ev.len() + TAIL.len() > cap {
             break;
         }
         if n > 0 {
@@ -318,8 +364,9 @@ fn events_frame(id: &str, waiting: &mut VecDeque<String>, over: bool, max_frame:
     (text, end)
 }
 
-/// A frame as it goes on the wire: whole, or as `part`s none of which is over
-/// `max_frame` once its data is escaped.
+/// A frame as it goes on the wire: whole, or as `part`s of at most `PART_BYTES`
+/// of its text, cut on character boundaries, none over `max_frame` once its
+/// data is escaped.
 fn pieces(frame: String, id: &str, max_frame: usize) -> Vec<String> {
     if frame.len() <= max_frame {
         return vec![frame];
@@ -330,7 +377,7 @@ fn pieces(frame: String, id: &str, max_frame: usize) -> Vec<String> {
     let (mut start, mut size) = (0, 0);
     for (i, c) in frame.char_indices() {
         let w = escaped_len(c);
-        if size + w > budget {
+        if size + w > budget || i + c.len_utf8() - start > PART_BYTES {
             cuts.push(&frame[start..i]);
             (start, size) = (i, 0);
         }
@@ -509,7 +556,10 @@ mod tests {
             json!({ "type": "result", "id": "r1", "ok": true, "value": { "ran": "list_projects", "args": { "q": 1 } } })
         );
         cloud.say(request("call", "r2", "boom", json!({})));
-        assert_eq!(next(&mut cloud).await, json!({ "type": "result", "id": "r2", "ok": false, "error": "it broke" }));
+        assert_eq!(
+            next(&mut cloud).await,
+            json!({ "type": "result", "id": "r2", "ok": false, "code": "failed", "error": "it broke" })
+        );
         cloud.say(request("call", "r3", "nothing_here", json!({})));
         let m = next(&mut cloud).await;
         assert_eq!((m["id"].as_str(), m["ok"].as_bool(), m["code"].as_str()), (Some("r3"), Some(false), Some("not-allowed")));
@@ -630,28 +680,70 @@ mod tests {
         sleep(Duration::from_millis(1)).await;
         let turn = h.turn();
         let token = |n: u32| json!({ "type": "token", "text": n.to_string() }).to_string();
-        // One event at a time, each given the chance to go alone.
+        // One event at a time, each given the time to go alone.
         for n in 1..=6 {
             turn.send(token(n)).unwrap();
-            sleep(Duration::from_millis(10)).await;
+            sleep(Duration::from_millis(100)).await;
         }
         let frames = sent_so_far(&mut cloud);
         assert_eq!(frames.len(), 2, "the window is 2: {frames:?}");
         // The browser took one: one more frame, holding everything that waited.
         cloud.say(json!({ "type": "ack", "id": "s1", "frames": 1 }));
-        sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(1)).await;
         let frames = sent_so_far(&mut cloud);
-        assert_eq!(frames.len(), 1);
+        assert_eq!(frames.len(), 1, "held events have waited long enough: they go at once");
         let texts: Vec<_> = frames[0]["events"].as_array().unwrap().iter().map(|e| e["text"].clone()).collect();
         assert_eq!(texts, ["3", "4", "5", "6"]);
         // An old or repeated ack opens nothing; a newer one does.
         turn.send(token(7)).unwrap();
         cloud.say(json!({ "type": "ack", "id": "s1", "frames": 1 }));
-        sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(100)).await;
         assert!(sent_so_far(&mut cloud).is_empty());
         cloud.say(json!({ "type": "ack", "id": "s1", "frames": 3 }));
-        sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(100)).await;
         assert_eq!(sent_so_far(&mut cloud)[0]["events"][0]["text"], "7");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn events_are_batched_until_the_oldest_is_50_ms_old_or_the_batch_is_full() {
+        let h = Arc::new(FakeHandler::default());
+        // A window wide enough never to hold anything: this is about batching.
+        let (_rig, mut cloud) = connected(h.clone(), 2, 1024).await;
+        cloud.say(request("stream", "s1", "chat", json!({})));
+        sleep(Duration::from_millis(1)).await;
+        let turn = h.turn();
+        // Tokens 10 ms apart: one frame per 50 ms, not one per token.
+        let began = Instant::now();
+        for n in 0..20 {
+            turn.send(json!({ "type": "token", "text": n.to_string() }).to_string()).unwrap();
+            sleep(Duration::from_millis(10)).await;
+        }
+        sleep(Duration::from_millis(100)).await;   // the last batch falls due
+        let frames = sent_so_far(&mut cloud);
+        assert!((4..=5).contains(&frames.len()), "{} frames for 20 tokens", frames.len());
+        // The first 50 ms: tokens 0..4, and 5 when it lands on the 50th ms itself.
+        let first = frames[0]["events"].as_array().unwrap().len();
+        assert!((5..=6).contains(&first), "the first 50 ms: {}", frames[0]);
+        let texts: Vec<_> = frames.iter().flat_map(|f| f["events"].as_array().unwrap().clone()).collect();
+        assert_eq!(texts.len(), 20, "none lost or merged");
+        assert!(began.elapsed() >= Duration::from_millis(200));
+
+        // A full batch doesn't wait for the clock.
+        let big = json!({ "type": "token", "text": "x".repeat(1000) }).to_string();
+        for _ in 0..200 {
+            turn.send(big.clone()).unwrap();
+        }
+        sleep(Duration::from_millis(1)).await;
+        let frames = sent_so_far(&mut cloud);
+        assert!(!frames.is_empty(), "nothing went before 50 ms had passed");
+        // `maxFrame` is 4 KiB here, so the batch is that; at the cloud's 1 MiB it is 64 KiB.
+        assert!(frames.iter().all(|f| f.to_string().len() <= MIN_FRAME), "frames within the batch size");
+        drop(turn);
+        sleep(Duration::from_secs(1)).await;
+        let rest = sent_so_far(&mut cloud);
+        assert_eq!(rest.last().unwrap()["end"], true);
+        let n: usize = frames.iter().chain(&rest).map(|f| f["events"].as_array().unwrap().len()).sum();
+        assert_eq!(n, 200);
     }
 
     #[tokio::test(start_paused = true)]
@@ -679,7 +771,10 @@ mod tests {
         let h = Arc::new(FakeHandler::default());
         let (_rig, mut cloud) = connected(h.clone(), 2, 16).await;
         cloud.say(request("stream", "s1", "busy_chat", json!({})));
-        assert_eq!(next(&mut cloud).await, json!({ "type": "result", "id": "s1", "ok": false, "error": "busy" }));
+        assert_eq!(
+            next(&mut cloud).await,
+            json!({ "type": "result", "id": "s1", "ok": false, "code": "refused", "error": "busy" })
+        );
         cloud.say(request("stream", "s2", "nothing_here", json!({})));
         assert_eq!(next(&mut cloud).await["code"], "not-allowed");
     }
@@ -766,6 +861,14 @@ mod tests {
             assert_eq!(data, frame);
         }
         assert_eq!(pieces("{}".into(), "r", MIN_FRAME), ["{}"], "a small frame goes whole");
+
+        // At the cloud's 1 MiB, a part still carries at most 256 KiB of the text.
+        let frame = json!({ "type": "result", "id": "r", "ok": true, "value": "žx".repeat(800_000) }).to_string();
+        let parts = pieces(frame.clone(), "r", MAX_FRAME);
+        let data: Vec<String> = parts.iter().map(|p| read(p)["data"].as_str().unwrap().to_string()).collect();
+        assert!(data.iter().all(|d| d.len() <= PART_BYTES), "{:?}", data.iter().map(String::len).collect::<Vec<_>>());
+        assert!(parts.iter().all(|p| p.len() <= MAX_FRAME));
+        assert_eq!(data.concat(), frame);
     }
 
     #[test]
