@@ -41,6 +41,7 @@ function makeTyper(bubble, opts = {}) {
     chip.classList.add('done');
     stopChipTime(chip);
     if (!quiet) replayClass(chip, 'just-done', 500);   // its check draws itself (motion.css)
+    syncChipGroupOf(chip, quiet);                       // a folded run's head follows (mcp.js)
   }
   function settleChip() {
     if (!chipEl) return;
@@ -172,9 +173,14 @@ function makeTyper(bubble, opts = {}) {
         return;
       }
       const hasDetail = !!(seg.target || seg.detail);
-      // The same tool fires twice (start = name only, then stop = with detail);
-      // the second event refines the chip in place rather than adding another.
-      if (chipEl && chipEl.dataset.tool === name && hasDetail && chipEl.dataset.detailed !== '1') {
+      // The same tool fires twice (start = name only, then stop = with its
+      // input); the second event refines the chip in place rather than adding
+      // another. Matched by its id — a call with nothing to show (an MCP call
+      // with no target) is still the same call. Without an id, only a call that
+      // brought something new can be told apart from a second one.
+      const sameChip = chipEl && chipEl.dataset.tool === name && chipEl.dataset.detailed !== '1' &&
+        (seg.id ? chipEl.dataset.id === seg.id : hasDetail);
+      if (sameChip) {
         const updated = renderActionChip(seg, true);
         updated.dataset.tool = name; updated.dataset.detailed = '1';
         chipEl.replaceWith(updated);
@@ -187,6 +193,7 @@ function makeTyper(bubble, opts = {}) {
         chipEl.dataset.detailed = hasDetail ? '1' : '0';
         bubble.appendChild(chipEl);
       }
+      foldMcpRun(chipEl, true);   // a run of calls to one server folds (mcp.js)
       maybeFollow();
     },
     // `quiet`: the turn was stopped, so it ends without the "landed" sweep.

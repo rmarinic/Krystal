@@ -42,7 +42,9 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   replies start quickly and Claude doesn't have to re-read the conversation every time.
 - **Replies that format themselves as they stream.** Markdown, code and tables take shape as
   they're written, and each action Claude takes appears as a chip you can open: the command
-  and its output, the diff, the page it fetched, the file it touched. Under a reply that's still
+  and its output, the diff, the page it fetched, the file it touched. Calls to connected services
+  (MCP) name the service and what was asked, show what came back laid out with live links, and a
+  burst of calls to one service folds into a single chip that opens onto each. Under a reply that's still
   coming, a quiet line says what Claude is doing and for how long, even through long silent
   stretches like writing an artifact, where it shows how much has been written so far.
 - **Queue the next message** while Claude is still working. Queued messages go out one at a

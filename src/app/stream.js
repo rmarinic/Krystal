@@ -234,7 +234,8 @@ function handleLiveEvent(live, msg) {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active, live);    // updates the Activity panel
     // A step handed its result back: one soft breath of light at its chip.
-    if (live.bubble && msg.id) lightBeat(live.bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`));
+    // (A call folded into a closed run breathes at the run's head.)
+    if (live.bubble && msg.id) lightBeat(visibleChip(live.bubble.querySelector(`.action-chip[data-id="${cssEsc(msg.id)}"]`)));
     if (live.bubble) mascotNod();                   // …and the face nods
     agentResultSeen(msg);                           // a sub-agent handed its report back
     if (live.typer) live.typer.setToolResult(msg);  // and folds output into the chip

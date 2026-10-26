@@ -84,7 +84,110 @@ pub(super) fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<
             return (Some(q.to_string()), Some(tool_search_target(q)));
         }
     }
+    // Someone's MCP server: no detail line (its arguments ride along as `args`,
+    // see `tool_change`), only a target guessed from them.
+    if is_mcp_tool(name) {
+        return (None, mcp_target(input));
+    }
     (None, None)
+}
+
+/// A tool from an MCP server (`mcp__<server>__<tool>`). Krystal's own artifact
+/// tool is one too, but it has a card of its own and is left out.
+pub(super) fn is_mcp_tool(name: &str) -> bool {
+    name.starts_with("mcp__") && name != artifacts::TOOL_NAME
+}
+
+/// The chip target for an MCP call. Its tools are anyone's, so nothing says
+/// what each argument means; a few names mean the same nearly everywhere (a
+/// query, a url, an issue key), and failing those the first short line of text
+/// will do. Tools that take code (Cloudflare's `execute` and `search`) are
+/// labelled by the request the code makes.
+fn mcp_target(input: &Value) -> Option<String> {
+    const KEYS: &[&str] = &[
+        "query", "q", "url", "issueIdOrKey", "issueKey", "key", "jql", "cql", "title",
+        "name", "subject", "path", "file_path", "pageId", "id", "prompt",
+    ];
+    let obj = input.as_object()?;
+    let short = |v: &Value| -> Option<String> {
+        let s = match v {
+            Value::String(s) => s.trim().to_string(),
+            Value::Number(n) => n.to_string(),
+            _ => return None,
+        };
+        (!s.is_empty() && !s.contains('\n') && s.chars().count() <= 120).then_some(s)
+    };
+    if let Some(s) = KEYS.iter().find_map(|k| obj.get(*k).and_then(short)) {
+        return Some(take_chars(&s, 40));
+    }
+    if let Some(t) = obj.get("code").and_then(|v| v.as_str()).and_then(code_target) {
+        return Some(take_chars(&t, 48));
+    }
+    obj.values().find_map(short).map(|s| take_chars(&s, 40))
+}
+
+/// What a piece of API-calling code does, in a line: the first request it makes
+/// (`method: "GET", path: "/zones/…"`), else the first spec path it looks up
+/// (`spec.paths['/accounts/…']`), else its first comment. `${…}` holes read `…`.
+fn code_target(code: &str) -> Option<String> {
+    if let Some(path) = code_field(code, "path") {
+        let path = fill_holes(&path);
+        return Some(match code_field(code, "method") {
+            Some(m) => format!("{} {path}", m.to_uppercase()),
+            None => path,
+        });
+    }
+    if let Some(i) = code.find("paths[") {
+        if let Some(p) = quoted_at(&code[i + "paths[".len()..]) {
+            return Some(fill_holes(&p));
+        }
+    }
+    code.lines()
+        .map(str::trim)
+        .find_map(|l| l.strip_prefix("//").map(str::trim).filter(|c| !c.is_empty()))
+        .map(str::to_string)
+}
+
+/// The quoted value of `key: "…"` in code, where `key` stands alone (so `path`
+/// doesn't match inside `file_path`).
+fn code_field(code: &str, key: &str) -> Option<String> {
+    code.match_indices(key).find_map(|(i, _)| {
+        let before = code[..i].chars().next_back();
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+            return None;
+        }
+        let rest = code[i + key.len()..].trim_start().strip_prefix(':')?;
+        quoted_at(rest)
+    })
+}
+
+/// The string literal that `s` opens with (after any spaces), if it opens with one.
+fn quoted_at(s: &str) -> Option<String> {
+    let s = s.trim_start();
+    let q = s.chars().next().filter(|c| matches!(c, '"' | '\'' | '`'))?;
+    let body = &s[1..];
+    body.find(q).map(|end| body[..end].to_string()).filter(|v| !v.is_empty())
+}
+
+/// `/accounts/${accountId}/workers` → `/accounts/…/workers`.
+fn fill_holes(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("${") {
+        out.push_str(&rest[..i]);
+        match rest[i..].find('}') {
+            Some(j) => {
+                out.push('…');
+                rest = &rest[i + j + 1..];
+            }
+            None => {
+                rest = &rest[i..];
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The chip label for a ToolSearch query: the tools a `select:` names, by their
@@ -140,6 +243,22 @@ pub(super) fn tool_change(name: &str, input: &Value) -> Option<Vec<(&'static str
         }
         "Write" => Some(vec![("content", json!(cap_text(str_of("content")?, CAP)))]),
         "NotebookEdit" => Some(vec![("content", json!(cap_text(str_of("new_source")?, CAP)))]),
+        // An MCP call's arguments, as `[name, value]` pairs: its chip lists them,
+        // since nothing else says what the call was asked to do.
+        _ if is_mcp_tool(name) => {
+            let args: Vec<Value> = input
+                .as_object()?
+                .iter()
+                .map(|(k, v)| {
+                    let text = match v {
+                        Value::String(s) => s.clone(),
+                        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+                    };
+                    json!([k, cap_text(&text, CAP)])
+                })
+                .collect();
+            (!args.is_empty()).then(|| vec![("args", json!(args))])
+        }
         _ => None,
     }
 }
@@ -222,5 +341,42 @@ mod tests {
         // Plain text results are untouched.
         let content = json!([{ "type": "text", "text": "a" }, { "type": "text", "text": "b" }]);
         assert_eq!(tool_result_text(Some(&content)), "ab");
+    }
+
+    #[test]
+    fn an_mcp_chip_says_what_the_call_is_about() {
+        let target = |name: &str, input: Value| tool_detail(name, &input).1;
+        // A well-known argument wins over whatever else is there.
+        assert_eq!(target("mcp__cloudflare-api__docs", json!({ "query": "email sending" })).as_deref(), Some("email sending"));
+        assert_eq!(
+            target("mcp__claude_ai_Atlassian_MCP__getJiraIssue", json!({ "cloudId": "abc-123", "issueIdOrKey": "AVATARS-44" })).as_deref(),
+            Some("AVATARS-44")
+        );
+        // Code: the request it makes, holes filled in.
+        let code = "async () => {\n  const r = await cloudflare.request({ method: 'get', path: `/accounts/${accountId}/workers/scripts` });\n  return r;\n}";
+        assert_eq!(target("mcp__cloudflare-api__execute", json!({ "code": code })).as_deref(), Some("GET /accounts/…/workers/scripts"));
+        // …or the spec path it looks up, or its first comment.
+        let code = "async () => spec.paths['/accounts/{account_id}/email/sending']?.post";
+        assert_eq!(target("mcp__cloudflare-api__search", json!({ "code": code })).as_deref(), Some("/accounts/{account_id}/email/sending"));
+        let code = "async () => {\n  // find the email endpoints\n  return Object.keys(spec.x);\n}";
+        assert_eq!(target("mcp__cloudflare-api__search", json!({ "code": code })).as_deref(), Some("find the email endpoints"));
+        // `file_path:` is not `path:`.
+        assert_eq!(code_field("{ file_path: 'a' }", "path"), None);
+        // Nothing short to say: no target, and nothing made up.
+        assert_eq!(target("mcp__cloudflare-api__whoami", json!({})), None);
+        assert_eq!(target("mcp__x__y", json!({ "body": "line one\nline two" })), None);
+        // Some other short text, failing the known names.
+        assert_eq!(target("mcp__x__y", json!({ "channel": "general" })).as_deref(), Some("general"));
+        // The artifact tool keeps its own card.
+        assert!(!is_mcp_tool(artifacts::TOOL_NAME));
+    }
+
+    #[test]
+    fn an_mcp_chip_carries_its_arguments() {
+        let rich = tool_change("mcp__x__y", &json!({ "query": "hi", "limit": 5 })).unwrap();
+        assert_eq!(rich[0].0, "args");
+        assert_eq!(rich[0].1, json!([["limit", "5"], ["query", "hi"]]));
+        assert!(tool_change("mcp__x__y", &json!({})).is_none());
+        assert!(tool_change(artifacts::TOOL_NAME, &json!({ "id": "a", "content": "big" })).is_none());
     }
 }

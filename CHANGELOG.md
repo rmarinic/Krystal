@@ -4,6 +4,11 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.36.0
+- **Clearer steps for connected services.** When Claude uses a connected service (Cloudflare, Atlassian, Google Drive and the like), its step now names the service and what it did, such as "Cloudflare API · Docs · email sending", instead of a long technical name. Open the step to see what Claude asked for and what came back. Results are neatly laid out, links work, and there's a Copy button. A step that failed turns red and shows the error first.
+- **A burst of calls folds into one.** Three or more calls in a row to the same service now fold into a single step, like "Cloudflare API · 5 calls". Click it to see each call.
+- **No more doubled steps.** Steps that used a connected service sometimes showed up twice, with one copy spinning until the reply finished.
+
 ## v0.35.1
 - **Linking shows the code and waits.** Pressing Link in Settings → Remote no longer opened File Explorer instead of the browser. Krystal now just shows the code. Press "Open app.krystal.rip", sign in, and enter the code there.
 - **Link a device from the sidebar.** While this computer isn't linked, the bottom left has a "Link a device" row that opens the Account settings with a code ready.

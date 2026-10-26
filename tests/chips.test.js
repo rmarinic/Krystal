@@ -1,4 +1,4 @@
-/* Tests for the action chips' ways out (src/app/messages.js): the result links
+/* Tests for the action chips' ways out (src/app/chips.js): the result links
  * pulled out of a web search's output, and how the Open button treats a file —
  * a click meant to look at a file must never run it. Also what a reply's Copy
  * button puts on the clipboard.
@@ -17,7 +17,8 @@ const vm = require('vm');
 const assert = require('assert');
 
 function loadMessages() {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'messages.js'), 'utf8');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'app', f), 'utf8');
+  const src = read('messages.js') + '\n' + read('chips.js');
   const ctx = {
     tr: (k) => k, escapeHtml: (s) => String(s), icon: () => '',
     fmtDur: (ms) => Math.round(ms / 1000) + 's',
