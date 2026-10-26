@@ -1,6 +1,6 @@
 {
   "name": "krystal-tauri",
-  "version": "0.35.1",
+  "version": "0.36.0",
   "private": true,
   "description": "Krystal — a local Claude Code chat app, as a native Windows (Tauri) desktop app.",
   "scripts": {
