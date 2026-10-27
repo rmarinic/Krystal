@@ -118,6 +118,16 @@ const api = {
   cloudSetReachable(on) { return invoke('cloud_set_reachable', { on }); },
   getGuestAccess() { return invoke('get_guest_access'); },
   setGuestAccess(access) { return invoke('set_guest_access', { access }); },
+  // The hub (cloud/hub.rs): the account's other computers, and their commands.
+  hubComputers() { return invoke('hub_computers'); },
+  hubCall(deviceId, command, args) { return invoke('hub_call', { deviceId, command, args }); },
+  // `onEvent(ev)` for each of the command's events; resolves to { ended }.
+  hubStream(deviceId, command, args, streamId, onEvent) {
+    const ch = new Channel();
+    ch.onmessage = onEvent || (() => {});
+    return invoke('hub_stream', { deviceId, command, args, streamId, onEvent: ch });
+  },
+  hubStreamCancel(streamId) { return invoke('hub_stream_cancel', { streamId }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

@@ -4,7 +4,9 @@
 //! "Reachable from krystal.rip" switch is on, the live connection that keeps it
 //! online on the dashboard (`presence`, over `wire` to `wss://…/device`). The
 //! relay that lets someone signed in there drive this computer rides that same
-//! socket (`relay`, which hands each request to `crate::remote`).
+//! socket (`relay`, which hands each request to `crate::remote`). And this
+//! computer reaches the account's other computers through the cloud with its
+//! own token (`hub`: `hub_computers`, `hub_call`, `hub_stream`).
 //!
 //! The window drives it through the `cloud_*` commands below and hears about
 //! changes it didn't ask for on two events: `cloud-link` (a poll landing, a link
@@ -22,6 +24,7 @@ use crate::commands::AppState;
 mod api;
 #[cfg(test)]
 mod fakes;
+mod hub;
 mod link;
 #[cfg(test)]
 mod live;
@@ -29,6 +32,8 @@ mod presence;
 mod relay;
 mod vault;
 mod wire;
+
+pub use hub::*;
 
 /// The link this app runs with: the real network, the real credential store.
 pub type CloudLink = link::Link<api::HttpNet, vault::Keyring>;
@@ -76,6 +81,11 @@ pub fn new_presence(link: &Arc<CloudLink>, dir: &Path) -> Arc<CloudPresence> {
         presence::load_reachable(dir),
         crate::commands::app_version().to_string(),
     )
+}
+
+/// The hub for this run, against the same cloud.
+pub fn new_hub() -> Hub {
+    Hub::new(api::base_url())
 }
 
 /// A link that can never reach anything, for tests that need an `AppState`.

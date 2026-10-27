@@ -90,6 +90,7 @@ fn main() {
                 watch: Default::default(),
                 cloud,
                 presence,
+                hub: cloud::new_hub(),
             });
             Ok(())
         })
@@ -194,6 +195,10 @@ fn main() {
             cloud::cloud_unlink,
             cloud::cloud_presence,
             cloud::cloud_set_reachable,
+            cloud::hub_computers,
+            cloud::hub_call,
+            cloud::hub_stream,
+            cloud::hub_stream_cancel,
             commands::get_guest_access,
             commands::set_guest_access,
         ])

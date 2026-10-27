@@ -37,6 +37,10 @@ pub const LOCAL_ONLY: &[&str] = &[
     // What guests may do here. Only ever set at this computer, so a guest can
     // never widen their own reach.
     "get_guest_access", "set_guest_access",
+    // This computer reaching the account's others with its own token: the
+    // account's whole reach, never lent to someone outside (and no bouncing
+    // through one computer to a third).
+    "hub_computers", "hub_call", "hub_stream", "hub_stream_cancel",
 ];
 
 /// A required string argument (missing reads as empty, which the commands then

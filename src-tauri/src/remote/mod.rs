@@ -94,6 +94,7 @@ pub(crate) mod tests {
             watch: Default::default(),
             cloud: cloud.clone(),
             presence: crate::cloud::presence_for_tests(&cloud),
+            hub: crate::cloud::Hub::new("http://127.0.0.1:9".into()),
         });
         app
     }

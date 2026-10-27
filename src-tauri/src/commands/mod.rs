@@ -102,6 +102,8 @@ pub struct AppState {
     /// The live connection that keeps this computer online at app.krystal.rip
     /// while it is linked and reachable (see `cloud/presence.rs`).
     pub presence: std::sync::Arc<crate::cloud::CloudPresence>,
+    /// This computer reaching the account's other computers (see `cloud/hub.rs`).
+    pub hub: crate::cloud::Hub,
 }
 
 impl AppState {
