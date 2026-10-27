@@ -460,7 +460,7 @@ function fillSettingsTab(panel, tabId) {
   panel.innerHTML = '';
   const active = SETTINGS_TABS.find((t) => t.id === tabId) || SETTINGS_TABS[0];
   if (active.custom === 'usage') { renderUsagePanel(panel); return; }   // usage.js
-  if (active.custom === 'remote') { renderAccountPanel(panel); return; }   // account.js
+  if (active.custom === 'remote') { renderAccountPanel(panel); renderGuestsPanel(panel); return; }   // account.js, guests.js
   if (active.custom === 'runs') { renderRunsPanel(panel); return; }
   if (active.custom === 'keys') { renderShortcutsPanel(panel); return; }   // hotkeys.js
   for (const row of active.rows) panel.appendChild(buildSettingRow(row));

@@ -79,6 +79,21 @@ pub async fn chat(
     refs: Option<Vec<String>>,
     on_event: Channel<Value>,
 ) -> Result<(), String> {
+    chat_within(state, thread_id, text, files, refs, on_event, None).await
+}
+
+/// A turn, run in the chat's own mode, or, given `modes`, in the nearest of
+/// those (`models::cap_mode`): a guest's turn, held to what the owner allowed
+/// (see `remote/guests.rs`). The chat's stored mode is left alone.
+pub async fn chat_within(
+    state: State<'_, AppState>,
+    thread_id: String,
+    text: String,
+    files: Option<Vec<String>>,
+    refs: Option<Vec<String>>,
+    on_event: Channel<Value>,
+    modes: Option<&[String]>,
+) -> Result<(), String> {
     let files = files.unwrap_or_default();
     let refs = refs.unwrap_or_default();
 
@@ -88,6 +103,10 @@ pub async fn chat(
         db::get_meta(&conn, &thread_id)
     }
     .ok_or("unknown thread")?;
+    if let Some(allowed) = modes {
+        meta.mode = models::cap_mode(&meta.mode, allowed)
+            .ok_or("this computer's owner hasn't allowed sending messages")?;
+    }
 
     // Self-heal a stale model id: if the thread's stored model has dropped out of
     // the live catalogue, remap it (by tier) to a live one before it reaches the
@@ -151,7 +170,12 @@ pub async fn chat(
         None => true,
         Some(s) => s.trim().is_empty() || s == "New chat",
     };
-    chat_turn(state, thread_id, text, files, on_event, meta, task_awareness, args, artifact_cfg, artifact_key, prompt, needs_title).await
+    // On record while it runs, so a phone or another computer can join it
+    // halfway (`watch_turn`). Everything still reaches `on_event` as before.
+    let (on_event, recording) = state.watch.begin(&thread_id, on_event);
+    let out = chat_turn(state, thread_id, text, files, on_event, meta, task_awareness, args, artifact_cfg, artifact_key, prompt, needs_title).await;
+    recording.finish(&out);
+    out
 }
 
 /// What a chat's `claude` process is started with. The arguments are also the

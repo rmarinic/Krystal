@@ -8,6 +8,7 @@
 //! second copy of the streaming logic. The last event is always the stream's own
 //! full stop: `{"type":"end"}`, or `{"type":"error","message":…}`.
 
+use super::guests::GuestAccess;
 use super::*;
 
 /// One string argument, trimmed (missing reads as empty).
@@ -31,23 +32,39 @@ fn args_of_strings(body: &Value, key: &str) -> Vec<String> {
 /// closes after the full stop.
 pub fn stream<R: Runtime>(
     app: &AppHandle<R>,
+    caller: Caller,
     cmd: &str,
     args: Value,
 ) -> Option<Result<mpsc::UnboundedReceiver<String>, String>> {
     match cmd {
-        "chat" => Some(chat_stream(app, args)),
+        "chat" => Some(chat_stream(app, caller, args)),
         "run_app" => Some(run_app_stream(app, args)),
+        "watch_turn" => Some(watch_stream(app, args)),
         _ => None,
     }
 }
 
 /// The last event of a stream: the caller's cue that the command is over, however
 /// it ended. Without it a caller that only ever sees `token`s would wait forever.
-fn closing_frame(outcome: Result<Value, String>) -> Value {
+pub(super) fn closing_frame(outcome: Result<Value, String>) -> Value {
     match outcome {
         Ok(_) => json!({ "type": "end" }),
         Err(e) => json!({ "type": "error", "message": e }),
     }
+}
+
+/// Join a chat's turn already under way (see `watch.rs`): its events so far,
+/// then live, then the full stop. Only `{"type":"end"}` when none is running.
+fn watch_stream<R: Runtime>(
+    app: &AppHandle<R>,
+    args: Value,
+) -> Result<mpsc::UnboundedReceiver<String>, String> {
+    let thread_id = str_field(&args, "threadId");
+    if thread_id.is_empty() {
+        return Err("threadId required".into());
+    }
+    let state: tauri::State<'_, AppState> = app.state();
+    Ok(state.watch.watch(&thread_id))
 }
 
 /// The RUN button, driven from outside: starts the project's app on *this*
@@ -88,8 +105,11 @@ fn run_app_stream<R: Runtime>(
 /// pushes each event straight into the caller's queue — and, at the same time,
 /// forwards it to the desktop window (see `EV_TURN`), so a chat left open on the
 /// computer paints the turn live instead of going quiet until reopened.
+///
+/// A guest's turn runs in a mode the owner allowed (`GuestAccess::modes`).
 fn chat_stream<R: Runtime>(
     app: &AppHandle<R>,
+    caller: Caller,
     body: Value,
 ) -> Result<mpsc::UnboundedReceiver<String>, String> {
     let thread_id = str_field(&body, "threadId");
@@ -132,11 +152,23 @@ fn chat_stream<R: Runtime>(
         Ok(())
     });
 
+    let modes = (!caller.owner).then(|| {
+        let state: tauri::State<'_, AppState> = app.state();
+        GuestAccess::load(&state.data_dir).modes
+    });
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
-        let outcome =
-            commands::chat(state, thread_id.clone(), text, Some(files), Some(refs), channel).await;
+        let outcome = commands::chat_within(
+            state,
+            thread_id.clone(),
+            text,
+            Some(files),
+            Some(refs),
+            channel,
+            modes.as_deref(),
+        )
+        .await;
         // `done` has already gone out through the channel on the happy path;
         // this is the cue that the turn itself is over, either way. Both sides get
         // it, so neither is left with a spinner that never settles.

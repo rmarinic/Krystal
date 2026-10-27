@@ -32,6 +32,10 @@
 //!
 //! `LOCAL_ONLY` is refused here, before `remote` is asked, as well as by
 //! `remote` itself: two doors, so neither one alone can let it through.
+//!
+//! `from.owner` goes with every request (`remote::Caller`): the owner reaches
+//! anything, someone the computer was shared with only its projects' folders
+//! (`remote::check_access`, asked by `AppHandler` before running anything).
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,7 +49,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Duration, Instant};
 
-use crate::remote::{is_streaming_command, LOCAL_ONLY};
+use crate::remote::{is_streaming_command, Caller, LOCAL_ONLY};
 
 /// The protocol version the relay arrives with. A welcome below it (a cloud
 /// that only does presence) leaves the relay off.
@@ -85,24 +89,32 @@ pub type Events = UnboundedReceiver<String>;
 /// Whatever runs the commands: `AppHandler` (this app's own `remote` module),
 /// or a fake in the tests.
 pub trait Handler: Send + Sync + 'static {
-    /// A plain command. `None` if it isn't exposed.
-    fn call(&self, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>>;
-    /// A streaming command. `None` if it isn't exposed, `Some(Err)` if it was
-    /// refused before anything ran.
-    fn stream(&self, command: &str, args: Value) -> Option<Result<Events, String>>;
+    /// A plain command, for `caller`. `None` if it isn't exposed.
+    fn call(&self, caller: Caller, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>>;
+    /// A streaming command, for `caller`. `None` if it isn't exposed,
+    /// `Some(Err)` if it was refused before anything ran.
+    fn stream(&self, caller: Caller, command: &str, args: Value) -> Option<Result<Events, String>>;
 }
 
 /// The commands of this app, run by `remote` on its own state.
 pub struct AppHandler<R: Runtime>(pub AppHandle<R>);
 
 impl<R: Runtime> Handler for AppHandler<R> {
-    fn call(&self, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>> {
+    fn call(&self, caller: Caller, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>> {
         let app = self.0.clone();
-        Box::pin(async move { crate::remote::dispatch(&app, &command, &args).await })
+        Box::pin(async move {
+            if let Err(why) = crate::remote::check_access(&app, caller, &command, &args) {
+                return Some(Err(why));
+            }
+            crate::remote::dispatch(&app, &command, &args).await
+        })
     }
 
-    fn stream(&self, command: &str, args: Value) -> Option<Result<Events, String>> {
-        crate::remote::stream(&self.0, command, args)
+    fn stream(&self, caller: Caller, command: &str, args: Value) -> Option<Result<Events, String>> {
+        if let Err(why) = crate::remote::check_access(&self.0, caller, command, &args) {
+            return Some(Err(why));
+        }
+        crate::remote::stream(&self.0, caller, command, args)
     }
 }
 
@@ -168,10 +180,11 @@ impl Relay {
                 }
                 let command = m["command"].as_str().unwrap_or("").to_string();
                 let args = if m["args"].is_object() { m["args"].clone() } else { json!({}) };
+                let caller = Caller::from_request(&m["from"]);
                 if kind == "call" {
-                    self.call(&handler, id, command, args);
+                    self.call(&handler, caller, id, command, args);
                 } else {
-                    self.stream(&handler, id, command, args);
+                    self.stream(&handler, caller, id, command, args);
                 }
             }
             Some("ack") => {
@@ -195,14 +208,14 @@ impl Relay {
         }
     }
 
-    fn call(&mut self, handler: &Arc<dyn Handler>, id: String, command: String, args: Value) {
+    fn call(&mut self, handler: &Arc<dyn Handler>, caller: Caller, id: String, command: String, args: Value) {
         let answer = if LOCAL_ONLY.contains(&command.as_str()) {
             Err(NOT_ALLOWED)
         } else if is_streaming_command(&command) {
             // It reports as it goes; through this door its events would be lost.
             Err("stream-only")
         } else {
-            Ok(handler.call(command, args))
+            Ok(handler.call(caller, command, args))
         };
         let dropped = Arc::new(AtomicBool::new(false));
         let (out, max, flag, rid) = (self.out.clone(), self.max_frame, dropped.clone(), id.clone());
@@ -218,8 +231,8 @@ impl Relay {
         self.requests.insert(id, Request { task, acked: None, dropped });
     }
 
-    fn stream(&mut self, handler: &Arc<dyn Handler>, id: String, command: String, args: Value) {
-        let events = if LOCAL_ONLY.contains(&command.as_str()) { None } else { handler.stream(&command, args) };
+    fn stream(&mut self, handler: &Arc<dyn Handler>, caller: Caller, id: String, command: String, args: Value) {
+        let events = if LOCAL_ONLY.contains(&command.as_str()) { None } else { handler.stream(caller, &command, args) };
         let rx = match events {
             Some(Ok(rx)) => rx,
             None => return send(&self.out, &id, not_allowed(&id, NOT_ALLOWED), self.max_frame),
@@ -430,6 +443,8 @@ mod tests {
     #[derive(Default)]
     struct FakeHandler {
         asked: Mutex<Vec<String>>,
+        /// Who each request was for, in order.
+        callers: Mutex<Vec<Caller>>,
         /// The near end of the last stream handed out: the turn, as the test plays it.
         turn: Mutex<Option<UnboundedSender<String>>>,
     }
@@ -446,8 +461,9 @@ mod tests {
     }
 
     impl Handler for FakeHandler {
-        fn call(&self, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>> {
+        fn call(&self, caller: Caller, command: String, args: Value) -> BoxFuture<'static, Option<Result<Value, String>>> {
             self.asked.lock().unwrap().push(command.clone());
+            self.callers.lock().unwrap().push(caller);
             Box::pin(async move {
                 match command.as_str() {
                     "nothing_here" => None,
@@ -462,8 +478,9 @@ mod tests {
             })
         }
 
-        fn stream(&self, command: &str, _args: Value) -> Option<Result<Events, String>> {
+        fn stream(&self, caller: Caller, command: &str, _args: Value) -> Option<Result<Events, String>> {
             self.asked.lock().unwrap().push(command.to_string());
+            self.callers.lock().unwrap().push(caller);
             match command {
                 "busy_chat" => Some(Err("busy".into())),
                 "nothing_here" => None,
@@ -547,6 +564,25 @@ mod tests {
     /* ---------------------------------- calls --------------------------------- */
 
     #[tokio::test(start_paused = true)]
+    async fn who_is_asking_goes_with_every_request_and_only_an_owner_is_one() {
+        let h = Arc::new(FakeHandler::default());
+        let (_rig, mut cloud) = connected(h.clone(), 2, 16).await;
+        let from = |id: &str, kind: &str, from: Value| {
+            json!({ "type": kind, "id": id, "command": "list_projects", "args": {}, "from": from })
+        };
+        cloud.say(from("a", "call", json!({ "email": "you@example.com", "owner": true })));
+        next(&mut cloud).await;
+        cloud.say(from("b", "call", json!({ "email": "friend@example.com", "owner": false })));
+        next(&mut cloud).await;
+        cloud.say(from("c", "call", Value::Null));
+        next(&mut cloud).await;
+        cloud.say(from("d", "stream", json!({ "email": "friend@example.com", "owner": false })));
+        sleep(Duration::from_millis(1)).await;
+        let owners: Vec<bool> = h.callers.lock().unwrap().iter().map(|c| c.owner).collect();
+        assert_eq!(owners, [true, false, false, false]);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_call_is_answered_once_with_its_result() {
         let h = Arc::new(FakeHandler::default());
         let (_rig, mut cloud) = connected(h.clone(), 2, 16).await;
@@ -592,7 +628,7 @@ mod tests {
     async fn a_streaming_command_through_the_call_door_is_refused_not_run() {
         let h = Arc::new(FakeHandler::default());
         let (_rig, mut cloud) = connected(h.clone(), 2, 16).await;
-        for cmd in ["chat", "run_app"] {
+        for cmd in ["chat", "run_app", "watch_turn"] {
             cloud.say(request("call", cmd, cmd, json!({ "threadId": "t1", "text": "hi" })));
             let m = next(&mut cloud).await;
             assert_eq!((m["ok"].as_bool(), m["code"].as_str()), (Some(false), Some("not-allowed")), "{m}");

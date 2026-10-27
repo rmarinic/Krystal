@@ -63,7 +63,10 @@ pub async fn generate_title(bin: &str, cwd: &str, user_prompt: &str, reply: &str
         "--output-format".into(),
         "stream-json".into(),
         "--verbose".into(),
-        "--dangerously-skip-permissions".into(),
+        // Naming a chat needs no tool, and the prompt holds text a guest may
+        // have written: whatever would need permission is simply refused.
+        "--permission-mode".into(),
+        "default".into(),
         "--model".into(),
         TITLE_MODEL.into(),
         "--append-system-prompt".into(),

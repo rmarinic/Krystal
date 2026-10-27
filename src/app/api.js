@@ -116,6 +116,8 @@ const api = {
   // The live connection (cloud/presence.rs): { reachable, conn }.
   cloudPresence() { return invoke('cloud_presence'); },
   cloudSetReachable(on) { return invoke('cloud_set_reachable', { on }); },
+  getGuestAccess() { return invoke('get_guest_access'); },
+  setGuestAccess(access) { return invoke('set_guest_access', { access }); },
   updateClaude(onEvent) { return invoke('update_claude', { onEvent }); },
   updateClaudeNpm(onEvent) { return invoke('update_claude_npm', { onEvent }); },
 };

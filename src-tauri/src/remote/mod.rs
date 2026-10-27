@@ -8,10 +8,15 @@
 //! the window calls, same database, same warm `claude` sessions: whatever drives
 //! this machine from outside is another view of one app, not a second app.
 //!
+//!   * `access` — what a caller may reach: the owner everything, someone the
+//!     computer was shared with only its projects' folders.
+//!   * `guests` — what the owner lets guests do (Settings → Remote).
 //!   * `bridge` — `dispatch`: the allowlist of commands that may be called from
 //!     outside, and `LOCAL_ONLY`, the ones that never may.
 //!   * `stream` — a chat turn (and the RUN button) as a stream of events, which
 //!     are also mirrored to the window so an open chat paints the turn live.
+//!   * `watch` — every turn on record while it runs, so `watch_turn` can join
+//!     one already under way (a phone that slept, another computer).
 //!
 //! No transport lives here: no sockets, no HTTP types. The carrier is somebody
 //! else's concern.
@@ -42,11 +47,17 @@ const EV_TURN_END: &str = "remote-turn-end";
 /// A chat was created from outside: `{ project }`.
 const EV_THREADS: &str = "remote-threads-changed";
 
+mod access;
 mod bridge;
+mod guests;
 mod stream;
+mod watch;
 
+pub use access::{check_access, Caller};
+pub use guests::GuestAccess;
 pub use bridge::{dispatch, is_streaming_command, LOCAL_ONLY};
 pub use stream::stream;
+pub use watch::Watch;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -80,11 +91,15 @@ pub(crate) mod tests {
             ui_lang: std::sync::Mutex::new("en".into()),
             suggestions: std::sync::Mutex::new(false),
             sessions: Default::default(),
+            watch: Default::default(),
             cloud: cloud.clone(),
             presence: crate::cloud::presence_for_tests(&cloud),
         });
         app
     }
+
+    /// The computer's owner, for tests that aren't about who is asking.
+    pub(crate) const OWNER: Caller = Caller { owner: true };
 
     /// A scratch directory that cleans itself up.
     pub(crate) struct TempDir(pub(crate) std::path::PathBuf);
@@ -173,7 +188,7 @@ pub(crate) mod tests {
         for cmd in LOCAL_ONLY {
             let args = json!({ "url": "https://example.com" });
             assert!(dispatch(app.handle(), cmd, &args).await.is_none(), "{cmd} is reachable from outside");
-            assert!(stream(app.handle(), cmd, args).is_none(), "{cmd} streams to outside");
+            assert!(stream(app.handle(), OWNER, cmd, args).is_none(), "{cmd} streams to outside");
         }
         // A streaming command through the plain door is refused rather than run
         // with its events dropped on the floor, and an unknown name is nothing.
@@ -182,9 +197,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn streaming_commands_are_the_two_that_report_through_a_channel() {
+    fn streaming_commands_are_the_ones_that_report_as_they_go() {
         assert!(is_streaming_command("chat"));
         assert!(is_streaming_command("run_app"));
+        assert!(is_streaming_command("watch_turn"));
         assert!(!is_streaming_command("list_projects"));
         assert!(!is_streaming_command("update_claude"));
     }
@@ -200,7 +216,7 @@ pub(crate) mod tests {
         // process is spawned — which is the path worth exercising here: by the
         // time a turn can fail the caller is already reading the stream, so the
         // error has to arrive as an event in it, not as a refusal up front.
-        let rx = stream(app.handle(), "chat", json!({ "threadId": "no-such-thread", "text": "hello" }))
+        let rx = stream(app.handle(), OWNER, "chat", json!({ "threadId": "no-such-thread", "text": "hello" }))
             .expect("chat streams")
             .expect("the stream opens");
         let events = drain(rx).await;
@@ -221,7 +237,7 @@ pub(crate) mod tests {
             });
         }
 
-        let events = stream(app.handle(), "chat", json!({ "threadId": "t1", "text": "hi" }))
+        let events = stream(app.handle(), OWNER, "chat", json!({ "threadId": "t1", "text": "hi" }))
             .unwrap()
             .unwrap();
         drain(events).await;
@@ -249,12 +265,63 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn watch_turn_joins_a_turn_under_way_and_ends_with_it() {
+        let dir = TempDir::new();
+        let app = mock_app(&dir.0);
+        // Nothing running: the stream is only its full stop.
+        let idle = stream(app.handle(), OWNER, "watch_turn", json!({ "threadId": "t1" })).unwrap().unwrap();
+        assert_eq!(drain(idle).await, vec![json!({ "type": "end" })]);
+
+        // A turn under way (as `commands::chat` puts it on record).
+        let state: tauri::State<'_, AppState> = app.state();
+        let (ch, rec) = state.watch.begin("t1", Channel::new(|_| Ok(())));
+        ch.send(json!({ "type": "saved", "userId": 1, "ckpt": "c" })).unwrap();
+        let rx = stream(app.handle(), OWNER, "watch_turn", json!({ "threadId": "t1" })).unwrap().unwrap();
+        ch.send(json!({ "type": "token", "text": "hi" })).unwrap();
+        rec.finish(&Ok(()));
+        assert_eq!(
+            drain(rx).await,
+            vec![
+                json!({ "type": "saved", "userId": 1, "ckpt": "c" }),
+                json!({ "type": "token", "text": "hi" }),
+                json!({ "type": "end" }),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_guests_turn_is_held_to_the_modes_the_owner_allowed() {
+        let dir = TempDir::new();
+        let app = mock_app(&dir.0);
+        let project = dir.0.join("p").to_string_lossy().to_string();
+        std::fs::create_dir_all(&project).unwrap();
+        let h = app.handle();
+        dispatch(h, "create_project", &json!({ "path": project })).await.unwrap().unwrap();
+        let id = dispatch(h, "create_thread", &json!({ "cwd": project })).await.unwrap().unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        // No modes at all: the owner lets guests read, not send. The turn itself
+        // refuses (the relay's check would too; this is the second door).
+        GuestAccess { modes: vec![], ..GuestAccess::default() }.save(&dir.0).unwrap();
+        let guest = Caller { owner: false };
+        let rx = stream(h, guest, "chat", json!({ "threadId": id, "text": "hi" })).unwrap().unwrap();
+        let last = drain(rx).await.pop().unwrap();
+        assert_eq!(last, json!({ "type": "error", "message": "this computer's owner hasn't allowed sending messages" }));
+        // The chat's own mode is left as it was.
+        let thread = dispatch(h, "get_thread", &json!({ "id": id })).await.unwrap().unwrap();
+        assert_eq!(thread["mode"], json!(crate::models::DEFAULT_MODE));
+    }
+
+    #[tokio::test]
     async fn a_missing_field_is_refused_before_anything_is_streamed() {
         let dir = TempDir::new();
         let app = mock_app(&dir.0);
-        let refused = stream(app.handle(), "chat", json!({ "threadId": "abc" })).expect("chat streams");
+        let refused = stream(app.handle(), OWNER, "chat", json!({ "threadId": "abc" })).expect("chat streams");
         assert!(refused.is_err());
-        let refused = stream(app.handle(), "run_app", json!({})).expect("run_app streams");
+        let refused = stream(app.handle(), OWNER, "run_app", json!({})).expect("run_app streams");
+        assert!(refused.is_err());
+        let refused = stream(app.handle(), OWNER, "watch_turn", json!({})).expect("watch_turn streams");
         assert!(refused.is_err());
     }
 
@@ -263,7 +330,7 @@ pub(crate) mod tests {
         let dir = TempDir::new();
         let app = mock_app(&dir.0);
         app.state::<AppState>().running.lock().unwrap().insert("t1".into(), 1);
-        let refused = stream(app.handle(), "chat", json!({ "threadId": "t1", "text": "hi" })).unwrap();
+        let refused = stream(app.handle(), OWNER, "chat", json!({ "threadId": "t1", "text": "hi" })).unwrap();
         assert_eq!(refused.err().as_deref(), Some("busy"));
     }
 }

@@ -34,6 +34,9 @@ pub const LOCAL_ONLY: &[&str] = &[
     // what lets someone in at all.
     "cloud_status", "cloud_link_start", "cloud_link_open", "cloud_link_cancel",
     "cloud_check", "cloud_unlink", "cloud_presence", "cloud_set_reachable",
+    // What guests may do here. Only ever set at this computer, so a guest can
+    // never widen their own reach.
+    "get_guest_access", "set_guest_access",
 ];
 
 /// A required string argument (missing reads as empty, which the commands then
@@ -269,5 +272,5 @@ pub async fn dispatch<R: Runtime>(
 /// Commands reachable through `stream` (they report progress through a
 /// `Channel` rather than returning once).
 pub fn is_streaming_command(cmd: &str) -> bool {
-    matches!(cmd, "chat" | "run_app")
+    matches!(cmd, "chat" | "run_app" | "watch_turn")
 }

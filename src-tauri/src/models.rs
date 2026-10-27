@@ -265,6 +265,25 @@ pub fn is_valid_mode(id: &str) -> bool {
     MODES.iter().any(|m| m.id == id)
 }
 
+/// The mode a turn runs in when only `allowed` may be used (a guest's turn, see
+/// `remote/guests.rs`). `MODES` runs from the most able to the least, so: `mode`
+/// itself if allowed, else the most able allowed mode that does *less* than it,
+/// else (everything allowed does more) the least able allowed one. An unknown
+/// stored mode counts as Full access, as `apply_mode` treats it. `None` when
+/// nothing is allowed.
+pub fn cap_mode(mode: &str, allowed: &[String]) -> Option<String> {
+    let rank = |id: &str| MODES.iter().position(|m| m.id == id);
+    let mine = rank(mode).unwrap_or(0);
+    let mut ok: Vec<usize> = allowed.iter().filter_map(|a| rank(a)).collect();
+    ok.sort_unstable();
+    let pick = if ok.contains(&mine) {
+        mine
+    } else {
+        ok.iter().copied().find(|&r| r > mine).or_else(|| ok.last().copied())?
+    };
+    Some(MODES[pick].id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +296,17 @@ mod tests {
         }
         // An unknown mode would silently run at full power — refuse it instead.
         assert!(!is_valid_mode("yolo"));
+    }
+
+    #[test]
+    fn a_capped_mode_is_the_nearest_allowed_one_that_does_less() {
+        let only = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(cap_mode("auto", &only(&["ask", "plan"])).as_deref(), Some("ask"));
+        assert_eq!(cap_mode("plan", &only(&["ask", "plan"])).as_deref(), Some("plan"), "allowed stays");
+        assert_eq!(cap_mode("guarded", &only(&["auto", "edits"])).as_deref(), Some("edits"), "never more than the chat's own");
+        assert_eq!(cap_mode("plan", &only(&["ask"])).as_deref(), Some("ask"), "nothing does less: the least able allowed");
+        assert_eq!(cap_mode("yolo", &only(&["guarded", "plan"])).as_deref(), Some("guarded"), "unknown counts as Full access");
+        assert_eq!(cap_mode("ask", &[]), None);
     }
 
     #[test]

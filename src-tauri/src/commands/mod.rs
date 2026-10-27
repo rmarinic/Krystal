@@ -36,6 +36,7 @@ mod run;
 mod wizard;
 mod pins;
 mod artifact_panel;
+mod guests;
 mod json;
 
 pub use config::*;
@@ -54,6 +55,7 @@ pub use run::*;
 pub use wizard::*;
 pub use pins::*;
 pub use artifact_panel::*;
+pub use guests::*;
 use json::*;
 
 /// Shared app state managed by Tauri.
@@ -92,6 +94,9 @@ pub struct AppState {
     pub suggestions: std::sync::Mutex<bool>,
     /// Warm `claude` processes, one per chat (see `session/`).
     pub sessions: session::Pool,
+    /// Every turn on record while it runs, so another device can join it
+    /// (`watch_turn`, see `remote/watch.rs`).
+    pub watch: crate::remote::Watch,
     /// This computer's link to a Krystal Cloud account (see `cloud/`).
     pub cloud: std::sync::Arc<crate::cloud::CloudLink>,
     /// The live connection that keeps this computer online at app.krystal.rip

@@ -87,6 +87,7 @@ fn main() {
                 ui_lang: std::sync::Mutex::new("en".to_string()),
                 suggestions: std::sync::Mutex::new(true),
                 sessions: Default::default(),
+                watch: Default::default(),
                 cloud,
                 presence,
             });
@@ -193,6 +194,8 @@ fn main() {
             cloud::cloud_unlink,
             cloud::cloud_presence,
             cloud::cloud_set_reachable,
+            commands::get_guest_access,
+            commands::set_guest_access,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Krystal")
