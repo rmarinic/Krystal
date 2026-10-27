@@ -4,6 +4,13 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.37.0
+- **The crystal comes alive.** The little face in the logo now has eyebrows, cheeks that blush, and far more expressions. It's never quite still: it breathes, bobs and sways gently, blinks like a face does, its eyes dart around, and it turns its head toward your pointer. Every few seconds it settles into a slightly different pose: a new smile, a head tilt, the mouth pulled to one side, a brow flick.
+- **You can see it think.** While Claude thinks, the face works through it: one brow up and the mouth pulled aside, then the other way, brows knitted in focus, eyes up wondering. When a long think turns into an answer, it lights up.
+- **It reacts to what you type.** It mouths along under its breath and nods at the end of each word. A "?" gets a curious tilt, a "!" a little jump, "..." a raised brow, a smiley a grin, CAPS a startled look, a backspace an "oops", and a "thanks" a blush. Pause with something written and it looks up at you, as if to say "go on?"
+- **Plenty of personality.** Leave it alone and it gets bored: it hums, sighs, peeks around, stretches, and every so often sneezes. Later it gets sleepy, nods off and jerks awake, yawns, and falls asleep with a few z's. Click it a few times for a giggle, more and it gets dizzy, and keep going and it huffs and looks away. Rub your pointer back and forth over it to pet it. A long job that lands gets a little celebration. With Extra effects off, it keeps its expressions and doesn't move.
+- **Light on your computer.** All this life costs very little: the face is only drawn while it's on screen, its gentle idle movement is handed to the graphics card, and it rests completely while Krystal is in the background.
+
 ## v0.36.0
 - **Clearer steps for connected services.** When Claude uses a connected service (Cloudflare, Atlassian, Google Drive and the like), its step now names the service and what it did, such as "Cloudflare API · Docs · email sending", instead of a long technical name. Open the step to see what Claude asked for and what came back. Results are neatly laid out, links work, and there's a Copy button. A step that failed turns red and shows the error first.
 - **A burst of calls folds into one.** Three or more calls in a row to the same service now fold into a single step, like "Cloudflare API · 5 calls". Click it to see each call.
