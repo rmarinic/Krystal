@@ -175,7 +175,9 @@ function accountApply(next) {
  * rest). It stays hidden until the first status arrives, so it never flashes. */
 function accountFootSync() {
   const btn = typeof els === 'object' && els ? els.linkBtn : null;
-  if (btn) btn.hidden = !!accountStatus.linked;
+  // Linking is this machine's (the cloud_* commands are local only): a browser
+  // driving it from app.krystal.rip never offers it.
+  if (btn) btn.hidden = !HOST.caps.native || !!accountStatus.linked;
 }
 
 /* Settings → Remote → Account, with a link already started, so the code is

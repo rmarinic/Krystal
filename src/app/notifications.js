@@ -118,6 +118,7 @@ async function notifyChat(live, kind, text, title) {
     if (kind === 'ask' && typeof threadAwaitsPermission === 'function' && !threadAwaitsPermission(threadId)) return;
   }
 
+  markUnread(threadId, kind);    // …and its row in the sidebar says so until it's opened
   dropNotifications(threadId);   // one row per chat
   const n = {
     id: String(++notifSeq), threadId, kind,
@@ -189,6 +190,58 @@ async function openNotification(n) {
   } catch (_) {
     dropNotification(n.id);   // the chat (or its project) no longer exists
   }
+}
+
+/* ------------------------------ unread chats ------------------------------ */
+/* The bell is a list you can clear without reading anything; the sidebar row is
+ * where you look for the chat itself. So a chat whose reply landed while you
+ * weren't looking keeps an **unread** mark on its row until you open it — not
+ * until you dismiss the toast or clear the bell. Kept apart from `notifs` for
+ * that reason, and persisted so the mark survives a restart like the bell does.
+ * A permission prompt isn't marked: its row already says "Needs you" while the
+ * turn waits, and the prompt dies with the turn. */
+
+const UNREAD_KEY = 'krystal.unread';
+let unread = (function loadUnread() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UNREAD_KEY));
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch (_) { return {}; }
+})();
+/* Marks already drawn once. A mark lands with one small pop the first time it is
+ * drawn, never again on a re-render; the ones from last session are old news. */
+const unreadLanded = new Set(Object.keys(unread));
+
+function persistUnread() {
+  try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)); } catch (_) {}
+}
+
+function markUnread(threadId, kind) {
+  if (!threadId || kind === 'ask' || !NOTIF_KINDS[kind]) return;
+  unread[threadId] = kind;
+  unreadLanded.delete(threadId);   // a new event lands again
+  persistUnread();
+  if (typeof paintUnreadMarks === 'function') paintUnreadMarks();
+}
+
+/* The chat was opened (or deleted): it has nothing unread any more. */
+function clearUnread(threadId) {
+  if (!threadId || !(threadId in unread)) return;
+  delete unread[threadId];
+  unreadLanded.delete(threadId);
+  persistUnread();
+  if (typeof paintUnreadMarks === 'function') paintUnreadMarks();
+}
+
+/* What a chat's unread mark should look like, or null: the kind of event (its
+ * words, for the tooltip), its tone (the colour), and whether this is the first
+ * time it is drawn (`land`, which also records that it now has been). */
+function chatUnread(threadId) {
+  const kind = unread[threadId];
+  if (!kind || !NOTIF_KINDS[kind]) return null;
+  const land = !unreadLanded.has(threadId);
+  unreadLanded.add(threadId);
+  return { kind, tone: NOTIF_KINDS[kind].tone, land };
 }
 
 /* --------------------------------- the bell ------------------------------- */

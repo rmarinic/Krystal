@@ -1,0 +1,84 @@
+/* narrow.css — Krystal on a phone (app.krystal.rip serves this same frontend),
+ * or in a narrow or short window. One breakpoint: narrower than 760px, or a
+ * landscape phone (shorter than 520px and narrower than 1100px). There:
+ *   - the sidebar is a drawer from the left, opened by the ☰ button in the
+ *     chat header (app/narrow.js opens and closes it), over a dim scrim;
+ *   - heights follow the visible screen (dvh), not 100vh, which on a phone
+ *     counts the space under the browser's own bars, so the composer ended
+ *     below the fold and the conversation had nowhere to scroll;
+ *   - the header and the composer are compact, and the composer's tools are
+ *     icons, so the conversation keeps most of the screen.
+ * The drawer slides on one property (transform), plain ease, and holds still
+ * open or shut. Linked just before motion.css. */
+
+.drawer-btn, .drawer-scrim { display: none; }
+
+@media (max-width: 760px), (max-height: 520px) and (max-width: 1100px) {
+  body.app { grid-template-columns: minmax(0, 1fr); height: 100dvh; }
+  .chat { height: 100dvh; }
+
+  /* ---- The drawer ---- */
+  aside.sidebar {
+    position: fixed; z-index: 70; top: 0; bottom: 0; left: 0;
+    width: min(86vw, 320px); height: auto; margin: 0;
+    border-radius: 0 16px 16px 0;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    /* Short screens can't fit the logo, the project, search, the list and the
+       foot at once: the whole drawer scrolls instead of the list getting none. */
+    overflow-y: auto; overscroll-behavior: contain;
+    transform: translateX(-105%); visibility: hidden;
+    transition: transform .26s ease, visibility 0s linear .26s;
+  }
+  body.drawer-open aside.sidebar { transform: none; visibility: visible; transition: transform .26s ease; }
+  aside.sidebar > * { flex-shrink: 0; }
+  aside.sidebar .sidebar-section { flex: 1 0 auto; min-height: auto; }
+  aside.sidebar .sidebar-list { flex: 0 0 auto; min-height: 0; overflow-y: visible; }
+  .drawer-scrim {
+    display: block; position: fixed; inset: 0; z-index: 69;
+    background: rgba(2, 4, 3, .62); opacity: 0; pointer-events: none;
+    transition: opacity .26s ease;
+  }
+  body.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+  .drawer-btn { display: inline-flex; align-items: center; flex: none; padding: 6px 8px; }
+  .drawer-btn::before { margin-right: 0; }
+
+  /* ---- The header ---- */
+  .chat-header { padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 8px; }
+  .chat-head-main { gap: 6px; }
+  .chat-head-text { margin-right: 2px; }
+  .chat-title { font-size: 14.5px; }
+  .picker-tag { display: none; }
+  /* Settings' tabs don't fit across a phone: the row scrolls sideways. */
+  .settings-tabs { overflow-x: auto; scrollbar-width: none; }
+  .settings-tabs > * { flex-shrink: 0; }
+  /* The pins rail opens on hover, and there is no hover here. */
+  .pin-rail { display: none; }
+
+  /* ---- The conversation and the composer ---- */
+  .feed { padding: 18px 0 28px; }
+  .composer { padding: 22px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  /* Under 16px, iOS zooms the whole page in when the box takes focus. */
+  .composer-row textarea { font-size: 16px; max-height: 30dvh; }
+  #orch-btn, #branch-btn, #compact-btn, #clear-btn { font-size: 0; padding: 5px 7px; }
+  #orch-btn span { display: none; }
+  /* The ring says it alone; its number is in the popover it opens. */
+  .ctx-pct { display: none; }
+  #orch-btn::before, #branch-btn::before, #compact-btn::before, #clear-btn::before {
+    width: 15px; height: 15px; margin-right: 0;
+  }
+}
+
+/* A landscape phone: what is short is the height. The project path and the
+   git line give way to the conversation. */
+@media (max-height: 520px) and (max-width: 1100px) {
+  .chat-header { padding-top: calc(6px + env(safe-area-inset-top, 0px)); padding-bottom: 6px; }
+  .chat-cwd { display: none; }
+  .git-status { display: none !important; }
+  .composer { padding-top: 16px; }
+  .composer-row textarea { max-height: 22dvh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside.sidebar, body.drawer-open aside.sidebar, .drawer-scrim { transition: none; }
+}

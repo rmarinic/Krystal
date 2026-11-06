@@ -10,6 +10,32 @@ pub fn base_name(path: &str) -> String {
     if name.is_empty() { path.to_string() } else { name.to_string() }
 }
 
+/// A stable 16-hex-digit FNV-1a hash of `s`: the same input gives the same name
+/// on every run and every build (unlike std's hasher), so it can name files.
+pub fn fnv_hex(s: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The last `max` characters of `s`. When it had to be cut, it starts on a whole
+/// line and says so; text that fits comes back as it is.
+pub fn tail_chars(s: &str, max: usize) -> String {
+    let total = s.chars().count();
+    if total <= max {
+        return s.to_string();
+    }
+    let tail: String = s.chars().skip(total - max).collect();
+    let tail = match tail.find('\n') {
+        Some(i) if i + 1 < tail.len() => &tail[i + 1..],
+        _ => &tail[..],
+    };
+    format!("… (earlier output trimmed)\n{tail}")
+}
+
 /// This executable's full path, or `None` if the OS won't say.
 pub fn exe_path() -> Option<String> {
     std::env::current_exe().ok().map(|p| p.to_string_lossy().into_owned())
@@ -71,6 +97,22 @@ pub fn base64_encode(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fnv_hex_is_stable_and_file_safe() {
+        // The same string must name the same file on every run and build.
+        assert_eq!(fnv_hex(""), "cbf29ce484222325");
+        assert_eq!(fnv_hex("C:/work/site"), fnv_hex("C:/work/site"));
+        assert_ne!(fnv_hex("npm test"), fnv_hex("npm test "));
+        assert!(fnv_hex("x").chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn tail_chars_keeps_the_end_on_a_whole_line() {
+        assert_eq!(tail_chars("short", 10), "short");
+        let t = tail_chars("line one\nline two\nline three\n", 14);
+        assert_eq!(t, "… (earlier output trimmed)\nline three\n");
+    }
 
     #[test]
     fn base_name_takes_the_last_segment() {

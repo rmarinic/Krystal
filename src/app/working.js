@@ -14,6 +14,9 @@
    event (a word revealed, a step started or finished, another few KB of a tool
    call's input — the backend's `tool_input`); the clock moves because time does.
    Waiting on a permission prompt it turns amber and holds still, clock and all.
+   Between answers, while a background job Claude started (a sub-agent, a long
+   build) is still running, it says so — the backend's `background` event —
+   until Claude picks the reply back up.
    When the reply lands the line fades and is gone. The words are a pure function
    of its state (`workLineText`), tested in tests/working.test.js. */
 
@@ -22,10 +25,21 @@ const WORK_SIZE_FROM = 1000;     // a tool input shows its size from this many c
 const workLines = new Set();     // the lines on screen, for the one shared clock
 let workClock = null;
 
-/* What the line says. `w`: { since, phase: 'thinking'|'writing'|'tool', tool,
- * chars, waiting }. Returns { label, meta, tone }. */
+/* What the line says. `w`: { since, phase: 'thinking'|'writing'|'tool'|'background'|'check',
+ * tool, chars, jobs, waiting }. Returns { label, meta, tone }. */
 function workLineText(w, now) {
   if (w.waiting) return { label: tr('work.waiting'), meta: '', tone: 'wait' };
+  if (w.phase === 'check') {
+    const meta = [w.tool];
+    if (w.since) meta.push(fmtDur(Math.max(0, now - w.since)));
+    return { label: tr('work.checking'), meta: meta.filter(Boolean).join(' · '), tone: 'live' };
+  }
+  if (w.phase === 'background') {
+    const meta = [];
+    if (w.jobs > 1) meta.push(tr('work.jobs', { n: w.jobs }));
+    if (w.since) meta.push(fmtDur(Math.max(0, now - w.since)));
+    return { label: tr('work.background'), meta: meta.join(' · '), tone: 'live' };
+  }
   const label = w.phase === 'writing' ? tr('work.writing')
     : w.phase === 'tool' ? tr('work.working') : tr('work.thinking');
   const meta = [];
@@ -48,7 +62,7 @@ function makeWorkLine(bubble, since) {
   const dot = el.querySelector('.wl-dot');
   const labelEl = el.querySelector('.wl-label');
   const metaEl = el.querySelector('.wl-meta');
-  const w = { since: since || Date.now(), phase: 'thinking', tool: '', chars: 0, toolId: '', waiting: false };
+  const w = { since: since || Date.now(), phase: 'thinking', tool: '', chars: 0, toolId: '', jobs: 0, waiting: false };
   let lastBeat = 0;
   let gone = false;
 

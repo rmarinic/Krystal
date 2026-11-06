@@ -13,6 +13,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::artifacts;
+use crate::check;
 use crate::claude::{self, Caps};
 use crate::db;
 use crate::discord;

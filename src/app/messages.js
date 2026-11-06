@@ -261,6 +261,8 @@ function renderSegments(bubble, segs) {
       const el = specialToolCard(seg) || renderActionChip(seg, false);
       bubble.appendChild(el);
       foldMcpRun(el, false);                 // a run of calls to one server folds (mcp.js)
+    } else if (seg.type === 'check' && typeof renderCheckChip === 'function') {
+      bubble.appendChild(renderCheckChip(seg));   // a run of the project's check (check.js)
     } else if (seg.type === 'text') {
       const d = document.createElement('div');
       d.className = 'seg-text';

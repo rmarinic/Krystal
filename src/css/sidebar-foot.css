@@ -25,6 +25,9 @@
   color: var(--fg-muted); cursor: pointer;
   transition: color .15s ease, background .15s ease;
 }
+/* `display: flex` above would otherwise beat the hidden attribute, and a row
+   meant to be gone (Link a device on a linked computer) stayed. */
+.sidebar-foot .foot-item[hidden] { display: none; }
 .sidebar-foot .foot-item > svg { width: 16px; height: 16px; flex: none; opacity: .8; }
 /* The label takes the room, so whatever follows it sits at the row's end. */
 .sidebar-foot .foot-item > span:not([class]) {

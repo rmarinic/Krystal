@@ -130,7 +130,7 @@ pub async fn chat_within(
     // process fixes its system prompt at spawn, and this note changes whenever the
     // task list does — putting it there would retire the session on every turn.
     let task_awareness = prepare_task_awareness(&state.data_dir, &state.db, &meta.cwd);
-    let SessionSetup { args, artifact_cfg, artifact_key } = session_setup(&state, &meta);
+    let setup = session_setup(&state, &meta);
 
     // Pull in any chats the user #-referenced as background context.
     let references = {
@@ -173,7 +173,7 @@ pub async fn chat_within(
     // On record while it runs, so a phone or another computer can join it
     // halfway (`watch_turn`). Everything still reaches `on_event` as before.
     let (on_event, recording) = state.watch.begin(&thread_id, on_event);
-    let out = chat_turn(state, thread_id, text, files, on_event, meta, task_awareness, args, artifact_cfg, artifact_key, prompt, needs_title).await;
+    let out = chat_turn(state, thread_id, text, files, on_event, meta, task_awareness, setup, prompt, needs_title).await;
     recording.finish(&out);
     out
 }
@@ -186,6 +186,9 @@ struct SessionSetup {
     args: Vec<String>,
     artifact_cfg: Option<std::path::PathBuf>,
     artifact_key: String,
+    /// The project's check command, when it has one and the hook is installed
+    /// (see `check.rs`): the turn shows "Checking…" under that name.
+    check: Option<String>,
 }
 
 fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
@@ -223,6 +226,21 @@ fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
         sys.push_str(claude::ARTIFACT_NOTE);
     }
 
+    // The project's check, run by a Stop hook whenever a turn that changed files
+    // tries to finish (see `check.rs`). The settings path carries a hash of the
+    // command, so changing the command retires the session like any other flag.
+    let check = {
+        let conn = state.db();
+        db::get_check_command(&conn, &meta.cwd)
+    }
+    .and_then(|cmd| check::ensure_settings(&state.data_dir, &artifact_key, &cmd).map(|path| (cmd, path)));
+    if let Some((cmd, _)) = &check {
+        sys.push_str("
+
+");
+        sys.push_str(&check::prompt_note(cmd));
+    }
+
     // The fallback chain is read off the same catalogue the picker uses, so a
     // turn degrades to a live model rather than a hardcoded (possibly retired) id.
     let fallback = {
@@ -248,6 +266,9 @@ fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
     if let Some(cfg) = &artifact_cfg {
         claude::apply_artifact_tool(&mut args, cfg);
     }
+    if let Some((_, settings)) = &check {
+        claude::apply_check_hook(&mut args, settings);
+    }
     if let Some(o) = &orch {
         args.push("--agents".into());
         args.push(o.agents.clone());
@@ -261,7 +282,7 @@ fn session_setup(state: &AppState, meta: &db::ThreadMeta) -> SessionSetup {
         args.push(sid.clone());
     }
 
-    SessionSetup { args, artifact_cfg, artifact_key }
+    SessionSetup { args, artifact_cfg, artifact_key, check: check.map(|(cmd, _)| cmd) }
 }
 
 /// The second half of `chat`: everything from saving the user's message to
@@ -276,12 +297,11 @@ async fn chat_turn(
     on_event: Channel<Value>,
     meta: db::ThreadMeta,
     task_awareness: Option<TaskAwareness>,
-    args: Vec<String>,
-    artifact_cfg: Option<std::path::PathBuf>,
-    artifact_key: String,
+    setup: SessionSetup,
     prompt: String,
     needs_title: bool,
 ) -> Result<(), String> {
+    let SessionSetup { args, artifact_cfg, artifact_key, check } = setup;
 
     // Fold any edits Claude made to the task snapshot back into the database and
     // nudge the UI. Called on EVERY exit path below, not just the happy one: the
@@ -387,9 +407,10 @@ async fn chat_turn(
         orchestrating: meta.orch,
         artifact_dir: artifact_dir.as_deref(),
         own_dirs: &own_dirs,
+        check: check.as_deref(),
     };
     let turn = claude::run_turn(&session, &req, &on_event, &state.running, &mut on_partial).await;
-    drop(on_partial);                    // releases the borrow on `assistant_msg_id`
+    // `on_partial`'s borrow of `assistant_msg_id` ends here, at its last use.
 
     let res = match turn {
         Ok(r) => r,

@@ -268,18 +268,6 @@ aside.sidebar {
   -webkit-box-orient: vertical;
 }
 
-@media (max-width: 720px) {
-  aside.sidebar {
-    position: static;
-    height: auto;
-    margin: 0;
-    border-radius: 0;
-    box-shadow: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
 /* ============================================================
  * Standalone response page (.htmlcast/responses/r-*.html)
  * Each response file uses <body class="standalone"> and contains

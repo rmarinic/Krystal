@@ -243,6 +243,9 @@ async function latestClaudeVersion() {
 /* Boot-time offer: if a newer Claude Code is available and the user hasn't
  * already dismissed this exact version, gently prompt for a one-click update. */
 async function checkClaudeCodeUpdate() {
+  // Updating Claude Code is this machine's business (update_claude is local
+  // only); from a browser, the computer's own window offers it.
+  if (!HOST.caps.native) return;
   let pf;
   try { pf = await api.preflight(); } catch (_) { return; }
   if (!pf || !pf.installed || !pf.version) return;          // not installed → onboarding owns that

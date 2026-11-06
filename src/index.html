@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>Krystal · claude code</title>
 
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0f0b'/><g transform='translate(16 16) scale(.04) translate(-540 -512)'><path fill='%23a8ecbf' d='M300 296l55-58v548h-55zM410 500L632 250h69L410 577.5z'/><path fill='%236cc78e' d='M355 238l55 58v490h-55zM410 577.5L701 250h69L410 655zM590 452l190 322h-69L548.5 499z'/><path fill='%232f7d55' d='M548.5 499L711 774h-69L507 546z'/></g></svg>">
@@ -19,11 +19,13 @@
   <link rel="stylesheet" href="css/activity.css">
   <link rel="stylesheet" href="css/agents.css">
   <link rel="stylesheet" href="css/review.css">
+  <link rel="stylesheet" href="css/harder.css">
   <link rel="stylesheet" href="css/tasks.css">
   <link rel="stylesheet" href="css/questions.css">
   <link rel="stylesheet" href="css/settings.css">
   <link rel="stylesheet" href="css/git.css">
   <link rel="stylesheet" href="css/projects.css">
+  <link rel="stylesheet" href="css/check.css">
   <link rel="stylesheet" href="css/onboarding.css">
   <link rel="stylesheet" href="css/transitions.css">
   <link rel="stylesheet" href="css/usage.css">
@@ -40,6 +42,7 @@
   <link rel="stylesheet" href="css/titlebar.css">
   <link rel="stylesheet" href="css/feed.css">
   <link rel="stylesheet" href="css/starters.css">
+  <link rel="stylesheet" href="css/narrow.css">
   <link rel="stylesheet" href="css/motion.css">
 
   <!-- Code highlighting + markdown + sanitizer (vendored locally — works offline) -->
@@ -67,6 +70,8 @@
     <button class="settings-toggle project-settings head-btn" data-i18n-title="settings.title" title="Settings"></button>
     <!-- Notifications: what happened in chats you weren't looking at. See app/notifications.js. -->
     <button class="notif-toggle project-bell head-btn" type="button" title="Notifications"></button>
+    <!-- On app.krystal.rip only (HOST.home): back to the list of your computers. -->
+    <button class="project-home head-btn" id="project-home" type="button" data-icon="monitor" data-i18n="web.computers" hidden>Your computers</button>
     <div class="project-wrap">
       <div class="project-head">
         <div class="logo project-logo">
@@ -151,6 +156,8 @@
       </button>
     </div>
   </aside>
+  <!-- Behind the drawer on a phone: a tap here closes it (app/narrow.js). -->
+  <div class="drawer-scrim" id="drawer-scrim" aria-hidden="true"></div>
 
   <!-- ===================== Main: conversation ====================== -->
   <main class="chat">
@@ -165,6 +172,9 @@
     </div>
     <header class="chat-header" id="chat-header">
       <div class="chat-head-main">
+        <!-- On a phone or in a narrow window the sidebar is a drawer, and this
+             opens it (app/narrow.js, css/narrow.css). Hidden otherwise. -->
+        <button class="head-btn drawer-btn" id="drawer-btn" type="button" data-icon="menu" aria-expanded="false" data-i18n-title="drawer.open" title="Chats and project"></button>
         <div class="chat-head-text">
           <div class="chat-title" id="chat-title">No conversation</div>
           <!-- The project folder. Also the way in to the folders *outside* the
@@ -608,6 +618,7 @@
   <script defer src="app/chips.js"></script>
   <script defer src="app/mcp.js"></script>
   <script defer src="app/review.js"></script>
+  <script defer src="app/check.js"></script>
   <script defer src="app/artifacts.js"></script>
   <script defer src="app/livemd.js"></script>
   <script defer src="app/composer.js"></script>
@@ -620,6 +631,7 @@
   <script defer src="app/skills.js"></script>
   <script defer src="app/attachments.js"></script>
   <script defer src="app/queue.js"></script>
+  <script defer src="app/harder.js"></script>
   <script defer src="app/wizard.js"></script>
   <script defer src="app/localization.js"></script>
   <script defer src="app/settings.js"></script>
@@ -639,6 +651,7 @@
   <script defer src="app/palette.js"></script>
   <script defer src="app/find.js"></script>
   <script defer src="app/hotkeys.js"></script>
+  <script defer src="app/narrow.js"></script>
   <script defer src="app/boot.js"></script>
 </body>
 </html>

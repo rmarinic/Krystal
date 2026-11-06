@@ -98,7 +98,8 @@ const SCHEMA: &str = r#"
         CREATE TABLE IF NOT EXISTS run_config (
           project    TEXT PRIMARY KEY,
           command    TEXT,
-          updated_at TEXT
+          updated_at TEXT,
+          check_cmd  TEXT
         );
 
         -- Extra folders a project's chats may reach into, beyond the project
@@ -155,6 +156,7 @@ pub fn open(db_path: &Path) -> rusqlite::Result<Connection> {
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN effort TEXT DEFAULT 'high'", []);
     let _ = conn.execute("ALTER TABLE messages ADD COLUMN partial INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE messages ADD COLUMN ckpt TEXT", []);
+    let _ = conn.execute("ALTER TABLE run_config ADD COLUMN check_cmd TEXT", []);
 
     let json_file = db_path
         .parent()
@@ -579,6 +581,30 @@ mod tests {
         // The one inside the folder is rewritten; the one outside is left alone.
         assert!(paths.contains(&"/new/place/docs/TODO.md"), "got {paths:?}");
         assert!(paths.contains(&"/elsewhere/brief.md"), "got {paths:?}");
+    }
+
+    #[test]
+    fn a_projects_check_command_is_kept_beside_its_run_command() {
+        let conn = db();
+        assert!(get_check_command(&conn, "/p").is_none());
+        // Set on its own, before there is any run command…
+        set_check_command(&conn, "/p", "npm test");
+        assert_eq!(get_check_command(&conn, "/p").as_deref(), Some("npm test"));
+        assert!(get_run_command(&conn, "/p").is_none());
+        // …and neither one overwrites the other.
+        set_run_command(&conn, "/p", "npm run dev");
+        assert_eq!(get_check_command(&conn, "/p").as_deref(), Some("npm test"));
+        set_check_command(&conn, "/p", "cargo test");
+        assert_eq!(get_run_command(&conn, "/p").as_deref(), Some("npm run dev"));
+        // Blank clears it.
+        set_check_command(&conn, "/p", "  ");
+        assert!(get_check_command(&conn, "/p").is_none());
+        // It moves with the project, like the run command.
+        set_check_command(&conn, "/p", "cargo test");
+        let id = id_of(&create_project(&conn, "/p").unwrap());
+        move_project(&conn, &id, "/q").expect("should move");
+        assert_eq!(get_check_command(&conn, "/q").as_deref(), Some("cargo test"));
+        assert!(get_check_command(&conn, "/p").is_none());
     }
 
     #[test]

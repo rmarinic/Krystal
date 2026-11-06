@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::artifacts;
+use crate::check;
 use crate::session::{self, Decision, Session};
 use crate::models::{
     self, is_safe_model_arg, model_name, ModelInfo, ORCH_BALANCED_MODEL, ORCH_DEEP_MODEL,

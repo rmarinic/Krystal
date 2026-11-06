@@ -247,6 +247,11 @@ pub async fn dispatch<R: Runtime>(
             arg_str(a, "project"),
             arg_str(a, "command"),
         )),
+        "set_check_config" => as_json(commands::set_check_config(
+            st(),
+            arg_str(a, "project"),
+            arg_str(a, "command"),
+        )),
         "detect_run_command" => commands::detect_run_command(st(), arg_str(a, "project")).await,
         "stop_run" => commands::stop_run(st(), arg_str(a, "project")).await,
 

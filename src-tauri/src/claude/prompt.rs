@@ -57,17 +57,19 @@ pub fn capability_prompt(caps: Caps, ui_lang: &str) -> String {
 ",
     );
 
-    // The process now survives between turns (see session/), so the old reason
-    // for this rule — "your process is about to exit" — is no longer true. The rule
-    // itself still is, for a different reason: Krystal renders exactly one reply per
-    // message and stops listening at the turn's `result` event, so anything that
-    // reports back later has nowhere to appear. It is also not guaranteed a session
-    // survives: changing model/effort/mode, compacting, or going idle retires it.
+    // This used to forbid background work outright, because Krystal stopped
+    // listening at the turn's first `result`. It no longer does: a turn is held
+    // open while a background agent or shell is out, and the CLI wakes Claude
+    // when one finishes (see `BackgroundAgents`). Two limits remain and are said
+    // here: a process that never ends would keep the reply open forever, and the
+    // session may be retired between messages (model/effort/mode change, compact,
+    // idle), so nothing may be counted on once the reply is over.
     p.push_str(
-        "## No background work
-         IMPORTANT: this app shows exactly one reply per message and stops listening the moment your reply ends, so anything that reports back later has nowhere to appear. The session may also be restarted between messages.
-         Never run Bash/PowerShell commands with run_in_background=true, and never launch background agents or tasks you intend to check later — you will not get to report what they found.
-         Run long commands in the FOREGROUND with a generous timeout (up to 10 minutes) and wait for them inside the same reply; if something would take longer, break it into explicit steps the user triggers one reply at a time.
+        "## Long-running work
+         This app keeps your reply open while anything you started in the background is still running — a sub-agent run in the background, or a Bash/PowerShell command run with run_in_background=true. When it finishes you are woken with its result: report on it in that same reply, and the user sees it all as one answer.
+         Use the background for work that FINISHES on its own and takes more than a minute or two — a full build, a test suite, an install, independent sub-agents working in parallel — and do other useful work meanwhile instead of waiting idle. A foreground command is capped at 10 minutes; a background one is not.
+         Never leave a process that does not end on its own (a dev server, a file watcher, anything that waits for input) running in the background when you finish: the reply would never end. If a check needs one, start it, check, and stop it before you answer. If the user wants their app left running, point them to the app's RUN button, which keeps it running and shows its output.
+         Don't count on anything you started still running after your reply has ended — the session may be restarted between messages.
 
 ",
     );
@@ -207,6 +209,20 @@ mod tests {
         let plain = build_prompt("hello", &[], None, None, None);
         assert_eq!(plain, "hello");
         assert_eq!(build_prompt("hello", &[], None, None, Some("")), "hello");
+    }
+
+    #[test]
+    fn background_work_is_allowed_but_a_never_ending_process_is_not() {
+        // The turn is held open for background agents and shells now (see
+        // `BackgroundAgents`), so the prompt must not still forbid them: that
+        // ban kept long builds inside the 10-minute foreground cap.
+        let p = capability_prompt(Caps { pandoc: false, python_docx: false }, "en");
+        assert!(!p.contains("Never run Bash/PowerShell commands with run_in_background"), "the old ban is gone");
+        assert!(!p.contains("## No background work"));
+        assert!(p.contains("run_in_background=true"), "Claude is told what keeps the reply open");
+        // …and what it must not leave running, with where to send the user instead.
+        assert!(p.contains("dev server"));
+        assert!(p.contains("RUN button"));
     }
 
     #[test]

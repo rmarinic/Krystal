@@ -105,6 +105,15 @@ const COPY_ICON =
 const CHECK_ICON =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 
+/* Ask a yes/no question and wait for the answer. The dialog plugin replaces
+ * `window.confirm` with an async one that returns a Promise, and a Promise is
+ * truthy, so a bare `if (!confirm(…)) return` went ahead before anyone had
+ * answered (a Clear wiped a chat that way). Every question goes through here;
+ * a dialog that fails to open counts as no. */
+async function askYes(text) {
+  try { return (await confirm(text)) === true; } catch { return false; }
+}
+
 /* Copy text to the clipboard, with a fallback for the rare no-clipboard case. */
 async function copyText(text) {
   try {

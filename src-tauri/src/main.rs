@@ -4,6 +4,7 @@
 
 mod artifacts;
 mod catalog;
+mod check;
 mod claude;
 mod cloud;
 mod commands;
@@ -27,6 +28,12 @@ fn main() {
     // and in that role it speaks JSON-RPC on stdio and never opens a window.
     if std::env::args().any(|a| a == artifacts::MCP_FLAG) {
         artifacts::run_stdio_server();
+    }
+    // …and as the check hook: `claude` runs it when a turn tries to finish
+    // (see `check::ensure_settings`). It reads stdin, maybe runs the project's
+    // check, and exits.
+    if std::env::args().any(|a| a == check::HOOK_FLAG) {
+        check::run_hook();
     }
 
     // Probe the environment once at startup (mirrors server.js boot).
@@ -163,6 +170,7 @@ fn main() {
             commands::run_shell,
             commands::get_run_config,
             commands::set_run_config,
+            commands::set_check_config,
             commands::detect_run_command,
             commands::run_app,
             commands::stop_run,

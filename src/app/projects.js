@@ -58,7 +58,7 @@ async function renderProjects() {
     li.querySelector('.proj-del').onclick = async (e) => {
       e.stopPropagation();
       const label = p.name || basename(p.path);
-      if (!confirm(tr('project.removeConfirm', { label, n, chats }))) return;
+      if (!(await askYes(tr('project.removeConfirm', { label, n, chats })))) return;
       await api.deleteProject(p.id);
       renderProjects();
     };
@@ -95,7 +95,7 @@ async function moveProjectFolder(p) {
   const n = p.chatCount || 0;
   const chats = n === 1 ? tr('word.chat.one') : tr('word.chat.many');
   const label = p.name || basename(p.path);
-  if (!confirm(tr('project.moveConfirm', { label, from: p.path || '—', to: path, n, chats }))) return;
+  if (!(await askYes(tr('project.moveConfirm', { label, from: p.path || '—', to: path, n, chats })))) return;
 
   try {
     await api.moveProject(p.id, path);
@@ -156,6 +156,36 @@ async function enterProject(project, card) {
 
 els.toProjects.onclick = () => showProjectPicker();
 
+/* A project by its folder, from the list already loaded or asked for fresh;
+ * null when there's no such project. */
+async function projectByPath(path) {
+  const known = (state.projects || []).find((x) => x.path === path);
+  if (known) return known;
+  const r = await api.projects();
+  return ((r && r.projects) || []).find((x) => x.path === path) || null;
+}
+
+/* Where the window opens. The desktop always opens on the picker; the web host
+ * may name a project and chat to start in (app.krystal.rip's /c/<id>?p=…&t=…,
+ * which the dashboard links to). Anything that's gone falls back to the picker. */
+async function openStartPlace(start) {
+  if (!start || !start.project) return showProjectPicker();
+  try {
+    const p = await projectByPath(start.project);
+    if (!p) return showProjectPicker();
+    await enterProject(p);
+    if (start.thread) await openThread(start.thread);
+  } catch (_) {
+    showProjectPicker();
+  }
+}
+
+// On app.krystal.rip the picker is one computer of several: a way back to them.
+if (els.projectHome && typeof HOST.home === 'function') {
+  els.projectHome.hidden = false;
+  els.projectHome.onclick = () => HOST.home();
+}
+
 els.newProjectBtn.onclick = async () => {
   let path;
   try {
@@ -208,7 +238,7 @@ els.emptyNewChat.onclick = startNewChat;
 els.emptyInit.onclick = async () => {
   if (!state.project) return;
   // Reinitialize overwrites the existing memory — confirm first.
-  if (welcomeHasMemory && !confirm(tr('empty.reinitConfirm'))) return;
+  if (welcomeHasMemory && !(await askYes(tr('empty.reinitConfirm')))) return;
   if (!state.activeId) await startNewChat();   // the wizard needs a chat (cwd + model)
   openInit();
 };

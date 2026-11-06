@@ -76,6 +76,9 @@ pub struct TurnRequest<'a> {
     /// prompt about one of those is answered here instead of being put to the
     /// user (see `is_own_business`).
     pub own_dirs: &'a [PathBuf],
+    /// The project's check command, when its Stop hook is installed (see
+    /// `check.rs`): what the window says it is checking with.
+    pub check: Option<&'a str>,
 }
 
 /// Run one turn on a warm session (see `session/`).
@@ -98,7 +101,7 @@ pub async fn run_turn(
     running: &std::sync::Mutex<HashMap<String, u32>>,
     on_partial: &mut (dyn FnMut(&str, &[Value]) + Send),
 ) -> Result<ChatResult, String> {
-    let TurnRequest { prompt, turn_uuid, thread_id, orchestrating, artifact_dir, own_dirs } = *req;
+    let TurnRequest { prompt, turn_uuid, thread_id, orchestrating, artifact_dir, own_dirs, check } = *req;
     let mut events = session.begin_turn(prompt, turn_uuid).await?;
 
     // Register the PID for the Activity panel's "running turns" list; `stop_chat`
@@ -106,6 +109,7 @@ pub async fn run_turn(
     running.lock().unwrap().insert(thread_id.to_string(), session.pid);
 
     let mut turn = TurnState::new(channel.clone(), artifact_dir);
+    turn.check = check.map(str::to_string);
     // The text of the answers already given this turn, when it runs to more than
     // one (see `BackgroundAgents`): a later `result` carries only its own.
     let mut carried = String::new();
@@ -143,6 +147,10 @@ pub async fn run_turn(
         let ty = ev.get("type").and_then(|v| v.as_str());
         let is_result = ty == Some("result");
         if ty == Some("system") && ev.get("subtype").and_then(|v| v.as_str()) == Some("init") {
+            if between_answers {
+                // Claude is back on it: the working line stops saying "waiting".
+                let _ = channel.send(json!({ "type": "background", "running": 0 }));
+            }
             between_answers = false;
         }
         turn.route(&ev);
@@ -164,6 +172,13 @@ pub async fn run_turn(
             turn.ask.flush(result, channel);
             carried = result.final_text.trim_end().to_string();
             ask_emit_text(result, channel, "\n\n");
+            // Nothing streams while a background job runs, perhaps for many
+            // minutes; the working line says what the reply is waiting on. Sent
+            // after the paragraph break above, which would otherwise read as writing.
+            let running = turn.background.running.len();
+            if running > 0 {
+                let _ = channel.send(json!({ "type": "background", "running": running }));
+            }
             continue;
         }
         // Keep the half-written answer on disk. Only when it actually grew, and

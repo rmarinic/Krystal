@@ -187,15 +187,10 @@ pub async fn generate_tasks(
     }
 }
 
-/// Stable, filesystem-safe key for a project path (FNV-1a) so each project's
-/// snapshot overwrites its own file.
+/// Stable, filesystem-safe key for a project path so each project's snapshot
+/// overwrites its own file.
 pub(super) fn project_key(path: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in path.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
+    crate::util::fnv_hex(path)
 }
 
 const TASK_SNAPSHOT_LEGEND: &str =

@@ -62,56 +62,83 @@ linkedOnce('css', sheets);
 if (sheets[0] !== 'css/base.css' || sheets[sheets.length - 1] !== 'css/motion.css') {
   errors.push('link: css/base.css must be linked first and css/motion.css last');
 }
-const sandbox = {
-  console: { log() {}, warn() {}, error() {}, info() {}, debug() {} },
-  setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
-  requestAnimationFrame: () => 0, cancelAnimationFrame() {}, queueMicrotask() {},
-  Promise, Map, Set, WeakMap, WeakSet, JSON, Math, Date, RegExp, Error, TypeError,
-  Number, String, Boolean, Array, Object, Symbol, Proxy, Reflect, Intl,
-  URL, URLSearchParams, TextDecoder, TextEncoder, encodeURIComponent, decodeURIComponent,
-  parseInt, parseFloat, isNaN, isFinite, structuredClone,
-  // A store that really stores, so code that reads back what it wrote works.
-  localStorage: (() => {
-    const m = new Map();
-    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
-      removeItem: (k) => m.delete(k), clear: () => m.clear(), key: () => null, length: 0 };
-  })(),
-};
-for (const name of ['document', 'navigator', 'location', 'matchMedia', 'getComputedStyle',
-  'CustomEvent', 'Event', 'KeyboardEvent', 'MutationObserver', 'ResizeObserver',
-  'IntersectionObserver', 'HTMLElement', 'Element', 'Node', 'Image', 'Audio', 'fetch',
-  'Blob', 'FileReader', 'DOMParser', 'CSS', 'performance', 'history', 'screen',
-  'marked', 'DOMPurify', 'hljs', 'Notification']) {
-  sandbox[name] = stub(name);
+/* A fresh global scope; `web` puts the web host in it instead of Tauri. */
+function makeSandbox(web) {
+  const sandbox = {
+    console: { log() {}, warn() {}, error() {}, info() {}, debug() {} },
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    requestAnimationFrame: () => 0, cancelAnimationFrame() {}, queueMicrotask() {},
+    Promise, Map, Set, WeakMap, WeakSet, JSON, Math, Date, RegExp, Error, TypeError,
+    Number, String, Boolean, Array, Object, Symbol, Proxy, Reflect, Intl,
+    URL, URLSearchParams, TextDecoder, TextEncoder, encodeURIComponent, decodeURIComponent,
+    parseInt, parseFloat, isNaN, isFinite, structuredClone,
+    // A store that really stores, so code that reads back what it wrote works.
+    localStorage: (() => {
+      const m = new Map();
+      return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
+        removeItem: (k) => m.delete(k), clear: () => m.clear(), key: () => null, length: 0 };
+    })(),
+  };
+  for (const name of ['document', 'navigator', 'location', 'matchMedia', 'getComputedStyle',
+    'CustomEvent', 'Event', 'KeyboardEvent', 'MutationObserver', 'ResizeObserver',
+    'IntersectionObserver', 'HTMLElement', 'Element', 'Node', 'Image', 'Audio', 'fetch',
+    'Blob', 'FileReader', 'DOMParser', 'CSS', 'performance', 'history', 'screen',
+    'marked', 'DOMPurify', 'hljs', 'Notification']) {
+    sandbox[name] = stub(name);
+  }
+  for (const name of ['addEventListener', 'removeEventListener', 'dispatchEvent', 'postMessage',
+    'scrollTo', 'open', 'close', 'focus', 'blur', 'getSelection', 'alert', 'confirm', 'prompt']) {
+    sandbox[name] = stub(name);
+  }
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  if (web) {
+    // app.krystal.rip: no Tauri at all, the web host's handles instead
+    // (krystal-cloud web/desk-host.js). Anything that reaches for __TAURI__ at
+    // load without checking for it first fails here.
+    sandbox.KRYSTAL_HOST = {
+      invoke: stub('host.invoke'), Channel: stub('host.Channel'), listen: stub('host.listen'),
+      dialog: stub('host.dialog'), caps: { native: false, web: true, maxUpload: 6 * 1024 * 1024 },
+    };
+  } else {
+    sandbox.__TAURI__ = stub('__TAURI__');
+  }
+  vm.createContext(sandbox);
+  return sandbox;
 }
-for (const name of ['addEventListener', 'removeEventListener', 'dispatchEvent', 'postMessage',
-  'scrollTo', 'open', 'close', 'focus', 'blur', 'getSelection', 'alert', 'confirm', 'prompt']) {
-  sandbox[name] = stub(name);
-}
-sandbox.window = sandbox;
-sandbox.globalThis = sandbox;
-sandbox.self = sandbox;
-sandbox.__TAURI__ = stub('__TAURI__');
-vm.createContext(sandbox);
 
 process.on('unhandledRejection', (e) => errors.push('async: ' + (e && e.stack || e)));
 
-for (const s of ours) {
-  try {
-    vm.runInContext(fs.readFileSync(path.join(root, s), 'utf8'), sandbox, { filename: s });
-  } catch (e) {
-    errors.push(`${s}: ${e && e.message}`);
+// Load every script under one host. Everything in the sandbox is a stub that
+// answers any read, so under the web host the one thing that can be undefined
+// is `__TAURI__` — a "reading of undefined" there is a script reaching for
+// Tauri at load without checking it is there, and counts as real.
+function loadAll(web) {
+  const sandbox = makeSandbox(web);
+  const tag = web ? 'web host: ' : '';
+  for (const s of ours) {
+    try {
+      vm.runInContext(fs.readFileSync(path.join(root, s), 'utf8'), sandbox, { filename: s });
+    } catch (e) {
+      const msg = String(e && e.message);
+      const tauri = web && /of undefined|__TAURI__/.test(msg);
+      errors.push(`${tag}${s}: ${tauri ? 'TAURI ' : ''}${msg}`);
+    }
   }
 }
+loadAll(false);
+loadAll(true);
 
 // Let anything scheduled as a microtask at load run before judging.
 setImmediate(() => {
-  // Only a missing or not-yet-declared name is a load-order bug; anything else
-  // is the stub not being a real DOM.
-  const real = errors.filter((e) => /^link:|ReferenceError|is not defined|before initialization/.test(e));
+  // Only a missing or not-yet-declared name is a load-order bug (and, under the
+  // web host, a read through the missing __TAURI__); anything else is the stub
+  // not being a real DOM.
+  const real = errors.filter((e) => /^link:|ReferenceError|is not defined|before initialization|TAURI /.test(e));
   if (real.length) {
     console.log('FAIL the frontend does not load cleanly:\n  ' + real.join('\n  '));
     process.exit(1);
   }
-  console.log(`boot.test.js: ok (${ours.length} scripts load in index.html order, ${sheets.length} stylesheets linked)`);
+  console.log(`boot.test.js: ok (${ours.length} scripts load in index.html order, under Tauri and the web host; ${sheets.length} stylesheets linked)`);
 });

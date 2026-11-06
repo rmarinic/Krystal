@@ -1,4 +1,4 @@
-/* live.css — background activity: the sidebar marks for live / draft / queued chats,
+/* live.css — background activity: the sidebar marks for live / unread / draft / queued chats,
  * Settings → Activity, and the build-version label.
  * index.html links the stylesheets in order and that order is the cascade, so a
  * rule moved to another file can change what wins. */
@@ -45,6 +45,27 @@
   display: inline-block; margin-left: 7px; vertical-align: middle;
   font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1;
   color: var(--accent-3); opacity: .85;
+}
+
+/* ---- Sidebar: something landed here that you haven't opened yet ----
+   A still dot in the event's tone (green a reply, amber a question / plan / held
+   queue, red a failure) and the title as bright as an open chat's. It lands once
+   with a small pop (`.land`, the first time it's drawn) and then rests: an
+   unread chat is a fact, not something happening, so it never pulses. */
+.sidebar-list .unread-dot {
+  display: inline-block; width: 7px; height: 7px; margin-left: 7px;
+  border-radius: 999px; background: var(--accent-2); vertical-align: middle;
+}
+.sidebar-list .unread-dot.tone-warn { background: var(--warn); }
+.sidebar-list .unread-dot.tone-high { background: #e07a5a; }
+.sidebar-list .unread-dot.land { animation: unread-land .36s cubic-bezier(.3,1.5,.6,1); }
+@keyframes unread-land {
+  from { opacity: 0; transform: scale(.3); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.sidebar-list li.unread .sum { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-list .unread-dot.land { animation: none; }
 }
 
 /* ---- Settings → Activity tab ---- */

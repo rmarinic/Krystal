@@ -222,6 +222,29 @@ function makeTyper(bubble, opts = {}) {
     },
     // The turn is (or is no longer) stopped on a permission prompt.
     waiting(on) { workLine.set({ waiting: !!on }); },
+    // The project's check is running (`cmd`), or has stopped (null): nothing
+    // streams while it does, so the working line says so (check.js).
+    checking(cmd) {
+      if (cmd) workLine.set({ phase: 'check', tool: cmd });
+      else if (workLine.phase === 'check') workLine.set({ phase: 'thinking' });
+      workLine.beat();
+    },
+    // One run of the check came back: its chip goes where the reply has got to.
+    addCheck(seg) {
+      closeTextBlock();
+      settleChip();
+      bubble.appendChild(renderCheckChip(seg));
+      if (workLine.phase === 'check') workLine.set({ phase: 'thinking' });
+      workLine.beat();
+      maybeFollow();
+    },
+    // `n` background jobs (agents, shells) are still running between answers;
+    // 0 when Claude picks the reply back up.
+    background(n) {
+      if (n > 0) workLine.set({ phase: 'background', jobs: n });
+      else if (workLine.phase === 'background') workLine.set({ phase: 'thinking', jobs: 0 });
+      workLine.beat();
+    },
     // Detach from the render loop without finalizing — the bubble is about to be
     // removed (thread switch); the underlying live turn keeps accumulating.
     stop() {

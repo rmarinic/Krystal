@@ -191,8 +191,8 @@ pub const EFFORTS: &[Effort] = &[
     Effort { id: "low",    name: "Low",    blurb: "Answers quickly, thinks little" },
     Effort { id: "medium", name: "Medium", blurb: "Everyday balance" },
     Effort { id: "high",   name: "High",   blurb: "Thinks it through" },
-    Effort { id: "xhigh",  name: "Higher", blurb: "For genuinely hard problems" },
-    Effort { id: "max",    name: "Max",    blurb: "Slowest & most thorough" },
+    Effort { id: "xhigh",  name: "Higher", blurb: "For hard problems: slower, uses more of your plan" },
+    Effort { id: "max",    name: "Max",    blurb: "Slowest & most thorough: uses much more of your plan" },
 ];
 
 /// Whether the given id is one of the offered effort levels.

@@ -90,11 +90,36 @@ function removeAttachment(key) {
 /* A pasted image (a Blob straight off the clipboard): show it instantly from a
    local object URL, then persist it to disk in the background for the backend. */
 function attachPastedImage(blob, name) {
+  const key = attachSeq + 1;
+  attachBlob(blob, name || `screenshot-${key}.${extForMime(blob.type)}`, true);
+}
+
+/* A file the browser hands us (web host: a drop or a pick) — it isn't on the
+   computer's disk yet, so it goes through save_attachment like a paste. */
+function attachBrowserFile(file) {
+  if (!file) return;
+  const isImage = (file.type || '').startsWith('image/') || isImageName(file.name);
+  attachBlob(file, file.name || `file-${attachSeq + 1}`, isImage);
+}
+
+/* Over the relay one call carries at most HOST.caps.maxUpload bytes; say so
+   rather than send something the cloud will refuse. */
+function attachTooBig(blob, fname) {
+  const max = HOST.caps.maxUpload;
+  if (!max || blob.size <= max) return false;
+  showTip({
+    key: 'attachTooBig', icon: 'alert', label: tr('attach.failed'),
+    body: escapeHtml(tr('attach.tooBig', { name: fname, max: Math.floor(max / (1024 * 1024)) })),
+  });
+  return true;
+}
+
+/* Save bytes from the browser as an attachment and put it in the tray. */
+function attachBlob(blob, fname, isImage) {
+  if (attachTooBig(blob, fname)) return;
   const key = ++attachSeq;
-  const ext = extForMime(blob.type);
-  const fname = name || `screenshot-${key}.${ext}`;
-  const objectUrl = URL.createObjectURL(blob);
-  const att = { key, name: fname, path: null, thumb: objectUrl, objectUrl, isImage: true, ready: null };
+  const objectUrl = isImage ? URL.createObjectURL(blob) : null;
+  const att = { key, name: fname, path: null, thumb: objectUrl, objectUrl, isImage, ready: null };
   att.ready = (async () => {
     const buf = await blob.arrayBuffer();
     const r = await api.saveAttachment(fname, bytesToBase64(buf));
@@ -243,7 +268,33 @@ function onDragStep(kind, paths) {
   }
 }
 
+/* In a browser (the web host) a drop brings File objects, not paths: the files
+   are on the phone or laptop holding the page, so each is saved onto the
+   computer through save_attachment. The hint shows only while files hover. */
+function initBrowserDrop() {
+  const hasFiles = (e) => !!(e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files'));
+  const over = (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();               // without this the browser opens the file instead
+    onDragStep('over');
+  };
+  document.addEventListener('dragenter', over);
+  document.addEventListener('dragover', over);
+  document.addEventListener('dragleave', (e) => {
+    if (!e.relatedTarget) onDragStep('leave');   // left the window, not a child
+  });
+  document.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    hideDropHint();
+    if (!canAttachDrop()) return;
+    for (const f of e.dataTransfer.files || []) attachBrowserFile(f);
+    els.input.focus();
+  });
+}
+
 function initDragDrop() {
+  if (HOST.caps.web) { initBrowserDrop(); return; }
   const T = window.__TAURI__;
   // Preferred: the webview's high-level drag-drop event (gives real OS paths).
   const wv = T && T.webview && T.webview.getCurrentWebview && T.webview.getCurrentWebview();

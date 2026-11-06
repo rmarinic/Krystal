@@ -44,6 +44,7 @@ const api = {
   runShell(threadId, command) { return invoke('run_shell', { threadId, command }); },
   getRunConfig(project) { return invoke('get_run_config', { project }); },
   setRunConfig(project, command) { return invoke('set_run_config', { project, command }); },
+  setCheckConfig(project, command) { return invoke('set_check_config', { project, command }); },
   detectRunCommand(project) { return invoke('detect_run_command', { project }); },
   runApp(project, command, onEvent) { return invoke('run_app', { project, command, onEvent }); },
   stopRun(project) { return invoke('stop_run', { project }); },

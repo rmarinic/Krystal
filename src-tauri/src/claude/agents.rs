@@ -16,6 +16,14 @@ use super::*;
 /// thrown away with the tail of the stream.
 ///
 /// So the turn is held open for as long as this says there is more to come.
+///
+/// A **background shell** (`run_in_background`) works the same way: when it
+/// exits, the CLI wakes Claude with a `task_notification` and a second answer
+/// follows (checked against CLI 2.1.318). So it holds the turn too — otherwise
+/// that answer lands with nobody reading, or worse, in the middle of the chat's
+/// next turn, whose `result` it would steal. The one shell that never ends, a dev
+/// server, is the system prompt's business: it tells Claude not to leave one
+/// running in the background (see `capability_prompt`), and Stop still ends it.
 #[derive(Default)]
 pub(super) struct BackgroundAgents {
     /// Still working: task id -> the `tool_use` id of the call that launched it.
@@ -23,24 +31,34 @@ pub(super) struct BackgroundAgents {
     /// Every call that launched one, by `tool_use` id — its immediate tool result
     /// is launch paperwork, not the agent's report.
     pub(super) launched: std::collections::HashSet<String>,
+    /// The launches among those that were shells, not agents: their report is
+    /// the command's output, and they are no agent for the inspector to show.
+    pub(super) shells: std::collections::HashSet<String>,
     /// An agent reported in and the CLI hasn't started the answer about it yet.
     pub(super) unreported: bool,
 }
 
 /// Is this task (a `task_started` event, or an entry of `background_tasks_changed`)
-/// a sub-agent? Background *shells* are tasks too — and a dev server never ends.
+/// a sub-agent? Background *shells* are tasks too, and not agents.
 pub fn is_agent_task(task: &Value) -> bool {
     task.get("task_type").and_then(|v| v.as_str()).map_or(true, |t| t == "local_agent")
 }
 
-impl BackgroundAgents {
-    /// Only agents hold a turn open; a background shell may never finish.
-    fn is_agent(task: &Value) -> bool {
-        is_agent_task(task)
-    }
+/// Is this task a shell command (`task_type: local_bash`)?
+pub fn is_shell_task(task: &Value) -> bool {
+    task.get("task_type").and_then(|v| v.as_str()) == Some("local_bash")
+}
 
+/// Does this task, once in the background, owe Claude a second answer when it
+/// ends? Agents and shells both do; whatever else the CLI may run as a task
+/// (a monitor that never ends) does not hold a turn.
+pub fn is_background_work(task: &Value) -> bool {
+    is_agent_task(task) || is_shell_task(task)
+}
+
+impl BackgroundAgents {
     pub(super) fn started(&mut self, ev: &Value) {
-        if !ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false) || !Self::is_agent(ev) {
+        if !ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false) || !is_background_work(ev) {
             return;
         }
         let task = ev.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -51,6 +69,9 @@ impl BackgroundAgents {
         self.running.insert(task.to_string(), tool.to_string());
         if !tool.is_empty() {
             self.launched.insert(tool.to_string());
+            if is_shell_task(ev) {
+                self.shells.insert(tool.to_string());
+            }
         }
     }
 
@@ -62,7 +83,7 @@ impl BackgroundAgents {
         };
         let live: std::collections::HashSet<&str> = tasks
             .iter()
-            .filter(|t| Self::is_agent(t))
+            .filter(|t| is_background_work(t))
             .filter_map(|t| t.get("task_id").and_then(|v| v.as_str()))
             .collect();
         self.running.retain(|id, _| live.contains(id.as_str()));
@@ -82,6 +103,56 @@ impl BackgroundAgents {
     pub(super) fn holds_turn(&self) -> bool {
         !self.running.is_empty() || self.unreported
     }
+}
+
+/// How much of a finished background command's output its chip is given: the
+/// *end* of it, where a build or a test run says how it went.
+const SHELL_TAIL_CHARS: usize = 3500;
+
+/// What a background shell's `task_notification` reports, for its chip: the end
+/// of the command's output (the CLI writes it to `output_file`; the notification
+/// itself only carries a one-line summary), and whether it failed — a `failed`
+/// status, or a non-zero exit code in the output or the summary.
+pub(super) fn background_shell_report(ev: &Value) -> (String, bool) {
+    let summary = ev.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+    let output = ev
+        .get("output_file")
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.is_empty())
+        .and_then(|p| read_tail(std::path::Path::new(p), SHELL_TAIL_CHARS));
+    let code = output.as_deref().and_then(exit_code).or_else(|| exit_code(summary));
+    let failed = ev.get("status").and_then(|v| v.as_str()) == Some("failed") || code.is_some_and(|c| c != 0);
+    (output.filter(|o| !o.trim().is_empty()).unwrap_or_else(|| summary.to_string()), failed)
+}
+
+/// The last `max` characters of a file, starting on a whole line when it had to
+/// be cut. Reads only the end of the file: a build log can be large.
+fn read_tail(path: &std::path::Path, max: usize) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let window = (max as u64) * 4; // a char is at most four bytes
+    if len > window {
+        f.seek(SeekFrom::Start(len - window)).ok()?;
+    }
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).ok()?;
+    Some(crate::util::tail_chars(&String::from_utf8_lossy(&bytes), max))
+}
+
+/// The exit code the CLI wrote into a background command's output
+/// (`[exited with code 1]`) or its summary (`… completed (exit code 1)`).
+fn exit_code(text: &str) -> Option<i64> {
+    ["exited with code ", "exit code "].iter().find_map(|pat| {
+        let at = text.rfind(pat)? + pat.len();
+        let digits: String = text[at..]
+            .chars()
+            .enumerate()
+            .take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && *c == '-'))
+            .map(|(_, c)| c)
+            .collect();
+        digits.parse().ok()
+    })
 }
 
 pub(super) fn emit_agent_progress(ev: &Value, channel: &Channel<Value>) {

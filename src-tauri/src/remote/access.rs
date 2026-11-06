@@ -48,7 +48,9 @@ const OWNER_ONLY: &[&str] =
 
 /// Commands that run something on this computer.
 const COMMANDS: &[&str] = &[
-    "run_shell", "run_app", "set_run_config",
+    // A check command runs after every turn that edits files: as much a command
+    // as the RUN button's.
+    "run_shell", "run_app", "set_run_config", "set_check_config",
     "git_checkout", "git_create_branch", "git_fetch", "git_pull", "git_push",
 ];
 

@@ -147,6 +147,13 @@
   padding: 7vh 24px 48px;
 }
 .project-screen[hidden] { display: none; }
+/* app.krystal.rip only (HOST.home): back to your computers, in the corner
+   opposite the language/settings/bell row. */
+.project-home {
+  position: absolute; top: 18px; left: 20px; z-index: 5;
+  background: var(--bg-card);
+}
+.project-home[hidden] { display: none; }
 .project-wrap { width: 100%; max-width: 880px; }
 
 .project-head { text-align: center; margin-bottom: 6px; }

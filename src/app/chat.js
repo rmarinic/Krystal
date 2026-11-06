@@ -81,6 +81,7 @@ async function openThread(id, focusMid) {
   if (typeof noteChatVisit === 'function') noteChatVisit(id);   // Ctrl+Q / Ctrl+E (hotkeys.js)
   // Looking at a chat settles whatever the bell was holding for it.
   if (typeof dropNotifications === 'function') dropNotifications(id);
+  if (typeof clearUnread === 'function') clearUnread(id);   // …and the row's unread mark
   state.tipLevelShown = null;
   if (state.view === 'threads') renderSidebar();
 
@@ -147,6 +148,7 @@ async function openThread(id, focusMid) {
   showArtifactsBtn(true);
   syncComposer();
   syncSuggestion();   // re-show this chat's predicted next message, if it has one
+  if (typeof harderSync === 'function') harderSync();   // "Try harder" under the latest reply
   if (typeof syncPermission === 'function') syncPermission();   // …and whatever its turn is waiting to be allowed
   refreshGit();
   if (prevId !== id) resetActivityView();   // new chat → its own panel size, groups and filter
@@ -450,7 +452,7 @@ const TRASH_ICON =
 async function deleteMessage(div) {
   const mid = div.dataset.mid;
   if (!mid || div.classList.contains('removing')) return;
-  if (!confirm(tr('msg.deleteConfirm'))) return;
+  if (!(await askYes(tr('msg.deleteConfirm')))) return;
   try {
     await api.deleteMessage(Number(mid));
   } catch (_) {

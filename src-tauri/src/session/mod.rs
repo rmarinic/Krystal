@@ -128,10 +128,10 @@ pub struct Session {
     /// stream must still *close* when the process dies, and a second strong
     /// sender held here would keep it open forever.
     loopback: mpsc::WeakUnboundedSender<Value>,
-    /// Sub-agents alive in this process: task id -> launched in the background.
-    /// Watched by the stdout reader rather than by the turn, because a background
-    /// agent outlives the turn that launched it — an interrupt ends the turn and
-    /// leaves the agent working (see `has_agents`).
+    /// Sub-agents alive in this process, and background shells: task id ->
+    /// launched in the background. Watched by the stdout reader rather than by
+    /// the turn, because background work outlives the turn that launched it — an
+    /// interrupt ends the turn and leaves it running (see `has_agents`).
     agents: Arc<StdMutex<HashMap<String, bool>>>,
 }
 
@@ -326,10 +326,10 @@ impl Session {
         self.write_line(&interrupt_request()).await
     }
 
-    /// Is a sub-agent still alive in this process? If so an interrupt is not
-    /// enough to stop the chat: it ends the *turn*, and a background agent isn't
-    /// part of the turn any more — it carries on working (editing files, spending
-    /// tokens) in a session that looks stopped. Stopping it on its own
+    /// Is a sub-agent (or a background shell) still alive in this process? If so
+    /// an interrupt is not enough to stop the chat: it ends the *turn*, and a
+    /// background agent isn't part of the turn any more — it carries on working
+    /// (editing files, spending tokens) in a session that looks stopped. Stopping it on its own
     /// (`stop_task`) doesn't help either: the CLI then wakes Claude to answer
     /// about the stopped agent, with nobody reading, and that stray answer would
     /// end the chat's next turn early. So `commands::stop_chat` ends the process.
@@ -495,9 +495,9 @@ mod tests {
             "task_id": "bg", "is_backgrounded": true, "task_type": "local_agent" })));
         track_agents(&mut agents, &sys("task_started", json!({
             "task_id": "fg", "is_backgrounded": false, "task_type": "local_agent" })));
-        // A dev server is a task too, but not ours to stop.
+        // A foreground shell is part of its turn: an interrupt ends it.
         track_agents(&mut agents, &sys("task_started", json!({
-            "task_id": "sh", "is_backgrounded": true, "task_type": "local_bash" })));
+            "task_id": "fsh", "is_backgrounded": false, "task_type": "local_bash" })));
         assert_eq!(agents.len(), 2);
 
         // The turn ends (an interrupt, say): the foreground agent went with it,
@@ -506,6 +506,24 @@ mod tests {
         assert_eq!(agents.keys().collect::<Vec<_>>(), vec!["bg"]);
 
         track_agents(&mut agents, &sys("task_notification", json!({ "task_id": "bg", "status": "stopped" })));
+        assert!(agents.is_empty());
+    }
+
+    #[test]
+    fn a_background_shell_is_something_a_stop_must_reach() {
+        // It lives in the process like a background agent: an interrupt leaves it
+        // running, and when it exits the CLI wakes Claude with nobody reading.
+        let mut agents = HashMap::new();
+        track_agents(&mut agents, &sys("task_started", json!({
+            "task_id": "build", "is_backgrounded": true, "task_type": "local_bash" })));
+        track_agents(&mut agents, &json!({ "type": "result" }));
+        assert!(agents.contains_key("build"), "it outlives the turn that started it");
+        // Ended the way the CLI says so: a completed task, then the empty list.
+        track_agents(&mut agents, &sys("task_updated", json!({ "task_id": "build", "patch": { "status": "completed" } })));
+        assert!(agents.is_empty());
+        // Something else run as a task (a monitor) is not tracked.
+        track_agents(&mut agents, &sys("task_started", json!({
+            "task_id": "m", "is_backgrounded": true, "task_type": "monitor" })));
         assert!(agents.is_empty());
     }
 
@@ -533,7 +551,8 @@ mod tests {
         ] })));
         let mut ids: Vec<_> = agents.keys().cloned().collect();
         ids.sort();
-        assert_eq!(ids, vec!["b", "c"]);
+        // A background shell still running is listed too, and is just as live.
+        assert_eq!(ids, vec!["b", "c", "dev"]);
     }
 
     #[test]

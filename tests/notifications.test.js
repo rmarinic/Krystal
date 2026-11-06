@@ -61,6 +61,7 @@ function load(storage) {
   const exported = [
     'notifyChat', 'dropNotifications', 'dropNotification', 'notificationRetitled',
     'liveTurnStarted', 'turnEndKind', 'openNotification', 'notifProjectName', 'notifSnippet',
+    'chatUnread', 'clearUnread', 'forgetNotifs',
   ];
   const N = vm.runInNewContext(
     `${src}\n;({ ${exported.join(', ')}, list: () => notifs })`, ctx, { filename: 'notifications.js' });
@@ -70,7 +71,11 @@ function load(storage) {
     calls.opened.push(id);
     ctx.state.activeId = id;
     N.dropNotifications(id);
+    N.clearUnread(id);
   };
+  // The sidebar's repaint (sidebar.js), counted.
+  calls.painted = 0;
+  ctx.paintUnreadMarks = () => { calls.painted++; };
   return { N, ctx, calls };
 }
 
@@ -213,6 +218,60 @@ check('rows survive a restart — except a permission prompt, which no turn outl
   eq(first.N.list().length, 2, 'before');
   const second = load(storage);
   eq(second.N.list().map((n) => n.threadId + ':' + n.kind).join(), 't2:done', 'after');
+});
+
+section('unread chats');
+
+check('a reply landing elsewhere marks its chat unread, in its tone, landing once', async () => {
+  const { N, calls } = load();
+  await N.notifyChat(turn('t2'), 'done', 'Done.');
+  await N.notifyChat(turn('t3'), 'failed', 'overloaded');
+  const a = N.chatUnread('t2');
+  eq(a && a.kind, 'done', 'kind');
+  eq(a.tone, 'ok', 'tone');
+  eq(a.land, true, 'first drawing lands');
+  eq(N.chatUnread('t2').land, false, 'a re-render does not land it again');
+  eq(N.chatUnread('t3').tone, 'high', 'a failure is red');
+  eq(calls.painted, 2, 'the sidebar was repainted each time');
+});
+
+check('the chat on screen, and a permission prompt, are never marked', async () => {
+  const { N } = load();
+  await N.notifyChat(turn('t1'), 'done', 'x');
+  await N.notifyChat(turn('t2'), 'ask', 'npm install');
+  eq(N.chatUnread('t1'), null, 'on screen');
+  eq(N.chatUnread('t2'), null, 'permission prompt');
+});
+
+check('a newer event replaces the mark and lands again', async () => {
+  const { N } = load();
+  await N.notifyChat(turn('t2'), 'failed', 'x');
+  N.chatUnread('t2');
+  await N.notifyChat(turn('t2'), 'question', 'Which one?');
+  const u = N.chatUnread('t2');
+  eq(u.kind + ':' + u.tone + ':' + u.land, 'question:warn:true', 'mark');
+});
+
+check('opening the chat clears the mark; clearing the bell does not', async () => {
+  const { N } = load();
+  await N.notifyChat(turn('t2'), 'done', 'x');
+  await N.notifyChat(turn('t3'), 'done', 'y');
+  N.forgetNotifs(N.list().slice());   // "Clear all" in the bell
+  eq(N.list().length, 0, 'bell empty');
+  eq(!!N.chatUnread('t2'), true, 'still unread after clearing the bell');
+  await N.openNotification({ id: 'x', threadId: 't2', project: PROJECTS[0].path });
+  eq(N.chatUnread('t2'), null, 'opened');
+  eq(!!N.chatUnread('t3'), true, 'the other stays');
+});
+
+check('marks survive a restart, without landing again', async () => {
+  const storage = memoryStorage();
+  const first = load(storage);
+  await first.N.notifyChat(turn('t2'), 'plan', 'Plan');
+  const second = load(storage);
+  const u = second.N.chatUnread('t2');
+  eq(u && u.kind, 'plan', 'kept');
+  eq(u.land, false, 'old news does not pop');
 });
 
 (async () => {

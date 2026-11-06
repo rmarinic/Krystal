@@ -4,6 +4,16 @@ All notable changes to Krystal are listed here. The most recent version's notes
 also appear in the in-app "update available" prompt, so keep them written for the
 person clicking Install — plain language, what actually changed.
 
+## v0.39.0
+- **Claude checks its work before it says it's done.** In a project's Run panel you can now set a check command, such as the tests or a build. Whenever Claude changes files, Krystal runs it before the reply finishes. If it fails, Claude sees what broke and fixes it, up to twice. Each run shows up in the reply, with the end of its output a click away.
+- **Try harder.** Under the latest reply there's now a quiet "Try harder" button. It asks Claude for another, more careful pass and turns up how hard it thinks for that chat.
+- **Unread chats stand out.** A chat that finished, failed or asked you something while you were looking elsewhere gets a dot in the sidebar until you open it.
+- **Long background work is waited for.** When Claude starts something long in the background, such as a slow build or a helper, the reply now waits for it instead of ending early, and the line under the reply says what it's waiting on.
+- **"Are you sure?" really waits.** Clearing a chat, or removing or moving a project, no longer goes ahead before you've answered. A Clear could wipe a chat that way.
+- **Your whole Krystal from a browser and your phone.** Opening a computer at app.krystal.rip now shows the full Krystal app, the same one as on your desktop: paste or drop images and files, switch model and mode, tasks, artifacts, branches and more. On a phone your chats sit in a drawer that opens from the ☰ button, and the conversation fits the screen, upright or sideways.
+- **Narrow windows work too.** Make the Krystal window narrow and the sidebar becomes the same drawer.
+- **Fixed:** "Link a device" no longer shows in the sidebar on a computer that is already linked.
+
 ## v0.37.0
 - **The crystal comes alive.** The little face in the logo now has eyebrows, cheeks that blush, and far more expressions. It's never quite still: it breathes, bobs and sways gently, blinks like a face does, its eyes dart around, and it turns its head toward your pointer. Every few seconds it settles into a slightly different pose: a new smile, a head tilt, the mouth pulled to one side, a brow flick.
 - **You can see it think.** While Claude thinks, the face works through it: one brow up and the mouth pulled aside, then the other way, brows knitted in focus, eyes up wondering. When a long think turns into an answer, it lights up.

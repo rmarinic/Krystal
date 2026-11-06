@@ -94,6 +94,7 @@ function attachLiveTyper(live) {
   for (const ev of live.events) {
     if (ev.type === 'token') typer.push(ev.text, true);  // instant: catch up without re-typing
     else if (ev.type === 'tool') typer.setTool(ev);
+    else if (ev.type === 'check') typer.addCheck(ev);
   }
   // The replay settled every earlier chip at once; only a chip finishing live
   // should draw its check, so drop the flourish before it can paint.
@@ -104,6 +105,8 @@ function attachLiveTyper(live) {
   }
   refreshAgentChips();   // rebuilt sub-agent chips pick their tally back up
   if (live.toolInput) typer.toolInput(live.toolInput);   // how far a long tool call has got
+  if (live.background) typer.background(live.background);   // waiting on a background job
+  if (live.checking) typer.checking(live.checking);         // …or on the project's check
   if (live.permissions && live.permissions.length) typer.waiting(true);
   if (!live.events.length) typer.thinking();
   return typer;
@@ -141,6 +144,7 @@ function finishLive(live) {
     lightRest();    // the lamp cools down (light.js)
     mascotTurnEnded(live);   // the face lands it, or droops if it failed (mascot.js)
     syncComposer();
+    if (typeof harderSync === 'function') harderSync();   // offer a more careful pass (harder.js)
     refreshActivityPanel();
     refreshGit();   // Claude may have changed files this turn
     if (pendingAnswer) setTimeout(flushPendingAnswer, 0);
@@ -230,6 +234,20 @@ function handleLiveEvent(live, msg) {
     // size so far keeps the working line under the reply moving (working.js).
     live.toolInput = msg;
     if (live.typer) live.typer.toolInput(msg);
+  } else if (event === 'check_running') {
+    // The project's check started (or turned out to have nothing to check).
+    live.checking = msg.command || null;
+    if (live.typer) live.typer.checking(live.checking);
+  } else if (event === 'check') {
+    // One run of it came back (check.js): a chip in the reply, kept on replay.
+    live.checking = null;
+    live.events.push(msg);
+    if (live.typer) live.typer.addCheck(msg);
+  } else if (event === 'background') {
+    // Between answers: a background job Claude started (a sub-agent, a long
+    // build) is still running, and the reply stays open until it reports.
+    live.background = msg.running || 0;
+    if (live.typer) live.typer.background(live.background);
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active, live);    // updates the Activity panel
@@ -426,6 +444,7 @@ async function startTurn(threadId, msg, opts = {}) {
     startedAt: Date.now(),   // the working line's clock counts from here
   };
   state.live.set(threadId, live);
+  if (onScreen && typeof harderSync === 'function') harderSync();   // the next pass is under way
   if (typeof liveTurnStarted === 'function') liveTurnStarted(live);   // which project it is working in
 
   // assistant placeholder + typewriter, attached when this thread is on screen

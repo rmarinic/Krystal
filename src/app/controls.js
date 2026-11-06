@@ -138,6 +138,7 @@ function buildPickers() {
     onChange: async (v) => {
       if (!state.activeId) return;
       await api.setEffort(state.activeId, v);
+      if (typeof harderSync === 'function') harderSync();   // "Try harder" offers the step above
     },
   });
   if (typeof buildOrchestrator === 'function') buildOrchestrator();   // keep the orchestrator popover in lock-step
@@ -285,7 +286,7 @@ function compactNote(p) {
 async function doClear(close) {
   if (close) close();
   if (!state.activeId) return;
-  if (!confirm(tr('clear.confirm'))) return;
+  if (!(await askYes(tr('clear.confirm')))) return;
   showProgressOverlay({ glyph: 'trash', title: tr('clear.overlayTitle'), sub: tr('clear.overlaySub'),
     crawl: { cap: 0.7, tau: 0.6 } });
   try {

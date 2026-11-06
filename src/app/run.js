@@ -78,9 +78,27 @@ function renderSetup(prefill) {
       `<button class="run-detect" type="button">${escapeHtml(tr('run.detect'))}</button>` +
       `<span class="run-detect-status"></span>` +
     `</div>` +
-    `<div class="run-path-hint">${escapeHtml(tr('run.hintCmd', { path: runCwd() || '' }))}</div>`;
+    `<div class="run-path-hint">${escapeHtml(tr('run.hintCmd', { path: runCwd() || '' }))}</div>` +
+    // The check (check.rs): what runs when a reply that changed files finishes.
+    `<div class="run-field-label run-check-label">${escapeHtml(tr('check.label'))}</div>` +
+    `<textarea class="run-cmd-input run-check-input" rows="1" spellcheck="false" ` +
+      `placeholder="${escapeHtml(tr('check.placeholder'))}"></textarea>` +
+    `<div class="run-detect-row"><button class="run-detect run-check-suggest" type="button" hidden></button></div>` +
+    `<div class="run-path-hint">${escapeHtml(tr('check.hint'))}</div>`;
 
   const input = body.querySelector('.run-cmd-input');
+  const checkInput = body.querySelector('.run-check-input');
+  const suggestBtn = body.querySelector('.run-check-suggest');
+  // The saved check, or one read off the project's build files to offer.
+  api.getRunConfig(runCwd()).then((cfg) => {
+    if (!cfg || !checkInput.isConnected) return;
+    if (cfg.check && !checkInput.value) checkInput.value = cfg.check;
+    if (!cfg.check && cfg.checkSuggestion) {
+      suggestBtn.textContent = tr('check.use', { cmd: cfg.checkSuggestion });
+      suggestBtn.hidden = false;
+      suggestBtn.onclick = () => { checkInput.value = cfg.checkSuggestion; suggestBtn.hidden = true; checkInput.focus(); };
+    }
+  }).catch(() => {});
   input.value = prefill || '';
   const detectBtn = body.querySelector('.run-detect');
   const statusEl = body.querySelector('.run-detect-status');
@@ -108,7 +126,7 @@ function renderSetup(prefill) {
     }
   };
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCommand(input.value, true); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCommand(input.value, true, checkInput.value); }
   });
 
   els.runFoot.innerHTML =
@@ -116,14 +134,19 @@ function renderSetup(prefill) {
     `<button class="run-act" data-act="save">${escapeHtml(tr('run.save'))}</button>` +
     `<button class="run-act primary" data-act="saverun">${escapeHtml(tr('run.saveRun'))}</button>`;
   els.runFoot.querySelector('[data-act="cancel"]').onclick = () => closeOverlay(els.runOverlay);
-  els.runFoot.querySelector('[data-act="save"]').onclick = () => saveCommand(input.value, false);
-  els.runFoot.querySelector('[data-act="saverun"]').onclick = () => saveCommand(input.value, true);
+  els.runFoot.querySelector('[data-act="save"]').onclick = () => saveCommand(input.value, false, checkInput.value);
+  els.runFoot.querySelector('[data-act="saverun"]').onclick = () => saveCommand(input.value, true, checkInput.value);
   setTimeout(() => input.focus(), 30);
 }
 
-async function saveCommand(value, thenRun) {
+/* Save the run command (and the check, when the setup view has one). A check
+ * can be saved on its own; only running needs a run command. */
+async function saveCommand(value, thenRun, checkValue) {
   const cmd = (value || '').trim();
-  if (!cmd) {
+  if (checkValue != null) {
+    try { await api.setCheckConfig(runCwd(), checkValue.trim()); } catch (_) {}
+  }
+  if (!cmd && (thenRun || checkValue == null)) {
     const s = els.runBody.querySelector('.run-detect-status');
     if (s) { s.classList.add('err'); s.textContent = tr('run.needCmd'); }
     return;

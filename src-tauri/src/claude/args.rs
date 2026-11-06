@@ -105,6 +105,16 @@ pub fn apply_artifact_tool(args: &mut Vec<String>, config: &std::path::Path) {
     args.push(config.to_string_lossy().to_string());
 }
 
+/// Install the project's check as a Stop hook (see `check.rs`): the settings
+/// file that holds it, and the hook events the window reads "Checking…" and the
+/// result from. Claude Code merges `--settings` with the user's own settings, so
+/// their hooks keep running alongside.
+pub fn apply_check_hook(args: &mut Vec<String>, settings: &std::path::Path) {
+    args.push("--settings".into());
+    args.push(settings.to_string_lossy().to_string());
+    args.push("--include-hook-events".into());
+}
+
 /// Flags that only make sense on a live chat turn, layered on top of `base_args`.
 /// The internal one-off calls (naming a chat, drafting tasks, the Initialize
 /// wizard) deliberately skip these: they are short, single-shot and disposable.

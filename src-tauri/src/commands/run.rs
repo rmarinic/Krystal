@@ -36,15 +36,27 @@ pub async fn run_shell(state: State<'_, AppState>, thread_id: String, command: S
  * project folder, streams stdout+stderr line-by-line over a Channel, and tracks
  * the PID so `stop_run` can kill the (possibly long-running) process tree. */
 
-/// The stored run command for a project, plus whether it is currently running.
+/// The stored run command for a project, plus whether it is currently running,
+/// and its check command (see `check.rs`) with one to suggest if it has none.
 #[tauri::command]
 pub fn get_run_config(state: State<'_, AppState>, project: String) -> Value {
-    let command = {
+    let (command, check) = {
         let conn = state.db();
-        db::get_run_command(&conn, &project)
+        (db::get_run_command(&conn, &project), db::get_check_command(&conn, &project))
     };
+    let suggestion = check.is_none().then(|| check::suggest_command(std::path::Path::new(&project))).flatten();
     let running = state.run_procs.lock().unwrap().contains_key(&project);
-    json!({ "command": command, "running": running })
+    json!({ "command": command, "running": running, "check": check, "checkSuggestion": suggestion })
+}
+
+/// Save (or clear, with "") a project's check command: what runs when a turn
+/// that changed files tries to finish. Its chats pick it up on their next
+/// message (the hook is a session flag).
+#[tauri::command]
+pub fn set_check_config(state: State<'_, AppState>, project: String, command: String) -> Value {
+    let conn = state.db();
+    db::set_check_command(&conn, &project, command.trim());
+    json!({ "ok": true })
 }
 
 /// Save (or clear) a project's run command.

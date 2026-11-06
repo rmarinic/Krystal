@@ -41,6 +41,12 @@ pub(super) struct TurnState {
     pending_artifacts: HashMap<String, String>,
     /// Where the artifact MCP server writes what it resolved (None: no tool).
     artifact_dir: Option<PathBuf>,
+    /// The project's check command, when its Stop hook is installed.
+    pub(super) check: Option<String>,
+    /// This turn used a file-editing tool, so the hook will run the check.
+    edited: bool,
+    /// Check results so far this turn, for their segment ids.
+    checks: u32,
     channel: Channel<Value>,
 }
 
@@ -54,6 +60,9 @@ impl TurnState {
             seen_agent_msgs: std::collections::HashSet::new(),
             pending_artifacts: HashMap::new(),
             artifact_dir: artifact_dir.map(PathBuf::from),
+            check: None,
+            edited: false,
+            checks: 0,
             channel,
         }
     }
@@ -94,6 +103,8 @@ impl TurnState {
             }
             "background_tasks_changed" => self.background.sync(ev),
             "task_notification" => self.on_agent_report(ev),
+            "hook_started" => self.on_hook_started(ev),
+            "hook_response" => self.on_check_report(ev),
             _ => {}
         }
     }
@@ -101,15 +112,53 @@ impl TurnState {
     /// A background agent finished. Its report arrives here rather than as the
     /// result of the call that launched it (that returned long ago), so this is
     /// where the Task's chip gets its output — and its final tally.
+    ///
+    /// A background *shell* ends here too. Its chip gets the end of what the
+    /// command printed, and no agent progress: it is no agent.
     fn on_agent_report(&mut self, ev: &Value) {
         if !self.background.finished(ev) {
             return;
         }
-        emit_agent_progress(ev, &self.channel);
         let id = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+        if self.background.shells.contains(id) {
+            let (output, failed) = background_shell_report(ev);
+            attach_output(&mut self.result, id, &output, failed, &self.channel);
+            return;
+        }
+        emit_agent_progress(ev, &self.channel);
         let summary = ev.get("summary").and_then(|v| v.as_str()).unwrap_or("");
         let failed = ev.get("status").and_then(|v| v.as_str()) == Some("failed");
         attach_output(&mut self.result, id, summary, failed, &self.channel);
+    }
+
+    /// A Stop hook is starting. When the turn changed files, ours is about to
+    /// run the project's check, which may take minutes with nothing else on the
+    /// wire, so the working line says so. (The event doesn't say *which* hook;
+    /// the user's own Stop hooks start alongside ours.)
+    fn on_hook_started(&mut self, ev: &Value) {
+        if ev.get("hook_event").and_then(|v| v.as_str()) != Some("Stop") || !self.edited {
+            return;
+        }
+        if let Some(cmd) = &self.check {
+            let _ = self.channel.send(json!({ "type": "check_running", "command": cmd }));
+        }
+    }
+
+    /// Our hook reported how the check went (see `check.rs`). A real run
+    /// becomes a segment of its own, so the transcript keeps the check's verdict
+    /// where it happened: a failure, Claude fixing it, then the pass.
+    fn on_check_report(&mut self, ev: &Value) {
+        let Some(report) = check::report_from_hook(ev) else { return };
+        if report.get("skipped").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let _ = self.channel.send(json!({ "type": "check_running", "command": null }));
+            return;
+        }
+        self.checks += 1;
+        let mut seg = report;
+        seg["type"] = json!("check");
+        seg["id"] = json!(format!("check-{}", self.checks));
+        self.result.push_tool(seg.clone());
+        let _ = self.channel.send(seg);
     }
 
     fn on_init(&mut self, ev: &Value) {
@@ -269,6 +318,9 @@ impl TurnState {
         let input: Value = serde_json::from_str(if jsonbuf.is_empty() { "{}" } else { &jsonbuf })
             .unwrap_or_else(|_| json!({}));
         let (detail, target) = tool_detail(&name, &input);
+        if check::is_edit_tool(&name) {
+            self.edited = true;
+        }
         let mut msg = json!({ "type": "tool", "name": name });
         if !id.is_empty() {
             // carried so the Activity panel can match the tool's
@@ -544,20 +596,140 @@ mod tests {
     }
 
     #[test]
-    fn foreground_agents_and_background_shells_do_not_hold_a_turn() {
+    fn foreground_agents_and_shells_and_monitors_do_not_hold_a_turn() {
         let (channel, _seen) = recording_channel();
         let mut turn = TurnState::new(channel, None);
         route_all(
             &[
                 json!({ "type": "system", "subtype": "task_started", "task_id": "a", "tool_use_id": "toolu_a",
                         "is_backgrounded": false, "task_type": "local_agent" }),
-                // A dev server left running never finishes; it must not pin the turn open.
                 json!({ "type": "system", "subtype": "task_started", "task_id": "b", "tool_use_id": "toolu_b",
-                        "is_backgrounded": true, "task_type": "local_bash" }),
+                        "is_backgrounded": false, "task_type": "local_bash" }),
+                // Whatever else runs as a background task (a monitor never ends)
+                // owes no second answer.
+                json!({ "type": "system", "subtype": "task_started", "task_id": "m", "tool_use_id": "toolu_m",
+                        "is_backgrounded": true, "task_type": "monitor" }),
             ],
             &mut turn,
         );
         assert!(!turn.background.holds_turn());
+    }
+
+    #[test]
+    fn a_background_shell_holds_the_turn_and_its_chip_gets_the_end_of_its_output() {
+        // As CLI 2.1.318 sends it: the launch "returns" at once, the turn's first
+        // `result` goes by, and when the command exits a notification names the
+        // file its output went to — then Claude is woken for a second answer.
+        let dir = std::env::temp_dir().join(format!("krystal-bgsh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("b1.output");
+        let long: String = (0..600).map(|i| format!("compiling crate {i}\n")).collect();
+        std::fs::write(&out, format!("{long}error: 2 tests failed\n\n[exited with code 1]\n")).unwrap();
+
+        let (channel, seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        turn.result.push_tool(json!({ "type": "tool", "name": "Bash", "id": "toolu_sh" }));
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "b1", "tool_use_id": "toolu_sh",
+                        "is_backgrounded": true, "task_type": "local_bash", "description": "Run the tests" }),
+                json!({ "type": "user", "message": { "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_sh",
+                      "content": "Command running in background with ID: b1." }
+                ] } }),
+                json!({ "type": "result", "result": "The tests are running." }),
+            ],
+            &mut turn,
+        );
+        assert!(turn.background.holds_turn(), "the command is still running");
+        assert!(turn.result.segments[0].get("output").is_none(), "the launch note is not its output");
+
+        route_all(
+            &[json!({ "type": "system", "subtype": "task_notification", "task_id": "b1", "tool_use_id": "toolu_sh",
+                      "status": "completed", "output_file": out.to_string_lossy(),
+                      "summary": "Background command \"Run the tests\" completed (exit code 1)" })],
+            &mut turn,
+        );
+        let output = turn.result.segments[0]["output"].as_str().unwrap().to_string();
+        assert!(output.contains("error: 2 tests failed"), "the end of the output: {output}");
+        assert!(output.starts_with("… (earlier output trimmed)\ncompiling crate"), "cut on a whole line: {output}");
+        assert!(!output.contains("compiling crate 0\n"), "only the end of a long log");
+        assert_eq!(turn.result.segments[0]["isError"], true, "a non-zero exit is a failure");
+        assert!(turn.background.holds_turn(), "Claude hasn't said how it went yet");
+
+        let sent = seen.lock().unwrap();
+        assert!(!sent.iter().any(|e| e["type"] == "agent_progress"), "a shell is not an agent: {sent:?}");
+        drop(sent);
+        route_all(&[json!({ "type": "system", "subtype": "init", "session_id": "s" })], &mut turn);
+        assert!(!turn.background.holds_turn());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_projects_check_shows_while_it_runs_and_each_run_becomes_a_segment() {
+        let (channel, seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        turn.check = Some("npm test".into());
+        let stop_started = json!({ "type": "system", "subtype": "hook_started", "hook_name": "Stop", "hook_event": "Stop" });
+
+        // A turn that only read: the Stop hook starting is no check.
+        route_all(std::slice::from_ref(&stop_started), &mut turn);
+        assert!(!seen.lock().unwrap().iter().any(|e| e["type"] == "check_running"));
+
+        // An edit, then Claude finishing: "Checking…".
+        route_all(
+            &[
+                json!({ "type": "stream_event", "event": { "type": "content_block_start", "index": 0,
+                        "content_block": { "type": "tool_use", "name": "Edit", "id": "toolu_e" } } }),
+                json!({ "type": "stream_event", "event": { "type": "content_block_stop", "index": 0 } }),
+                stop_started.clone(),
+            ],
+            &mut turn,
+        );
+        assert!(seen.lock().unwrap().iter().any(|e| e["type"] == "check_running" && e["command"] == "npm test"));
+
+        // The user's own Stop hook answering is not ours.
+        route_all(
+            &[json!({ "type": "system", "subtype": "hook_response", "hook_event": "Stop", "stdout": "", "exit_code": 0 })],
+            &mut turn,
+        );
+        assert!(!turn.result.segments.iter().any(|s| s["type"] == "check"));
+
+        // Ours: failed, Claude sent back; then passed.
+        let resp = |report: Value| json!({ "type": "system", "subtype": "hook_response", "hook_event": "Stop",
+                                           "stdout": format!("{}\r\n", json!({ "krystalCheck": report })) });
+        route_all(
+            &[
+                resp(json!({ "ok": false, "retrying": true, "command": "npm test", "output": "1 failing", "attempt": 1 })),
+                resp(json!({ "ok": true, "command": "npm test", "output": "12 passing", "attempt": 2 })),
+            ],
+            &mut turn,
+        );
+        let checks: Vec<&Value> = turn.result.segments.iter().filter(|s| s["type"] == "check").collect();
+        assert_eq!(checks.len(), 2, "each run is kept, where it happened");
+        assert_eq!(checks[0]["id"], "check-1");
+        assert_eq!(checks[0]["retrying"], true);
+        assert_eq!(checks[1]["id"], "check-2");
+        assert_eq!(checks[1]["ok"], true);
+        assert_eq!(seen.lock().unwrap().iter().filter(|e| e["type"] == "check").count(), 2, "and streamed live");
+
+        // Nothing to check this time: the working line is told to stop saying so.
+        route_all(&[resp(json!({ "skipped": true }))], &mut turn);
+        assert_eq!(turn.result.segments.iter().filter(|s| s["type"] == "check").count(), 2);
+        let last = seen.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(last["type"], "check_running");
+        assert!(last["command"].is_null());
+    }
+
+    #[test]
+    fn a_background_shell_with_no_output_file_reports_its_summary() {
+        let ev = json!({ "status": "completed", "output_file": "",
+                         "summary": "Background command \"Build\" completed (exit code 0)" });
+        let (output, failed) = background_shell_report(&ev);
+        assert_eq!(output, "Background command \"Build\" completed (exit code 0)");
+        assert!(!failed);
+        let (_, failed) = background_shell_report(&json!({ "status": "failed", "summary": "x" }));
+        assert!(failed, "a failed status is a failure whatever the code");
     }
 
     #[test]

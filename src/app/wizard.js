@@ -124,8 +124,8 @@ async function saveClaudeEditor(md) {
   }
 }
 
-function reinitFromEditor() {
-  if (!confirm(tr('wiz.reinitConfirm'))) return;
+async function reinitFromEditor() {
+  if (!(await askYes(tr('wiz.reinitConfirm')))) return;
   openInit();
 }
 

@@ -1,0 +1,29 @@
+/* harder.css — the "Try harder" button under the latest reply (app/harder.js).
+ * index.html links the stylesheets in order and that order is the cascade; this
+ * one follows review.css, whose Changes strip it sits beside. */
+
+/* Quieter than the Changes strip next to it: no fill, no border until you reach
+ * for it. It is an offer, not a call to action. */
+.try-harder {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 8px 0 0 6px; padding: 5px 10px;
+  font: inherit; font-size: 12px; color: var(--fg-dim);
+  background: none; border: 1px solid transparent; border-radius: 999px;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, translate .2s var(--ease-out);
+  animation: cut-in .22s ease;
+}
+.msg > .bubble + .try-harder { margin-left: 0; }   /* first thing under the reply */
+.try-harder .ui-ico { width: 13px; height: 13px; }
+.try-harder .th-level {
+  font-size: 11px; color: var(--fg-dim);
+  padding-left: 7px; border-left: 1px solid var(--border);
+}
+.try-harder:hover { color: var(--fg); border-color: var(--border); translate: 0 -1px; }
+.try-harder:hover .th-level { color: var(--fg-muted); }
+.try-harder:disabled { cursor: progress; opacity: .6; translate: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .try-harder { animation: none; transition: color .15s ease, border-color .15s ease; }
+  .try-harder:hover { translate: none; }
+}

@@ -19,7 +19,7 @@ populatePickers();
 startModelRefresh();
 startUsage();
 accountBootCheck();   // is this computer still linked to app.krystal.rip?
-showProjectPicker();
+openStartPlace(HOST.start);   // the picker, or where the web host was asked to open (projects.js)
 
 // Faint build-version label in the bottom-right corner (purely informational).
 api.appVersion().then((v) => {

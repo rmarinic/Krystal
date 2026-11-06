@@ -479,7 +479,7 @@ async function openArtifactOutside(art, version) {
 }
 
 async function deleteShownArtifact(art) {
-  if (!confirm(tr('artifacts.deleteConfirm', { title: art.title || art.artId }))) return;
+  if (!(await askYes(tr('artifacts.deleteConfirm', { title: art.title || art.artId })))) return;
   try {
     const r = await api.deleteArtifact(state.project.path, art.artId);
     artifacts = (r && r.artifacts) || [];

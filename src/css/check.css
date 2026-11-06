@@ -1,0 +1,15 @@
+/* check.css — the project's check (app/check.js): its chip in a reply, and its
+ * field in the RUN panel's setup (app/run.js).
+ * index.html links the stylesheets in order and that order is the cascade; this
+ * follows chips.css, whose action chip it builds on, and projects.css, which
+ * styles the rest of the RUN panel. */
+
+/* A passed check is the one chip that says "all good" about the whole reply,
+ * so its shield takes the working-green. A failure is an ordinary failed chip
+ * (chips.css `.error`); a check that ran out of time is amber, not red: it says
+ * nothing about the code. */
+.check-chip.ok .chip-ico { color: var(--accent-3); }
+.check-chip.warn { color: var(--warn); }
+
+/* RUN panel: the check sits under the run command as its own section. */
+.run-check-label { margin-top: 20px; }

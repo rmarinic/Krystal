@@ -9,13 +9,14 @@
  *
  * Load order (see index.html; tests/boot.test.js loads them all in this order):
  *   core → api → utils → lightbox → icons → motion → light → mascot → titlebar → sidebar → chat → projects → starters → controls →
- *   describe → activity → agents → search → messages → chips → mcp → review → artifacts → livemd →
+ *   describe → activity → agents → search → messages → chips → mcp → review → check → artifacts → livemd →
  *   composer → feed → working → typer → stream → permissions → mentions → skills → attachments → queue →
- *   wizard → localization → settings → header → tasks → git → run → links → logo → usage →
- *   orchestrator → pins → mirror → account → guests → notifications → palette → find → hotkeys → boot
+ *   harder → wizard → localization → settings → header → tasks → git → run → links → logo → usage →
+ *   orchestrator → pins → mirror → account → guests → notifications → palette → find → hotkeys → narrow → boot
  *
- * This file owns the bits everything else builds on: the Tauri IPC handles
- * (`invoke`, `Channel`, `listen`), the `$` query helper, `tr` (i18n
+ * This file owns the bits everything else builds on: the host's IPC handles
+ * (`invoke`, `Channel`, `listen`, `dialog` — Tauri's, or the web host's; see
+ * `HOST` below), the `$` query helper, `tr` (i18n
  * lookup), the `els` element map, `state` and the context-window constants. The
  * `api` wrapper is in api.js, the small shared helpers (basename, escapeHtml,
  * the overlay/replay animation helpers, …) in utils.js, the image lightbox in
@@ -28,12 +29,29 @@
  * The UI, rendering and behaviour are otherwise identical to the web version.
  */
 
-const { invoke, Channel } = window.__TAURI__.core;
-// Backend-pushed events (as opposed to a reply to something we invoked). Used by
-// mirror.js to replay a turn started from outside, and by account.js to hear a
-// link land.
-const { listen } = window.__TAURI__.event;
-const dialog = window.__TAURI__.dialog;
+/* The host the frontend runs in. In the desktop that is Tauri. On
+ * app.krystal.rip the same scripts run in a browser, and `window.KRYSTAL_HOST`
+ * (krystal-cloud's web/desk-host.js, loaded before this file) provides the same
+ * four handles over the relay: `invoke` is a relay call, a `Channel` passed to a
+ * streaming command is a relay stream, `listen` and `dialog` are what a browser
+ * can offer. Everything below talks to `invoke`/`Channel`/`listen`/`dialog` only,
+ * so which one it is never leaks past this line.
+ *
+ * `HOST.caps` says what the host can do, for the few places that must differ:
+ *   native     — Tauri: the window, the OS, this machine's Claude install
+ *   web        — a browser driving a computer through app.krystal.rip
+ *   maxUpload  — the largest file one call may carry (bytes), or 0 for no cap */
+const HOST = window.KRYSTAL_HOST || {
+  invoke: window.__TAURI__.core.invoke,
+  Channel: window.__TAURI__.core.Channel,
+  // Backend-pushed events (as opposed to a reply to something we invoked). Used
+  // by mirror.js to replay a turn started from outside, and by account.js to
+  // hear a link land.
+  listen: window.__TAURI__.event.listen,
+  dialog: window.__TAURI__.dialog,
+  caps: { native: true, web: false, maxUpload: 0 },
+};
+const { invoke, Channel, listen, dialog } = HOST;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -132,6 +150,10 @@ const els = {
   initTitle: $('#init-modal-title'),
   initClose: $('#init-close'),
   projectScreen: $('#project-screen'),
+  sidebar: $('aside.sidebar'),
+  drawerBtn: $('#drawer-btn'),
+  drawerScrim: $('#drawer-scrim'),
+  projectHome: $('#project-home'),
   projectList: $('#project-list'),
   newProjectBtn: $('#new-project-btn'),
   toProjects: $('#to-projects'),

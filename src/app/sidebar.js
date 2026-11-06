@@ -54,6 +54,12 @@ function renderSidebar() {
     const queued = typeof queuedCount === 'function' ? queuedCount(t.id) : 0;
     const queueDot = queued
       ? `<span class="queue-dot" title="${escapeHtml(tr('sidebar.queueTitle', { n: queued }))}" aria-hidden="true">+${queued}</span>` : '';
+    // A reply (or a failure, a question) that landed while you were elsewhere and
+    // you haven't opened the chat since → a still dot in its tone, and the title
+    // as bright as an open one. A running turn's own mark takes precedence.
+    const seen = !streaming && typeof chatUnread === 'function' ? chatUnread(t.id) : null;
+    if (seen) li.classList.add('unread');
+    const unreadDot = seen ? unreadDotHtml(seen) : '';
     // When it last saw activity — “Today · 14:23”, “Yesterday · 09:10”, “4 days ago”.
     const days = dayDiff(t.updatedAt);
     const fresh = days !== null && days <= 0 ? ' today' : '';
@@ -66,7 +72,7 @@ function renderSidebar() {
       ? ` title="${escapeHtml(new Date(t.updatedAt).toLocaleString(window.I18N ? window.I18N.getLang() : []))}"` : '';
     li.innerHTML = `
       <a>
-        <span class="time${fresh}"${stampTitle}>${stamp}${liveDot}${draftDot}${queueDot}</span>
+        <span class="time${fresh}"${stampTitle}>${stamp}${unreadDot}${liveDot}${draftDot}${queueDot}</span>
         <span class="sum">${escapeHtml(t.title || tr('nav.newChatTitle'))}</span>
         <span class="cwd">${escapeHtml(t.cwd)}</span>
       </a>
@@ -79,12 +85,13 @@ function renderSidebar() {
     };
     li.querySelector('.del').onclick = async (e) => {
       e.stopPropagation();
-      if (!confirm(tr('sidebar.deleteConfirm'))) return;
+      if (!(await askYes(tr('sidebar.deleteConfirm')))) return;
       // Collapse the row away before the list re-renders — a tidy, deliberate exit.
       li.classList.add('removing');
       await api.remove(t.id);
       if (typeof dropDraft === 'function') dropDraft(t.id);   // its draft goes with it
       if (typeof dropQueue === 'function') dropQueue(t.id);   // …and its queued messages
+      if (typeof clearUnread === 'function') clearUnread(t.id);   // …and its unread mark
       if (state.activeId === t.id) { state.activeId = null; showEmpty(); }
       // …and so do anything it had queued: attachments and #-references.
       if (typeof clearComposerAttachments === 'function') clearComposerAttachments(t.id);
@@ -118,6 +125,34 @@ function updateDraftMark(id) {
     time.appendChild(dot);
   } else if (!on && dot) {
     dot.remove();
+  }
+}
+
+/* A chat row's unread mark (see `chatUnread` in notifications.js). */
+function unreadDotHtml(seen) {
+  const title = tr('sidebar.unreadTitle', { what: tr('notif.kind.' + seen.kind) });
+  return `<span class="unread-dot tone-${seen.tone}${seen.land ? ' land' : ''}" title="${escapeHtml(title)}" aria-hidden="true"></span>`;
+}
+
+/* Put every row's unread mark right without re-rendering the list: a reply
+ * landed somewhere, or a chat was opened. A streaming row is left alone — its
+ * live mark says more, and the re-render when the turn ends draws this one. */
+function paintUnreadMarks() {
+  if (state.view !== 'threads' || !els.threadList) return;
+  for (const li of els.threadList.querySelectorAll('li[data-tid]')) {
+    if (li.classList.contains('streaming')) continue;
+    const seen = typeof chatUnread === 'function' ? chatUnread(li.dataset.tid) : null;
+    li.classList.toggle('unread', !!seen);
+    const old = li.querySelector('.unread-dot');
+    if (!seen) { if (old) old.remove(); continue; }
+    if (old && old.classList.contains('tone-' + seen.tone) && !seen.land) continue;
+    const time = li.querySelector('.time');
+    if (!time) continue;
+    const stamp = time.querySelector('.live-dot, .draft-dot, .queue-dot');
+    const tmp = document.createElement('span');
+    tmp.innerHTML = unreadDotHtml(seen);
+    if (old) old.replaceWith(tmp.firstChild);
+    else time.insertBefore(tmp.firstChild, stamp);
   }
 }
 

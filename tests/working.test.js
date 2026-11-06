@@ -73,6 +73,23 @@ test('a long tool input shows its size; a short one does not', () => {
   assert.strictEqual(w.workLineText({ since: t0, phase: 'writing', chars: 9000 }, t0).meta, '0s');
 });
 
+test('waiting on background work says so, with a count only when there are several', () => {
+  const at = (jobs) => w.workLineText({ since: t0, phase: 'background', jobs, tool: 'Bash' }, t0 + 75000);
+  assert.strictEqual(at(1).label, 'work.background');
+  assert.strictEqual(at(1).meta, '75s', 'one job: just the clock, no tool left over from before');
+  assert.strictEqual(at(3).meta, 'work.jobs(3) · 75s');
+  assert.strictEqual(at(1).tone, 'live', 'still working, not waiting on you');
+  // A permission prompt from the background job still wins: that one needs you.
+  assert.strictEqual(w.workLineText({ since: t0, phase: 'background', jobs: 1, waiting: true }, t0).tone, 'wait');
+});
+
+test('while the project\'s check runs, the line names it and keeps time', () => {
+  const t = w.workLineText({ since: t0, phase: 'check', tool: 'npm test' }, t0 + 30000);
+  assert.strictEqual(t.label, 'work.checking');
+  assert.strictEqual(t.meta, 'npm test · 30s');
+  assert.strictEqual(t.tone, 'live');
+});
+
 test('waiting on you: amber, and nothing that moves', () => {
   const t = w.workLineText({ since: t0, phase: 'tool', tool: 'Bash', waiting: true }, t0 + 9000);
   assert.strictEqual(t.label, 'work.waiting');

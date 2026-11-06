@@ -30,6 +30,7 @@ function load(extra) {
     window: { addEventListener() {} },
     document: { querySelector: () => null, querySelectorAll: () => [], body: { classList: { contains: () => true } } },
     settingsTab: 'remote',
+    HOST: { caps: { native: true, web: false } },
     api: {},
     console, Promise,
     ...extra,
@@ -378,6 +379,15 @@ test('the row waits for the first status, then shows only while not linked', () 
   assert.strictEqual(btn.hidden, true);
   ctx.accountApply(status({ problem: 'unlinkedRemotely' }));
   assert.strictEqual(btn.hidden, false, 'back once the link is gone');
+});
+
+test('in a browser driving this computer (app.krystal.rip) the row never shows: linking is this machine’s', () => {
+  const { btn, els } = footRow();
+  const ctx = load({ els, showTip: () => {}, HOST: { caps: { native: false, web: true } } });
+  ctx.accountApply(status());
+  assert.strictEqual(btn.hidden, true);
+  ctx.accountApply(status({ problem: 'unlinkedRemotely' }));
+  assert.strictEqual(btn.hidden, true);
 });
 
 test('the row opens Settings → Remote with a link started, and never opens the browser', async () => {

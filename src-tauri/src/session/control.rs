@@ -82,15 +82,22 @@ pub(super) fn interrupt_request() -> Value {
 /// (or a terminal `task_updated`), and `background_tasks_changed` lists every
 /// one still out — which also catches a foreground agent moved to the
 /// background, and settles any whose ending we never saw.
+///
+/// A **background shell** counts as well: it runs inside the same process, an
+/// interrupt doesn't end it, and when it exits the CLI wakes Claude to answer
+/// about it — the same stray answer a stopped agent leaves. A foreground shell is
+/// only part of its turn, which an interrupt does end, so it isn't tracked.
 pub(super) fn track_agents(agents: &mut HashMap<String, bool>, ev: &Value) {
     let str_of = |v: &Value, k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
     match ev.get("type").and_then(|v| v.as_str()) {
         Some("result") => agents.retain(|_, bg| *bg),
         Some("system") => match ev.get("subtype").and_then(|v| v.as_str()) {
-            Some("task_started") if claude::is_agent_task(ev) => {
+            Some("task_started") if claude::is_background_work(ev) => {
                 if let Some(id) = str_of(ev, "task_id").filter(|s| !s.is_empty()) {
                     let bg = ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false);
-                    agents.insert(id, bg);
+                    if bg || claude::is_agent_task(ev) {
+                        agents.insert(id, bg);
+                    }
                 }
             }
             Some("task_notification") => {
@@ -116,7 +123,7 @@ pub(super) fn track_agents(agents: &mut HashMap<String, bool>, ev: &Value) {
                 };
                 let live: std::collections::HashSet<String> = tasks
                     .iter()
-                    .filter(|t| claude::is_agent_task(t))
+                    .filter(|t| claude::is_background_work(t))
                     .filter_map(|t| str_of(t, "task_id"))
                     .collect();
                 agents.retain(|id, bg| !*bg || live.contains(id));
