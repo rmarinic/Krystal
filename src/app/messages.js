@@ -15,7 +15,7 @@ function toolLabel(name) {
 const TOOL_ICON = {
   Read: 'read', Write: 'write', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
   Bash: 'terminal', PowerShell: 'terminal', Glob: 'search', Grep: 'search', WebSearch: 'globe', WebFetch: 'globe',
-  Agent: 'agent', Task: 'agent', TodoWrite: 'todo', AskUserQuestion: 'ask', ExitPlanMode: 'plan',
+  Agent: 'agent', Task: 'agent', SendMessage: 'agent', TodoWrite: 'todo', AskUserQuestion: 'ask', ExitPlanMode: 'plan',
   mcp__krystal__artifact: 'artifact',
 };
 const toolIcon = (name) => icon(TOOL_ICON[name] || (mcpParts(name) ? 'plug' : 'tool'));

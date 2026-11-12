@@ -16,7 +16,8 @@
    Waiting on a permission prompt it turns amber and holds still, clock and all.
    Between answers, while a background job Claude started (a sub-agent, a long
    build) is still running, it says so — the backend's `background` event —
-   until Claude picks the reply back up.
+   until Claude picks the reply back up, and the jobs themselves are listed under
+   it, each with its own clock and latest sign of life (background.js).
    When the reply lands the line fades and is gone. The words are a pure function
    of its state (`workLineText`), tested in tests/working.test.js. */
 
@@ -26,9 +27,12 @@ const workLines = new Set();     // the lines on screen, for the one shared cloc
 let workClock = null;
 
 /* What the line says. `w`: { since, phase: 'thinking'|'writing'|'tool'|'background'|'check',
- * tool, chars, jobs, waiting }. Returns { label, meta, tone }. */
+ * tool, chars, jobs, jobKind ('agent'|'shell' when that is all there is), waiting }.
+ * Returns { label, meta, tone }. */
 function workLineText(w, now) {
   if (w.waiting) return { label: tr('work.waiting'), meta: '', tone: 'wait' };
+  const retry = retryLineText(w.retry, now);
+  if (retry) return retry;
   if (w.phase === 'check') {
     const meta = [w.tool];
     if (w.since) meta.push(fmtDur(Math.max(0, now - w.since)));
@@ -38,7 +42,10 @@ function workLineText(w, now) {
     const meta = [];
     if (w.jobs > 1) meta.push(tr('work.jobs', { n: w.jobs }));
     if (w.since) meta.push(fmtDur(Math.max(0, now - w.since)));
-    return { label: tr('work.background'), meta: meta.join(' · '), tone: 'live' };
+    // One job of a known kind is named for what it is; anything else is "work".
+    const label = w.jobs === 1 && w.jobKind === 'agent' ? tr('work.bgAgent')
+      : w.jobs === 1 && w.jobKind === 'shell' ? tr('work.bgShell') : tr('work.background');
+    return { label, meta: meta.join(' · '), tone: 'live' };
   }
   const label = w.phase === 'writing' ? tr('work.writing')
     : w.phase === 'tool' ? tr('work.working') : tr('work.thinking');
@@ -49,6 +56,35 @@ function workLineText(w, now) {
   }
   if (w.since) meta.push(fmtDur(Math.max(0, now - w.since)));
   return { label, meta: meta.join(' · '), tone: w.phase === 'thinking' ? 'think' : 'live' };
+}
+
+/* What an `api_retry` event means for whoever is watching: why the request
+ * failed (in a word the UI can translate), when the next try is due, and which
+ * try that will be. A usage-limit wait for a sub-agent is re-sent while it lasts,
+ * so a fresh note simply replaces the last. */
+function apiRetryNote(msg, now) {
+  const m = msg || {};
+  const err = String(m.error || '').toLowerCase();
+  const why = m.status === 429 || /rate.?limit|usage/.test(err) ? 'limit'
+    : m.status === 529 || /overload/.test(err) ? 'overloaded'
+      : /no.?response|timeout|timed out|connection/.test(err) ? 'noanswer' : 'error';
+  return {
+    why,
+    until: now + Math.max(0, Number(m.delayMs) || 0),
+    attempt: Number(m.attempt) || 0,
+    max: Number(m.maxRetries) || 0,
+  };
+}
+
+/* "Waiting to retry · usage limit · next try in 40s · try 2 of 10", while the
+ * wait lasts; null once it's over (the retried request is then in flight, and
+ * whatever it brings moves the line on). */
+function retryLineText(retry, now) {
+  if (!retry || now >= retry.until) return null;
+  const meta = [tr('retry.why.' + retry.why),
+    tr('work.retryIn', { d: fmtDur(retry.until - now) })];
+  if (retry.attempt && retry.max) meta.push(tr('work.retryTry', { n: retry.attempt, m: retry.max }));
+  return { label: tr('work.retrying'), meta: meta.join(' · '), tone: 'think' };
 }
 
 /* The line for one live reply, placed right under its bubble. `since`: when the
@@ -62,9 +98,10 @@ function makeWorkLine(bubble, since) {
   const dot = el.querySelector('.wl-dot');
   const labelEl = el.querySelector('.wl-label');
   const metaEl = el.querySelector('.wl-meta');
-  const w = { since: since || Date.now(), phase: 'thinking', tool: '', chars: 0, toolId: '', jobs: 0, waiting: false };
+  const w = { since: since || Date.now(), phase: 'thinking', tool: '', chars: 0, toolId: '', jobs: 0, waiting: false, retry: null };
   let lastBeat = 0;
   let gone = false;
+  let jobsPanel = null;   // the jobs being waited on, listed under the line (background.js)
 
   const line = {
     get phase() { return w.phase; },
@@ -76,6 +113,18 @@ function makeWorkLine(bubble, since) {
       if (labelEl.textContent !== t.label) labelEl.textContent = t.label;
       if (metaEl.textContent !== t.meta) metaEl.textContent = t.meta;
       el.dataset.tone = t.tone;
+      if (jobsPanel) jobsPanel.paint(Date.now());
+    },
+    // The background jobs the reply is waiting on (`bgFromEvent`), or null once
+    // Claude has picked it back up.
+    showJobs(bg) {
+      if (gone) return;
+      if (!bg || !bg.jobs.length) {
+        if (jobsPanel) { jobsPanel.remove(); jobsPanel = null; }
+        return;
+      }
+      if (!jobsPanel) jobsPanel = makeBgPanel(el);
+      jobsPanel.set(bg);
     },
     // Something real happened: the dot brightens once (rate-limited, and not
     // while the turn is waiting on you — that holds still).
@@ -97,6 +146,7 @@ function makeWorkLine(bubble, since) {
     // Gone at once (the chat left the screen, or the fade is handled above).
     detach(keep) {
       gone = true;
+      if (jobsPanel) { jobsPanel.remove(); jobsPanel = null; }
       workLines.delete(line);
       if (!workLines.size) { clearInterval(workClock); workClock = null; }
       if (!keep) el.remove();

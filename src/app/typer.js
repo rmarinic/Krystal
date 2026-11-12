@@ -222,6 +222,8 @@ function makeTyper(bubble, opts = {}) {
     },
     // The turn is (or is no longer) stopped on a permission prompt.
     waiting(on) { workLine.set({ waiting: !!on }); },
+    // The API asked for a wait before the next try (apiRetryNote, working.js).
+    retrying(note) { workLine.set({ retry: note }); },
     // The project's check is running (`cmd`), or has stopped (null): nothing
     // streams while it does, so the working line says so (check.js).
     checking(cmd) {
@@ -238,11 +240,17 @@ function makeTyper(bubble, opts = {}) {
       workLine.beat();
       maybeFollow();
     },
-    // `n` background jobs (agents, shells) are still running between answers;
-    // 0 when Claude picks the reply back up.
-    background(n) {
-      if (n > 0) workLine.set({ phase: 'background', jobs: n });
-      else if (workLine.phase === 'background') workLine.set({ phase: 'thinking', jobs: 0 });
+    // Background jobs (agents, shells) still running between answers, as
+    // `bgFromEvent` (background.js) made them; none once Claude picks the reply
+    // back up. The jobs a helper started itself are listed under it, not counted.
+    background(bg) {
+      const jobs = (bg && bg.jobs) || [];
+      const top = jobs.filter((j) => !j.owner);
+      const n = Math.max((bg && bg.running) || 0, top.length);
+      const kinds = new Set(top.map((j) => j.kind));
+      if (n > 0) workLine.set({ phase: 'background', jobs: n, jobKind: kinds.size === 1 ? [...kinds][0] : '' });
+      else if (workLine.phase === 'background') workLine.set({ phase: 'thinking', jobs: 0, jobKind: '' });
+      workLine.showJobs(n > 0 ? bg : null);
       workLine.beat();
     },
     // Detach from the render loop without finalizing — the bubble is about to be

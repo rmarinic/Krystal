@@ -118,6 +118,8 @@ pub async fn run_turn(
     let mut got_result = false;
     let mut last_save = std::time::Instant::now();
     let mut saved_len = 0usize;
+    // When the shells' output files are next due a look (see below).
+    let mut watch_due = tokio::time::Instant::now();
 
     loop {
         // Waiting on the CLI to come back with what a finished agent reported is
@@ -134,6 +136,20 @@ pub async fn run_turn(
                 Ok(ev) => ev,
                 Err(_) => break,
             }
+        } else if between_answers && turn.background.jobs.watches_output() {
+            // A shell is running while the reply waits: look at its output every
+            // `JOB_WATCH_MS`, since a command streams nothing else (jobs.rs). A
+            // fixed due time, so a chatty worker's events can't keep putting it off.
+            tokio::select! {
+                ev = events.recv() => ev,
+                _ = tokio::time::sleep_until(watch_due) => {
+                    watch_due = tokio::time::Instant::now() + std::time::Duration::from_millis(JOB_WATCH_MS);
+                    for line in turn.background.jobs.watch() {
+                        let _ = channel.send(line);
+                    }
+                    continue;
+                }
+            }
         } else {
             events.recv().await
         };
@@ -149,11 +165,28 @@ pub async fn run_turn(
         if ty == Some("system") && ev.get("subtype").and_then(|v| v.as_str()) == Some("init") {
             if between_answers {
                 // Claude is back on it: the working line stops saying "waiting".
-                let _ = channel.send(json!({ "type": "background", "running": 0 }));
+                let _ = channel.send(json!({ "type": "background", "running": 0, "jobs": [] }));
             }
             between_answers = false;
         }
+        // A resumed session reporting the jobs that died with its last process
+        // closes that report with a `result` before it reads the message: not
+        // this turn's (see `BackgroundAgents::stray_notices`).
+        if is_result && turn.background.take_stray_result(&ev) {
+            continue;
+        }
         turn.route(&ev);
+        if between_answers {
+            // The jobs the reply waits on changed: the window shows the list.
+            if turn.background.jobs.take_changed() {
+                send_background(&turn.background, channel);
+            }
+            // The last of them was stopped and nothing will wake Claude about
+            // it (a stopped shell): the reply has nothing left to wait for.
+            if turn.background.quiet_stop && !turn.background.holds_turn() {
+                break;
+            }
+        }
         let result = &mut turn.result;
         if is_result {
             got_result = true;
@@ -175,9 +208,9 @@ pub async fn run_turn(
             // Nothing streams while a background job runs, perhaps for many
             // minutes; the working line says what the reply is waiting on. Sent
             // after the paragraph break above, which would otherwise read as writing.
-            let running = turn.background.running.len();
-            if running > 0 {
-                let _ = channel.send(json!({ "type": "background", "running": running }));
+            if !turn.background.running.is_empty() {
+                turn.background.jobs.take_changed();
+                send_background(&turn.background, channel);
             }
             continue;
         }
@@ -229,3 +262,13 @@ pub async fn run_turn(
 /// How long a turn waits for the CLI to pick itself back up after a background
 /// agent reported in. It normally does within a second or two.
 const FOLLOW_UP_WAIT_MS: u64 = 8000;
+
+/// Tell the window what the reply is waiting on: how many jobs hold it, and the
+/// list itself (each with what it is and how long it has run, see jobs.rs).
+fn send_background(bg: &BackgroundAgents, channel: &Channel<Value>) {
+    let _ = channel.send(json!({
+        "type": "background",
+        "running": bg.running.len(),
+        "jobs": bg.jobs.snapshot(),
+    }));
+}

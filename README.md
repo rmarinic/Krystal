@@ -47,6 +47,11 @@ There's no `localhost`, no Node server and no browser. Krystal talks to Claude o
   burst of calls to one service folds into a single chip that opens onto each. Under a reply that's still
   coming, a quiet line says what Claude is doing and for how long, even through long silent
   stretches like writing an artifact, where it shows how much has been written so far.
+- **See what background work is doing.** When Claude hands work to a helper agent or a
+  background command and waits for it, each job gets its own row under the reply: how long it
+  has run, its latest step or the last line it printed, and when it last did anything. Open a
+  row for its recent steps; a job that has gone quiet for ten minutes turns amber and offers to
+  check on it or stop just that job.
 - **Queue the next message** while Claude is still working. Queued messages go out one at a
   time, in order, and hold if you press Stop.
 - **Starting points.** Write / Research / Data / Code cards fill in a first message with blanks

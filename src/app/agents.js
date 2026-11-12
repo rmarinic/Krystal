@@ -31,6 +31,9 @@ function ensureAgentRun(id, threadId, opts = {}) {
       running: opts.live !== false, live: opts.live !== false, stopped: false,
       output: null, isError: false,
       log: [],
+      heardAt: null,      // the last time the worker gave any sign (agentHeard)
+      now: '',            // the CLI's word on its current step ("Running the tests")
+      retry: null,        // a wait for the API the turn is in (agentRetrySeen)
     };
     agentRuns.set(id, r);
     trimAgentRuns();
@@ -132,12 +135,44 @@ function agentProgressSeen(msg) {
   // is the brief it was given, which the timeline below it is the story of. Only
   // fill it if we never got the brief.
   if (msg.description && !r.description) r.description = msg.description;
+  // …while a progress report's description is that step itself, which is what
+  // the waiting panel under the reply says the worker is doing (background.js).
+  if (msg.phase === 'progress' && msg.description) r.now = msg.description;
   if (msg.lastTool) r.lastTool = msg.lastTool;
   if (msg.toolUses != null) r.toolUses = msg.toolUses;
   if (msg.tokens != null) r.tokens = msg.tokens;
   if (msg.durationMs != null) r.durationMs = msg.durationMs;
   if (!r.endedAt) r.running = true;      // a straggler must not un-finish a run
+  agentHeard(r);
   agentRunChanged(r);
+}
+
+/* The worker gave a sign of life. A sub-agent streams nothing while it thinks
+ * or writes: each step arrives whole once it's done, so the time since the last
+ * sign is how long the step now in the making has taken (agentpanel.js). */
+function agentHeard(r, at) {
+  r.heardAt = at || Date.now();
+}
+
+/* The tool call the worker is waiting on, if any: of the calls at the end of
+ * its log (newest last), the earliest one still out (parallel calls come back
+ * in any order). Its output arrives only when it returns, so this is what a
+ * long silence is, when it is anything. */
+function agentToolOut(r) {
+  let out = null;
+  for (let i = r.log.length - 1; i >= 0 && r.log[i].kind === 'tool'; i--) {
+    if (r.log[i].output == null && r.log[i].toolId) out = r.log[i];
+  }
+  return out;
+}
+
+/* The API refused a request and the CLI is waiting to try again (`api_retry`,
+ * with the note `apiRetryNote` made of it). The CLI doesn't say which agent is
+ * waiting, so every worker of that turn still out carries it until it passes. */
+function agentRetrySeen(threadId, note) {
+  for (const r of agentRuns.values()) {
+    if (r.threadId === threadId && r.running) r.retry = note;
+  }
 }
 
 /* One line of what the worker is saying or doing right now → the timeline. */
@@ -147,12 +182,17 @@ function agentActivitySeen(msg) {
   if (!r) return;
   // What a step came back with belongs to that step, not on a line of its own.
   if (msg.kind === 'result') return agentStepResult(r, msg);
+  const at = Date.now();
   const entry = {
-    kind: msg.kind === 'tool' ? 'tool' : 'text',
+    kind: msg.kind === 'tool' || msg.kind === 'thinking' ? msg.kind : 'text',
     tool: msg.tool || '', target: msg.target || '', detail: msg.detail || '',
     toolId: msg.toolId || '', output: null, isError: false,
-    text: msg.text || '', at: Date.now(),
+    text: msg.text || '', at,
+    chars: Number(msg.chars) || 0,
+    // How long this step was in the making: since the worker's last sign.
+    gapMs: Math.max(0, at - (r.heardAt || r.startedAt || at)),
   };
+  agentHeard(r, at);
   r.log.push(entry);
   while (r.log.length > AGENT_LOG_MAX) r.log.shift();
   agentRunChanged(r, entry);
@@ -168,6 +208,7 @@ function agentStepResult(r, msg) {
   if (!step) return;
   step.output = msg.text || '';
   step.isError = !!msg.isError;
+  agentHeard(r);
   if (agentOpenId !== r.id || els.agentOverlay.hidden) return;
   const row = els.agentBody.querySelector(`.ag-row[data-tool="${cssEsc(step.toolId)}"] .ag-body`);
   if (!row || row.querySelector('.ag-out')) return;
@@ -318,243 +359,3 @@ function refreshAgentChips() {
     if (r) syncAgentChip(el, r);
   });
 }
-
-/* ------------------------------- the panel ------------------------------- */
-
-let agentOpenId = null;      // run currently shown in the inspector, if open
-let agentTick = null;        // 1s ticker that keeps the elapsed readout honest
-let agentStick = true;       // timeline auto-follow (same rule as the chat feed)
-
-const AGENT_STATS = ['tokens', 'steps', 'elapsed', 'tool'];
-
-function openAgentPanel(id) {
-  const r = agentRun(id);
-  if (!r) return;
-  agentOpenId = id;
-  agentStick = true;
-  openOverlay(els.agentOverlay);
-  renderAgentPanel();
-  els.agentBody.scrollTop = els.agentBody.scrollHeight;
-  startAgentTick();
-}
-
-function closeAgentPanel() {
-  stopAgentTick();
-  agentOpenId = null;
-  closeOverlay(els.agentOverlay);
-}
-
-function startAgentTick() {
-  stopAgentTick();
-  agentTick = setInterval(() => {
-    const r = agentRun(agentOpenId);
-    if (!r) return stopAgentTick();
-    if (!r.running) return stopAgentTick();
-    setAgentStat('elapsed', fmtDur(agentElapsed(r)));   // ticks every second: no flash
-  }, 1000);
-}
-function stopAgentTick() { if (agentTick) { clearInterval(agentTick); agentTick = null; } }
-
-/* Full render: header, stat tiles, timeline, footer. Called on open and whenever
- * the run changes state (started → finished); a plain new step only appends. */
-function renderAgentPanel() {
-  const r = agentRun(agentOpenId);
-  if (!r) return;
-  const st = agentState(r);
-
-  els.agentTitle.innerHTML = escapeHtml(tr('agent.panelTitle')) +
-    (r.subagent ? `<span class="agent-type">${escapeHtml(r.subagent)}</span>` : '');
-  els.agentSub.textContent = r.description || '';
-  els.agentSub.hidden = !r.description;
-  els.agentStatus.className = 'agent-status ' + st;
-  els.agentStatus.innerHTML =
-    (st === 'running' ? '<span class="agent-live-dot" aria-hidden="true"></span>' : '') +
-    `<span>${escapeHtml(tr('agent.status.' + st))}</span>`;
-
-  els.agentStats.innerHTML = AGENT_STATS.map((k) =>
-    `<div class="ag-stat" data-k="${k}">` +
-      '<span class="ag-stat-v">–</span>' +
-      `<span class="ag-stat-k">${escapeHtml(tr('agent.stat.' + k))}</span>` +
-    '</div>').join('');
-  updateAgentStats(r, true);
-
-  renderAgentTimeline(r);
-  syncAgentFoot(r);
-}
-
-function setAgentStat(key, value, bump) {
-  const v = els.agentStats.querySelector(`.ag-stat[data-k="${key}"] .ag-stat-v`);
-  if (!v) return;
-  const next = value == null || value === '' ? '–' : String(value);
-  if (v.textContent === next) return;
-  v.textContent = next;
-  if (bump) replayClass(v, 'bump', 400);      // a quiet colour tick, not a jump
-}
-
-function updateAgentStats(r, silent) {
-  setAgentStat('tokens', r.tokens != null ? fmtTokens(r.tokens) : null, !silent);
-  setAgentStat('steps', r.toolUses != null ? r.toolUses : null, !silent);
-  setAgentStat('elapsed', agentElapsed(r) ? fmtDur(agentElapsed(r)) : null);
-  setAgentStat('tool', r.lastTool ? toolLabel(r.lastTool) : null, !silent);
-}
-
-/* One timeline row: a marker (launched/finished), a tool the worker reached for,
- * or a line of what it said. */
-function agentRow(kind, r, entry) {
-  const row = document.createElement('div');
-  row.className = 'ag-row ' + kind;
-
-  const time = document.createElement('span');
-  time.className = 'ag-time';
-  time.textContent = agentOffset(r, entry && entry.at);
-  row.appendChild(time);
-
-  const mark = document.createElement('span');
-  mark.className = 'ag-mark';
-  mark.setAttribute('aria-hidden', 'true');
-  row.appendChild(mark);
-
-  const body = document.createElement('div');
-  body.className = 'ag-body';
-  if (kind === 'tool') {
-    body.innerHTML =
-      `<span class="ag-ico" aria-hidden="true">${toolIcon(entry.tool)}</span>` +
-      '<span class="ag-label"></span>';
-    body.querySelector('.ag-label').textContent =
-      toolLabel(entry.tool) + (entry.target ? ' · ' + entry.target : '');
-    if (entry.toolId) row.dataset.tool = entry.toolId;
-    if (entry.detail && entry.detail !== entry.target) {
-      const d = document.createElement('div');
-      d.className = 'ag-detail';
-      d.textContent = entry.detail;
-      body.appendChild(d);
-    }
-    if (entry.output != null) body.appendChild(agentStepOutput(entry));
-  } else if (kind === 'text') {
-    body.textContent = entry.text;
-  } else {
-    body.textContent = entry.label;        // marker rows carry their own label
-  }
-  row.appendChild(body);
-  return row;
-}
-
-// "+4.2s" since the worker started, so steps can be read as a rhythm.
-function agentOffset(r, at) {
-  if (!r.startedAt || !at) return '';
-  const ms = Math.max(0, at - r.startedAt);
-  if (ms < 10000) return '+' + (ms / 1000).toFixed(1) + 's';
-  return '+' + fmtDur(ms);
-}
-
-function agentNote(text) {
-  const d = document.createElement('div');
-  d.className = 'ag-note';
-  d.textContent = text;
-  return d;
-}
-
-function renderAgentTimeline(r) {
-  const body = els.agentBody;
-  body.innerHTML = '';
-  if (r.startedAt) {
-    body.appendChild(agentRow('marker start', r, { at: r.startedAt, label: tr('agent.launched') }));
-  }
-  for (const e of r.log) body.appendChild(agentRow(e.kind, r, e));
-
-  if (!r.log.length) {
-    body.appendChild(agentNote(r.live ? tr('agent.waiting') : tr('agent.noHistory')));
-  }
-  if (!r.running) {
-    const st = agentState(r);
-    const label = st === 'error' ? tr('agent.failedLine')
-      : st === 'stopped' ? tr('agent.stoppedLine') : tr('agent.finishedLine');
-    body.appendChild(agentRow('marker end ' + st, r, { at: r.endedAt, label }));
-  }
-  if (r.output != null) body.appendChild(agentReport(r));
-}
-
-function agentReport(r) {
-  const box = document.createElement('div');
-  box.className = 'ag-report' + (r.isError ? ' err' : '');
-  const head = document.createElement('div');
-  head.className = 'ag-report-head';
-  head.textContent = tr('agent.reportLabel');
-  box.appendChild(head);
-  const pre = document.createElement('pre');
-  pre.className = 'ag-pre';
-  pre.textContent = r.output || tr('agent.noReport');
-  box.appendChild(pre);
-  return box;
-}
-
-/* The footer: Stop is only real while the owning turn is still streaming, and it
- * says plainly that it ends the whole reply (the CLI can't kill one worker). */
-function syncAgentFoot(r) {
-  const canStop = r.running && state.live.has(r.threadId);
-  els.agentStop.hidden = !canStop;
-  els.agentStop.disabled = false;
-  els.agentStop.textContent = tr('agent.stopBtn');
-  els.agentHint.textContent = canStop ? tr('agent.stopHint') : '';
-}
-
-async function stopAgentRun() {
-  const r = agentRun(agentOpenId);
-  if (!r || !r.running) return;
-  els.agentStop.textContent = tr('agent.stopping');
-  // Shares the composer's escalation: the button stays live on purpose, so a
-  // second press turns the polite interrupt into a kill (see stream.js).
-  await stopTurn(r.threadId);
-}
-
-/* A run changed. Chips always refresh; the open panel appends the one new step
- * (cheap, animated) or re-renders when the run's *state* moved. */
-function agentRunChanged(r, entry) {
-  els.feed.querySelectorAll(`.agent-chip[data-id="${cssEsc(r.id)}"]`)
-    .forEach((el) => syncAgentChip(el, r));
-  if (agentOpenId !== r.id || els.agentOverlay.hidden) return;
-
-  const wasRunning = els.agentStatus.classList.contains('running');
-  if (wasRunning !== (agentState(r) === 'running')) { renderAgentPanel(); agentFollow(); return; }
-
-  updateAgentStats(r);
-  if (!entry) return;
-  const note = els.agentBody.querySelector('.ag-note');
-  if (note) note.remove();
-  const row = agentRow(entry.kind, r, entry);
-  row.classList.add('enter');
-  els.agentBody.appendChild(row);
-  while (els.agentBody.querySelectorAll('.ag-row').length > AGENT_LOG_MAX + 2) {
-    const oldest = els.agentBody.querySelector('.ag-row:not(.marker)');
-    if (!oldest) break;
-    oldest.remove();
-  }
-  agentFollow();
-}
-
-/* Timeline auto-follow, same deal as the chat feed: the wheel decides (it fires
- * before the scroll lands, so it can't be clobbered by our own scrolling), and
- * coming back to rest at the bottom re-attaches. */
-function agentFollow() { if (agentStick) els.agentBody.scrollTop = els.agentBody.scrollHeight; }
-
-els.agentBody.addEventListener('wheel', (e) => { if (e.deltaY < 0) agentStick = false; }, { passive: true });
-els.agentBody.addEventListener('scroll', () => {
-  const b = els.agentBody;
-  if (b.scrollHeight - b.scrollTop - b.clientHeight < 24) agentStick = true;
-}, { passive: true });
-
-els.agentClose.onclick = closeAgentPanel;
-els.agentDone.onclick = closeAgentPanel;
-els.agentStop.onclick = stopAgentRun;
-
-// Backdrop click closes — unless the release just ended a text drag-select
-// (same guard as the Activity / Initialize modals).
-let agentPressOnBackdrop = false;
-els.agentOverlay.addEventListener('mousedown', (e) => { agentPressOnBackdrop = (e.target === els.agentOverlay); });
-els.agentOverlay.addEventListener('mouseup', (e) => {
-  if (agentPressOnBackdrop && e.target === els.agentOverlay) closeAgentPanel();
-  agentPressOnBackdrop = false;
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !els.agentOverlay.hidden) closeAgentPanel();
-});

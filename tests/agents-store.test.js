@@ -1,4 +1,5 @@
-/* Tests for the agent inspector's run store (src/app/agents.js).
+/* Tests for the agent inspector's run store (src/app/agents.js) and the bits of
+ * its window (src/app/agentpanel.js) that can be checked without a DOM.
  *
  * The frontend is bundler-free classic scripts sharing one global scope, so the
  * file is loaded here into a vm context that provides exactly the globals it
@@ -33,7 +34,8 @@ function stubEl() {
 }
 
 function loadAgents() {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'agents.js'), 'utf8');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'app', f), 'utf8');
+  const src = read('agents.js') + '\n' + read('agentpanel.js');
   const els = new Proxy({}, {
     get(store, key) {
       if (!(key in store)) store[key] = stubEl();
@@ -45,7 +47,9 @@ function loadAgents() {
     isAgentTool: (n) => n === 'Agent' || n === 'Task',
     state: { activeId: 'thread-1', live: new Map() },
     document: { addEventListener() {}, createElement: () => stubEl() },
-    tr: (k) => k,
+    tr: (k, v) => (v ? `${k}(${Object.values(v).join(',')})` : k),
+    // working.js's retry line, as it reads: null once the wait is over.
+    retryLineText: (r, now) => (r && now < r.until ? { label: 'work.retrying', meta: r.why, tone: 'think' } : null),
     escapeHtml: (s) => String(s),
     cssEsc: (s) => String(s),
     openOverlay() {}, closeOverlay() {}, replayClass() {},
@@ -57,12 +61,20 @@ function loadAgents() {
     TOOL_ICON: { Agent: '🧩', Task: '🧩' },
     api: { stopChat: async () => {} },
     stopActiveTurn: async () => {},
+    // chips.js's file helpers, recorded so a test can see what a step was given.
+    FILE_TOOLS: new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']),
+    isImagePath: (p) => /\.(png|jpe?g|gif|webp)$/i.test(p),
+    chipFileActs: (p) => ({ kind: 'acts', path: p }),
+    buildImagePreview: (p) => ({ kind: 'img', path: p, classList: { add() {} } }),
+    loadChipImages: (root, onLoad) => { root.loaded = onLoad; },
     setInterval, clearInterval, Date, Number, Math, console,
   };
   const exported = [
     'els', 'agentRuns', 'agentRun', 'hasAgentRun', 'agentTaskSeen', 'agentProgressSeen',
     'agentActivitySeen', 'agentResultSeen', 'agentTurnEnded', 'hydrateAgentRuns',
-    'agentState', 'agentElapsed', 'AGENT_LOG_MAX',
+    'agentState', 'agentElapsed', 'AGENT_LOG_MAX', 'agentStepFile', 'agentFollow',
+    'agentGapText', 'agentNowLine', 'agentRetrySeen', 'AGENT_GAP_SHOW_MS', 'AGENT_QUIET_HINT_MS',
+    'agentJob', 'syncAgentFoot', 'state',
   ];
   return vm.runInNewContext(`${src}\n;({ ${exported.join(', ')} })`, ctx, { filename: 'agents.js' });
 }
@@ -309,6 +321,140 @@ check('elapsed prefers the CLI duration, never goes backwards', () => {
   eq(first >= 30000, true, 'uses the reported duration');
   r.startedAt = Date.now() - 60000;
   eq(A.agentElapsed(r) >= 60000, true, 'falls forward to wall clock');
+});
+
+console.log('\nfiles a worker touched');
+
+function stepBody() {
+  const kids = [];
+  return { kids, appendChild: (k) => kids.push(k) };
+}
+
+check('an image the worker read gets Show in folder / Open and a preview that loads', () => {
+  const A = loadAgents();
+  const body = stepBody();
+  A.agentStepFile(body, { tool: 'Read', detail: 'C:\\tmp\\hk\\front_head.png' });
+  eq(body.kids.map((k) => k.kind).join(','), 'acts,img', 'actions then image');
+  eq(body.kids[1].path, 'C:\\tmp\\hk\\front_head.png', 'image path');
+  eq(body.loaded, A.agentFollow, 'loads now, keeping the timeline following');
+});
+
+check('a text file gets the file actions but no preview', () => {
+  const A = loadAgents();
+  const body = stepBody();
+  A.agentStepFile(body, { tool: 'Edit', detail: 'C:\\src\\a.js' });
+  eq(body.kids.map((k) => k.kind).join(','), 'acts', 'actions only');
+  eq(body.loaded, undefined, 'nothing to load');
+});
+
+check('a command or a pathless step gets nothing', () => {
+  const A = loadAgents();
+  const body = stepBody();
+  A.agentStepFile(body, { tool: 'Bash', detail: 'python crop.png' });
+  A.agentStepFile(body, { tool: 'Read', detail: '' });
+  eq(body.kids.length, 0, 'no file line');
+});
+
+console.log('\na quiet worker');
+
+// The store stamps entries with Date.now(); these tests move the clock by hand.
+function withClock(fn) {
+  const realNow = Date.now;
+  let t = 1000000;
+  Date.now = () => t;
+  try { fn((ms) => { t += ms; return t; }, () => t); } finally { Date.now = realNow; }
+}
+
+check('a step after a long silence says how long it was in the making, and how big', () => {
+  const A = loadAgents();
+  withClock((wait) => {
+    A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });
+    wait(5000);
+    A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Bash', toolId: 's1', detail: 'ls' });
+    wait(2000);
+    A.agentActivitySeen({ id: 'tu_1', kind: 'result', toolId: 's1', text: 'ok' });
+    wait(202000);                                   // thinking, unseen
+    A.agentActivitySeen({ id: 'tu_1', kind: 'thinking' });
+    wait(467000);                                   // writing a big file, unseen
+    A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Write', toolId: 's2', chars: 124022 });
+  });
+  const log = A.agentRun('tu_1').log;
+  eq(A.agentGapText(log[0]), '', 'a step at the usual pace says nothing');
+  eq(log[1].kind, 'thinking', 'the thought is on the timeline');
+  eq(log[1].gapMs, 202000, 'counted from the tool result, not the call');
+  eq(A.agentGapText(log[1]), 'agent.thought(202s)', 'a long thought');
+  eq(A.agentGapText(log[2]), 'agent.wroteIn(121,467s)', 'the file and the minutes it took');
+});
+
+check('a short thought is no row; a long one is', () => {
+  const A = loadAgents();
+  eq(A.agentGapText({ kind: 'thinking', gapMs: 4000 }), '', 'short');
+  eq(A.agentGapText({ kind: 'thinking', gapMs: A.AGENT_GAP_SHOW_MS }), 'agent.thought(30s)', 'long');
+  eq(A.agentGapText({ kind: 'tool', gapMs: 1000, chars: 8192 }), 'agent.size(8)', 'big but quick: just the size');
+});
+
+check('right now: a tool still out is that tool running', () => {
+  const A = loadAgents();
+  withClock((wait, now) => {
+    A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });
+    A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Read', toolId: 'a' });
+    A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Bash', toolId: 'b' });
+    A.agentActivitySeen({ id: 'tu_1', kind: 'result', toolId: 'a', text: '...' });
+    wait(90000);
+    const t = A.agentNowLine(A.agentRun('tu_1'), now());
+    eq(t.label, 'Bash', 'the call still out');
+    eq(t.meta, '90s', 'for how long');
+    eq(t.hint, 'agent.nowToolHint', 'and why there is nothing to see');
+  });
+});
+
+check('right now: with nothing out, it is composing, counted from its last sign', () => {
+  const A = loadAgents();
+  withClock((wait, now) => {
+    A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });
+    A.agentActivitySeen({ id: 'tu_1', kind: 'tool', tool: 'Bash', toolId: 'b' });
+    wait(3000);
+    A.agentActivitySeen({ id: 'tu_1', kind: 'result', toolId: 'b', text: 'ok' });
+    wait(20000);
+    let t = A.agentNowLine(A.agentRun('tu_1'), now());
+    eq(t.label, 'agent.nowComposing', 'composing');
+    eq(t.meta, 'agent.nowSince(20s)', 'since the result came back');
+    eq(t.hint, '', 'no explanation for a short quiet');
+    wait(A.AGENT_QUIET_HINT_MS);
+    t = A.agentNowLine(A.agentRun('tu_1'), now());
+    eq(t.hint, 'agent.quietHint', 'a long quiet explains itself');
+  });
+});
+
+check('right now: a wait for the API is said as such, then passes', () => {
+  const A = loadAgents();
+  withClock((wait, now) => {
+    A.agentTaskSeen('t1', { id: 'tu_1', detail: 'brief' });
+    A.agentTaskSeen('t2', { id: 'tu_2', detail: 'another chat' });
+    A.agentRetrySeen('t1', { why: 'limit', until: now() + 30000, attempt: 1, max: 10 });
+    eq(A.agentRun('tu_2').retry, null, 'another chat is not waiting');
+    let t = A.agentNowLine(A.agentRun('tu_1'), now());
+    eq(t.label, 'work.retrying', 'waiting');
+    eq(t.hint, 'agent.retryHint', 'and that it carries on');
+    wait(30000);
+    t = A.agentNowLine(A.agentRun('tu_1'), now());
+    eq(t.label, 'agent.nowComposing', 'the wait is over');
+  });
+});
+
+check('a worker the reply waits on in the background stops on its own; any other ends the reply', () => {
+  const A = loadAgents();
+  A.agentTaskSeen('thread-1', { id: 'tu_bg', name: 'Agent', detail: 'Build it' });
+  const r = A.agentRun('tu_bg');
+  const live = { threadId: 'thread-1', background: { running: 1, jobs: [] } };
+  A.state.live.set('thread-1', live);
+  eq(A.agentJob(r), null, 'not among the jobs: no job of its own');
+  A.syncAgentFoot(r);
+  eq(A.els.agentHint.textContent, 'agent.stopHint', 'stopping it ends the reply');
+  live.background.jobs.push({ id: 'tu_bg', task: 'a1', kind: 'agent' });
+  eq(A.agentJob(r).task, 'a1', 'found by its tool id, with the task to stop');
+  A.syncAgentFoot(r);
+  eq(A.els.agentHint.textContent, 'agent.stopJobHint', 'stopping it stops only it');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

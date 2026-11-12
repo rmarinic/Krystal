@@ -105,8 +105,31 @@ impl TurnState {
             "task_notification" => self.on_agent_report(ev),
             "hook_started" => self.on_hook_started(ev),
             "hook_response" => self.on_check_report(ev),
+            "api_retry" => self.on_api_retry(ev),
             _ => {}
         }
+    }
+
+    /// A request to the API failed and the CLI is waiting to try it again: an
+    /// overloaded or failing API, a connection that gave no answer, or (sent
+    /// again and again while it lasts) a sub-agent held back by a usage limit.
+    /// Nothing else is on the wire while that wait lasts, so without this a
+    /// retrying turn looks exactly like a stuck one. The CLI doesn't say which
+    /// agent is waiting, so this goes to the turn as a whole.
+    fn on_api_retry(&mut self, ev: &Value) {
+        let num = |k: &str| ev.get(k).and_then(|v| v.as_u64());
+        let error = ev.get("error").map(|e| match e.as_str() {
+            Some(s) => s.to_string(),
+            None => e.to_string(),
+        });
+        let _ = self.channel.send(json!({
+            "type": "api_retry",
+            "attempt": num("attempt"),
+            "maxRetries": num("max_retries"),
+            "delayMs": num("retry_delay_ms"),
+            "status": num("error_status"),
+            "error": error.map(|e| take_chars(&e, 200)),
+        }));
     }
 
     /// A background agent finished. Its report arrives here rather than as the
@@ -169,8 +192,10 @@ impl TurnState {
         if let Some(m) = ev.get("model").and_then(|v| v.as_str()) {
             self.result.main_model = Some(m.to_string());
         }
-        // A new answer is starting: whatever an agent reported is in it.
+        // A new answer is starting: whatever an agent reported is in it, and a
+        // job stopped before it is that answer's business, not a reason to end.
         self.background.unreported = false;
+        self.background.quiet_stop = false;
         // The authoritative list of `/skill-name` commands this session can
         // run — including the ones built into the CLI binary, which exist
         // nowhere on disk for `skills::scan` to find. Forwarded so the
@@ -221,10 +246,9 @@ impl TurnState {
     fn on_assistant(&mut self, ev: &Value) {
         // A delegated worker's messages carry the parent Task's tool_use id —
         // stream them on as live activity for that Task's chip.
-        if let Some(parent) = ev.get("parent_tool_use_id").and_then(|v| v.as_str()) {
-            if !parent.is_empty() {
-                emit_agent_activity(parent, ev, &mut self.seen_agent_msgs, &self.channel);
-            }
+        // (Filed under the call its task runs under now: see `worker_parent`.)
+        if let Some(parent) = self.background.worker_parent(ev) {
+            emit_agent_activity(parent, ev, &mut self.seen_agent_msgs, &self.channel);
         }
         if let Some(msg) = ev.get("message") {
             let model = msg.get("model").and_then(|v| v.as_str()).unwrap_or("");
@@ -386,11 +410,9 @@ impl TurnState {
     fn on_tool_results(&mut self, ev: &Value) {
         // A sub-agent's own tool results: none of them belong to a chip in
         // this transcript — they go to that agent's timeline.
-        if let Some(parent) = ev.get("parent_tool_use_id").and_then(|v| v.as_str()) {
-            if !parent.is_empty() {
-                emit_agent_tool_results(parent, ev, &self.channel);
-                return;
-            }
+        if let Some(parent) = self.background.worker_parent(ev) {
+            emit_agent_tool_results(parent, ev, &self.channel);
+            return;
         }
         let Some(arr) = ev
             .get("message")
@@ -410,7 +432,12 @@ impl TurnState {
             // Launching a background agent "returns" at once with a note
             // that it is running. That is not its report: the chip stays
             // live until the agent itself reports in.
+            // A shell's launch names the file its output goes to, which is
+            // how the window gets to see it moving while the reply waits.
             if self.background.launched.contains(id) {
+                if self.background.shells.contains(id) {
+                    self.background.jobs.note_output(id, &tool_result_text(block.get("content")));
+                }
                 continue;
             }
             let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -665,6 +692,132 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// As CLI 2.1.321 sends it: a worker first launched in the foreground is
+    /// resumed with SendMessage. Its task starts again under the SendMessage
+    /// call, but its steps still name the Agent call that first launched it.
+    #[test]
+    fn a_resumed_workers_steps_go_to_the_message_that_resumed_it() {
+        let (channel, seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a1", "tool_use_id": "toolu_agent",
+                        "is_backgrounded": false, "task_type": "local_agent", "description": "Reply with hi" }),
+                json!({ "type": "system", "subtype": "task_notification", "task_id": "a1",
+                        "tool_use_id": "toolu_agent", "status": "completed", "summary": "hi" }),
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a1", "tool_use_id": "toolu_send",
+                        "is_backgrounded": true, "task_type": "local_agent", "description": "Reply with hi" }),
+                json!({ "type": "user", "message": { "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_send", "content": "Resuming agent a1" }
+                ] } }),
+                json!({ "type": "assistant", "parent_tool_use_id": "toolu_agent", "agent_id": "a1",
+                        "message": { "id": "m1", "content": [
+                            { "type": "tool_use", "id": "toolu_w1", "name": "Bash",
+                              "input": { "command": "npm test", "description": "Run the tests" } }
+                        ] } }),
+                json!({ "type": "user", "parent_tool_use_id": "toolu_agent", "agent_id": "a1",
+                        "message": { "content": [
+                            { "type": "tool_result", "tool_use_id": "toolu_w1", "content": "ok" }
+                        ] } }),
+            ],
+            &mut turn,
+        );
+        assert!(turn.background.holds_turn(), "the resumed worker holds the reply");
+        let sent = seen.lock().unwrap();
+        let steps: Vec<_> = sent.iter().filter(|e| e["type"] == "agent_activity").collect();
+        assert_eq!(steps.len(), 2, "{steps:?}");
+        assert!(steps.iter().all(|e| e["id"] == "toolu_send"), "filed under the SendMessage call: {steps:?}");
+        // "Resuming agent…" is launch paperwork, not the worker's report.
+        assert!(!sent.iter().any(|e| e["type"] == "tool_result" && e["id"] == "toolu_send"));
+    }
+
+    /// Also from CLI 2.1.321: a worker starts a background shell of its own and
+    /// finishes while it still runs. The shell's end is reported to nobody.
+    #[test]
+    fn a_workers_own_shell_does_not_hold_the_reply() {
+        let (channel, _seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a1", "tool_use_id": "toolu_ag",
+                        "is_backgrounded": true, "task_type": "local_agent", "description": "Build it" }),
+                json!({ "type": "system", "subtype": "task_started", "task_id": "b1", "tool_use_id": "toolu_inner",
+                        "is_backgrounded": true, "task_type": "local_bash", "owned_by_subagent": true,
+                        "parent_task_id": "a1", "description": "Wait in the background" }),
+            ],
+            &mut turn,
+        );
+        assert_eq!(turn.background.running.len(), 1, "only the worker holds the reply");
+        assert_eq!(turn.background.jobs.snapshot().as_array().unwrap().len(), 2, "both are shown");
+        route_all(
+            &[json!({ "type": "system", "subtype": "task_notification", "task_id": "a1", "tool_use_id": "toolu_ag",
+                      "status": "completed", "summary": "Started the wait." })],
+            &mut turn,
+        );
+        assert!(turn.background.jobs.snapshot().as_array().unwrap().is_empty(), "its shell went with it");
+        route_all(&[json!({ "type": "system", "subtype": "init", "session_id": "s" })], &mut turn);
+        assert!(!turn.background.holds_turn(), "nothing left to wait for");
+    }
+
+    /// A session resumed after its process was killed reports the background
+    /// job that died with it, then closes that report with an empty `result`
+    /// before it answers the message (CLI 2.1.321).
+    #[test]
+    fn a_resumed_sessions_report_on_a_dead_job_is_not_the_turns_end() {
+        let (channel, _seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        let phantom = json!({ "type": "result", "subtype": "success", "result": "", "num_turns": 0, "is_error": false });
+        assert!(!turn.background.take_stray_result(&phantom), "no notice, no stray result");
+        route_all(
+            &[json!({ "type": "system", "subtype": "task_notification", "task_id": "bghse8ppd",
+                      "tool_use_id": "toolu_old", "status": "stopped", "summary": "Background command stopped" })],
+            &mut turn,
+        );
+        assert!(!turn.background.holds_turn(), "a job from a dead process holds nothing");
+        assert!(turn.background.take_stray_result(&phantom));
+        assert!(!turn.background.take_stray_result(&phantom), "one notice, one stray result");
+        let real = json!({ "type": "result", "subtype": "success", "result": "4", "num_turns": 1 });
+        route_all(
+            &[json!({ "type": "system", "subtype": "task_notification", "task_id": "other", "status": "stopped" })],
+            &mut turn,
+        );
+        assert!(!turn.background.take_stray_result(&real), "an answer is never skipped");
+    }
+
+    /// Stopping one job (`stop_job`): a stopped agent gets Claude woken to answer
+    /// about it, a stopped shell doesn't (CLI 2.1.321).
+    #[test]
+    fn a_stopped_shell_owes_no_answer_and_a_stopped_agent_does() {
+        let (channel, _seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "b1", "tool_use_id": "toolu_sh",
+                        "is_backgrounded": true, "task_type": "local_bash" }),
+                json!({ "type": "result", "result": "It is running." }),
+                json!({ "type": "system", "subtype": "task_notification", "task_id": "b1", "tool_use_id": "toolu_sh",
+                        "status": "stopped", "summary": "Stopped" }),
+            ],
+            &mut turn,
+        );
+        assert!(turn.background.quiet_stop);
+        assert!(!turn.background.holds_turn(), "the reply can end");
+
+        let (channel, _seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        route_all(
+            &[
+                json!({ "type": "system", "subtype": "task_started", "task_id": "a1", "tool_use_id": "toolu_ag",
+                        "is_backgrounded": true, "task_type": "local_agent" }),
+                json!({ "type": "system", "subtype": "task_notification", "task_id": "a1", "tool_use_id": "toolu_ag",
+                        "status": "stopped", "summary": "Stopped" }),
+            ],
+            &mut turn,
+        );
+        assert!(!turn.background.quiet_stop);
+        assert!(turn.background.holds_turn(), "Claude will answer about the stopped agent");
+    }
+
     #[test]
     fn the_projects_check_shows_while_it_runs_and_each_run_becomes_a_segment() {
         let (channel, seen) = recording_channel();
@@ -821,11 +974,33 @@ mod tests {
         );
         let sent = seen.lock().unwrap();
         let lines: Vec<_> = sent.iter().filter(|e| e["type"] == "agent_activity").collect();
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        assert_eq!(lines[0]["kind"], json!("tool"));
-        assert_eq!(lines[0]["toolId"], json!("toolu_ls"));
-        assert_eq!(lines[0]["target"], json!("List files"));
-        assert_eq!(lines[1]["text"], json!("Found three files."));
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        // The thought itself isn't passed on, only that it ended (and when).
+        assert_eq!(lines[0]["kind"], json!("thinking"));
+        assert!(lines[0].get("text").is_none());
+        assert_eq!(lines[1]["kind"], json!("tool"));
+        assert_eq!(lines[1]["toolId"], json!("toolu_ls"));
+        assert_eq!(lines[1]["target"], json!("List files"));
+        assert_eq!(lines[1]["chars"], json!(r#"{"command":"ls","description":"List files"}"#.len()));
+        assert_eq!(lines[2]["text"], json!("Found three files."));
+    }
+
+    #[test]
+    fn a_waiting_retry_reaches_the_window() {
+        let (channel, seen) = recording_channel();
+        let mut turn = TurnState::new(channel, None);
+        route_all(
+            &[json!({ "type": "system", "subtype": "api_retry", "attempt": 2, "max_retries": 10,
+                      "retry_delay_ms": 30000, "error_status": 429, "error": "rate_limit" })],
+            &mut turn,
+        );
+        let sent = seen.lock().unwrap();
+        let r = sent.iter().find(|e| e["type"] == "api_retry").expect("forwarded");
+        assert_eq!(r["attempt"], json!(2));
+        assert_eq!(r["maxRetries"], json!(10));
+        assert_eq!(r["delayMs"], json!(30000));
+        assert_eq!(r["status"], json!(429));
+        assert_eq!(r["error"], json!("rate_limit"));
     }
 
     /// One answer as the CLI streams it: text in pieces, a thought, a tool call

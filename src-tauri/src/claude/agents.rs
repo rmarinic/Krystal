@@ -36,6 +36,25 @@ pub(super) struct BackgroundAgents {
     pub(super) shells: std::collections::HashSet<String>,
     /// An agent reported in and the CLI hasn't started the answer about it yet.
     pub(super) unreported: bool,
+    /// What the window is shown while the reply waits on them (jobs.rs).
+    pub(super) jobs: Jobs,
+    /// The call each sub-agent task runs under *now*. A worker resumed with
+    /// SendMessage starts again under the SendMessage call, but its own steps
+    /// still name the call that first launched it, perhaps turns ago; they also
+    /// carry its task id (`agent_id`), and this says where they belong today.
+    tool_of_task: HashMap<String, String>,
+    /// Every task this turn saw start, background or not.
+    seen_tasks: std::collections::HashSet<String>,
+    /// Notices about tasks this turn never saw start. A session resumed after
+    /// its process was killed finds the background jobs that died with it and
+    /// reports each one (`task_notification`, status `stopped`), then closes
+    /// that report with a `result` of its own, empty and `num_turns: 0`, before
+    /// it answers the message. That `result` is not this turn's end.
+    stray_notices: u32,
+    /// A job was stopped that nobody will answer about (a shell; see
+    /// `finished`). Once nothing else holds the reply, it is over. Cleared
+    /// when the next answer starts.
+    pub(super) quiet_stop: bool,
 }
 
 /// Is this task (a `task_started` event, or an entry of `background_tasks_changed`)
@@ -58,12 +77,24 @@ pub fn is_background_work(task: &Value) -> bool {
 
 impl BackgroundAgents {
     pub(super) fn started(&mut self, ev: &Value) {
-        if !ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false) || !is_background_work(ev) {
-            return;
-        }
         let task = ev.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
         let tool = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
         if task.is_empty() {
+            return;
+        }
+        self.seen_tasks.insert(task.to_string());
+        if is_agent_task(ev) && !tool.is_empty() {
+            self.tool_of_task.insert(task.to_string(), tool.to_string());
+        }
+        if !ev.get("is_backgrounded").and_then(|v| v.as_bool()).unwrap_or(false) || !is_background_work(ev) {
+            return;
+        }
+        self.jobs.started(ev);
+        // A worker's own background shell is the worker's business: when it ends
+        // the CLI tells the worker, not Claude (and if the worker has finished by
+        // then, nobody; checked on CLI 2.1.321). It must not hold the reply open,
+        // or the reply waits for a notice that never comes.
+        if is_owned(ev) {
             return;
         }
         self.running.insert(task.to_string(), tool.to_string());
@@ -87,14 +118,25 @@ impl BackgroundAgents {
             .filter_map(|t| t.get("task_id").and_then(|v| v.as_str()))
             .collect();
         self.running.retain(|id, _| live.contains(id.as_str()));
+        self.jobs.retain(&live);
     }
 
     /// An agent finished. `true` when it was one of ours running in the background.
     pub(super) fn finished(&mut self, ev: &Value) -> bool {
         let task = ev.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
         let tool = ev.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+        if !task.is_empty() && !self.seen_tasks.contains(task) && !self.launched.contains(tool) {
+            self.stray_notices += 1;
+            return false;
+        }
+        self.jobs.remove(task);
         let ours = self.running.remove(task).is_some() || self.launched.contains(tool);
-        if ours {
+        // A stopped agent still gets Claude woken to answer about it; a stopped
+        // *shell* doesn't (CLI 2.1.321), so there is no answer to wait for.
+        let stopped = matches!(ev.get("status").and_then(|v| v.as_str()), Some("stopped" | "killed"));
+        if ours && stopped && self.shells.contains(tool) {
+            self.quiet_stop = true;
+        } else if ours {
             self.unreported = true;
         }
         ours
@@ -103,6 +145,32 @@ impl BackgroundAgents {
     pub(super) fn holds_turn(&self) -> bool {
         !self.running.is_empty() || self.unreported
     }
+
+    /// The call a sub-agent's message belongs to: the one its task runs under
+    /// now, or failing that the one the message names.
+    pub(super) fn worker_parent<'a>(&'a self, ev: &'a Value) -> Option<&'a str> {
+        let named = ev.get("parent_tool_use_id").and_then(|v| v.as_str()).filter(|p| !p.is_empty());
+        let task = ev.get("agent_id").and_then(|v| v.as_str());
+        named.map(|n| task.and_then(|t| self.tool_of_task.get(t)).map_or(n, |s| s.as_str()))
+    }
+
+    /// Is this `result` the close of a report about a job this turn never saw
+    /// start, rather than the end of the turn? (See `stray_notices`.)
+    pub(super) fn take_stray_result(&mut self, ev: &Value) -> bool {
+        let empty = ev.get("result").and_then(|v| v.as_str()).map_or(true, |r| r.trim().is_empty());
+        let no_turns = ev.get("num_turns").and_then(|v| v.as_u64()) == Some(0);
+        if self.stray_notices == 0 || !empty || !no_turns || ev.get("is_error").and_then(|v| v.as_bool()) == Some(true) {
+            return false;
+        }
+        self.stray_notices -= 1;
+        true
+    }
+}
+
+/// Was this task started by a sub-agent rather than by Claude?
+fn is_owned(task: &Value) -> bool {
+    task.get("owned_by_subagent").and_then(|v| v.as_bool()).unwrap_or(false)
+        || task.get("parent_task_id").and_then(|v| v.as_str()).is_some_and(|p| !p.is_empty())
 }
 
 /// How much of a finished background command's output its chip is given: the
@@ -127,7 +195,7 @@ pub(super) fn background_shell_report(ev: &Value) -> (String, bool) {
 
 /// The last `max` characters of a file, starting on a whole line when it had to
 /// be cut. Reads only the end of the file: a build log can be large.
-fn read_tail(path: &std::path::Path, max: usize) -> Option<String> {
+pub(super) fn read_tail(path: &std::path::Path, max: usize) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
@@ -253,6 +321,7 @@ pub(super) fn emit_agent_activity(
                 .get("text")
                 .and_then(|v| v.as_str())
                 .map(|t| format!("{parent}:x:{msg_id}:{}", t.trim())),
+            Some("thinking" | "redacted_thinking") => Some(format!("{parent}:k:{msg_id}")),
             _ => None,
         };
         if let Some(k) = key {
@@ -261,6 +330,13 @@ pub(super) fn emit_agent_activity(
             }
         }
         match block.get("type").and_then(|v| v.as_str()) {
+            // A worker's thoughts never reach us as text (the CLI leaves them out),
+            // but the block landing marks *when* it finished thinking — which is
+            // what tells a long silence apart: so much of it was thinking, the
+            // rest was writing the step that followed.
+            Some("thinking" | "redacted_thinking") => {
+                let _ = channel.send(json!({ "type": "agent_activity", "id": parent, "kind": "thinking" }));
+            }
             Some("text") => {
                 let t = block.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
                 if t.is_empty() {
@@ -275,9 +351,13 @@ pub(super) fn emit_agent_activity(
                 let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let input = block.get("input").cloned().unwrap_or_else(|| json!({}));
                 let (detail, target) = tool_detail(name, &input);
+                // How much the worker wrote into the call: a sub-agent's tool input
+                // isn't streamed, so a 120 KB file arrives whole after minutes of
+                // quiet, and its size is what explains them.
+                let chars = serde_json::to_string(&input).map(|s| s.len()).unwrap_or(0);
                 let mut line = json!({
                     "type": "agent_activity", "id": parent,
-                    "kind": "tool", "tool": name,
+                    "kind": "tool", "tool": name, "chars": chars,
                 });
                 if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
                     line["toolId"] = json!(id);

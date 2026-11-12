@@ -83,6 +83,14 @@ test('waiting on background work says so, with a count only when there are sever
   assert.strictEqual(w.workLineText({ since: t0, phase: 'background', jobs: 1, waiting: true }, t0).tone, 'wait');
 });
 
+test('one background job of a known kind is named for what it is', () => {
+  const at = (jobs, jobKind) => w.workLineText({ since: t0, phase: 'background', jobs, jobKind }, t0).label;
+  assert.strictEqual(at(1, 'agent'), 'work.bgAgent');
+  assert.strictEqual(at(1, 'shell'), 'work.bgShell');
+  assert.strictEqual(at(2, 'agent'), 'work.background', 'several: just "background work"');
+  assert.strictEqual(at(1, ''), 'work.background', 'a mix, or an older backend that sent no list');
+});
+
 test('while the project\'s check runs, the line names it and keeps time', () => {
   const t = w.workLineText({ since: t0, phase: 'check', tool: 'npm test' }, t0 + 30000);
   assert.strictEqual(t.label, 'work.checking');
@@ -126,6 +134,35 @@ test('a chat leaving the screen takes its line with it', () => {
   assert.strictEqual(r.timers.size, 1);
   b.detach();
   assert.strictEqual(r.timers.size, 0);
+});
+
+test('a retry says why, when the next try is, and which try it will be', () => {
+  const note = w.apiRetryNote({ attempt: 2, maxRetries: 10, delayMs: 40000, status: 429, error: 'rate_limit' }, t0);
+  assert.strictEqual(note.why, 'limit');
+  assert.strictEqual(note.until, t0 + 40000);
+  const line = w.workLineText({ since: t0, phase: 'tool', tool: 'Agent', retry: note }, t0 + 10000);
+  assert.strictEqual(line.label, 'work.retrying');
+  assert.strictEqual(line.meta, 'retry.why.limit · work.retryIn(30s) · work.retryTry(2,10)');
+});
+
+test('the reasons a request fails are told apart', () => {
+  const why = (m) => w.apiRetryNote(m, t0).why;
+  assert.strictEqual(why({ status: 529, error: 'overloaded_error' }), 'overloaded');
+  assert.strictEqual(why({ error: 'Request timed out' }), 'noanswer');
+  assert.strictEqual(why({ status: 500, error: 'api_error' }), 'error');
+  assert.strictEqual(why({ error: 'rate_limit' }), 'limit');
+});
+
+test('once the wait is over the line goes back to what the turn is doing', () => {
+  const note = w.apiRetryNote({ delayMs: 5000 }, t0);
+  const line = w.workLineText({ since: t0, phase: 'writing', retry: note }, t0 + 5000);
+  assert.strictEqual(line.label, 'work.writing');
+  assert.strictEqual(w.retryLineText(null, t0), null);
+});
+
+test('waiting on you outranks a retry', () => {
+  const note = w.apiRetryNote({ delayMs: 60000 }, t0);
+  assert.strictEqual(w.workLineText({ since: t0, waiting: true, retry: note }, t0 + 1).label, 'work.waiting');
 });
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }

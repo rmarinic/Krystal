@@ -68,6 +68,7 @@ const api = {
   discordSetShareName(enabled) { return invoke('discord_set_share_name', { enabled }); },
   // `force` kills the turn's process instead of politely asking it to stop.
   stopChat(threadId, force) { return invoke('stop_chat', { threadId, force: !!force }); },
+  stopJob(threadId, taskId) { return invoke('stop_job', { threadId, taskId }); },
   // Ask mode: `decision` is 'allow' | 'always' | 'deny' (see permissions.js).
   answerPermission(threadId, requestId, decision) {
     return invoke('answer_permission', { threadId, requestId, decision });

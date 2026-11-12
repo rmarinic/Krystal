@@ -1,0 +1,104 @@
+/* background.css — the jobs a reply is waiting on, listed under its working line
+ * (app/background.js). index.html links the stylesheets in order and that order
+ * is the cascade, so a rule moved to another file can change what wins.
+ *
+ * One quiet card per job, set apart by tone rather than a border, lined up with
+ * the working line above it. Its dot rests still and brightens once on each
+ * real sign of life (.beat); a job silent too long turns amber and holds still,
+ * the colour of "needs you", like a permission prompt. A row enters with a short
+ * fade and leaves the same way; opening one just shows what's under it. */
+
+.bg-jobs {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 8px 0 0; padding-left: 29px;
+  max-width: 640px;
+}
+
+.bg-job {
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  padding: 7px 10px 8px;
+  transition: opacity .3s ease;
+}
+.bg-job.enter { animation: bg-in .3s ease-out; }
+.bg-job.out { opacity: 0; }
+@keyframes bg-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.bg-head {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  font-size: 12.5px; color: var(--fg);
+}
+.bg-head:focus-visible { outline: 1px solid var(--accent-2); outline-offset: 2px; border-radius: 4px; }
+.bg-dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-2); opacity: .75;
+}
+.bg-dot.beat { animation: wl-beat .7s ease-out; }   /* the working line's own beat (working.css) */
+.bg-ico { flex: none; display: inline-flex; color: var(--fg-muted); }
+.bg-ico .ui-ico { width: 14px; height: 14px; }
+.bg-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-clock { flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+.bg-caret { flex: none; font-size: 10px; color: var(--fg-dim); transition: transform .2s ease; }
+.bg-job.open > .bg-head .bg-caret { transform: rotate(90deg); }
+
+.bg-sub {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 3px 0 0 15px; font-size: 12px; color: var(--fg-muted);
+}
+.bg-step { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-step.mono { font-family: var(--mono); font-size: 11px; }
+.bg-last { flex: none; font-size: 11px; color: var(--fg-dim); }
+.bg-last:empty { display: none; }
+
+/* Silent too long: amber and still. The warning says what the silence may be. */
+.bg-job[data-tone="stale"] { background: var(--warn-bg); }
+.bg-job[data-tone="stale"] > .bg-head .bg-dot { background: var(--warn); opacity: 1; animation: none; }
+.bg-job[data-tone="stale"] > .bg-sub .bg-last { color: var(--warn); }
+.bg-warn {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin: 6px 0 0 15px; font-size: 12px; color: var(--warn);
+}
+.bg-warn[hidden] { display: none; }
+.bg-warn-text { flex: 1 1 260px; }
+
+.bg-act {
+  all: unset; cursor: pointer; box-sizing: border-box;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; color: var(--fg); background: var(--bg-card-2);
+  transition: background .15s ease, color .15s ease;
+}
+.bg-act:hover { background: var(--border-2); }
+.bg-act:focus-visible { outline: 1px solid var(--accent-2); outline-offset: 1px; }
+.bg-act:disabled { cursor: default; color: var(--fg-dim); background: var(--bg-card-2); }
+.bg-act.bg-stop:not(:disabled):hover { color: var(--warn); }
+
+/* Opened: the helper's last few steps, or the end of the command's output. */
+.bg-more { margin: 8px 0 0 15px; }
+.bg-more[hidden] { display: none; }
+.bg-job.open > .bg-more { animation: bg-fade .2s ease-out; }
+@keyframes bg-fade { from { opacity: 0; } to { opacity: 1; } }
+.bg-steps { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--fg-muted); }
+.bg-step-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.bg-step-row.out { color: var(--fg); }
+.bg-step-row.err { color: var(--warn); }
+.bg-step-ico { flex: none; display: inline-flex; color: var(--fg-dim); }
+.bg-step-ico .ui-ico { width: 12px; height: 12px; }
+.bg-step-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-tail {
+  margin: 0; padding: 8px 10px; max-height: 220px; overflow: auto;
+  border-radius: var(--radius-sm); background: var(--code-bg);
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--fg-muted);
+  white-space: pre-wrap; word-break: break-word;
+}
+.bg-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* A helper's own background commands sit inside its card. */
+.bg-kids { display: flex; flex-direction: column; gap: 6px; }
+.bg-kids:not(:empty) { margin: 8px 0 0 15px; }
+.bg-kids .bg-job { background: var(--bg-card-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-job, .bg-caret, .bg-act { transition: none; }
+  .bg-job.enter, .bg-dot.beat, .bg-job.open > .bg-more { animation: none; }
+}

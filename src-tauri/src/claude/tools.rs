@@ -65,6 +65,14 @@ pub(super) fn tool_detail(name: &str, input: &Value) -> (Option<String>, Option<
             return (Some(d.to_string()), Some(take_chars(d, 28)));
         }
     }
+    // A message to a helper agent, which resumes it if it had finished. Its
+    // own one-line summary is the target; the message itself the detail.
+    if name == "SendMessage" {
+        if let Some(m) = str_of("message") {
+            let short = str_of("summary").filter(|s| !s.trim().is_empty()).unwrap_or(m);
+            return (Some(m.to_string()), Some(take_chars(short, 40)));
+        }
+    }
     if name == "AskUserQuestion" {
         if let Some(first) = input.get("questions").and_then(|v| v.as_array()).and_then(|a| a.first()) {
             let q = first.get("question").and_then(|v| v.as_str()).unwrap_or("");
@@ -319,6 +327,17 @@ mod tests {
         assert_eq!(target.as_deref(), Some("npm test"));
         let (_, target) = tool_detail("Bash", &json!({ "command": "npm test", "description": "  " }));
         assert_eq!(target.as_deref(), Some("npm test"));
+    }
+
+    #[test]
+    fn a_message_to_a_helper_is_labelled_by_its_summary() {
+        let input = json!({ "to": "ad71a2c3b414f90f3", "summary": "Run the sleep sequence",
+                            "message": "Run these commands one at a time and report." });
+        let (detail, target) = tool_detail("SendMessage", &input);
+        assert_eq!(detail.as_deref(), Some("Run these commands one at a time and report."));
+        assert_eq!(target.as_deref(), Some("Run the sleep sequence"));
+        let (_, target) = tool_detail("SendMessage", &json!({ "to": "a", "message": "Carry on" }));
+        assert_eq!(target.as_deref(), Some("Carry on"));
     }
 
     #[test]

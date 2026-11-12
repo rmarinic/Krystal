@@ -326,13 +326,21 @@ impl Session {
         self.write_line(&interrupt_request()).await
     }
 
+    /// Stop one background job, by its task id. Only while a turn is reading:
+    /// a stopped agent gets Claude woken to answer about it, and that answer
+    /// must land in the turn that is waiting on it (`commands::stop_job`).
+    pub async fn stop_task(&self, task_id: &str) -> Result<(), String> {
+        self.write_line(&stop_task_request(task_id)).await
+    }
+
     /// Is a sub-agent (or a background shell) still alive in this process? If so
     /// an interrupt is not enough to stop the chat: it ends the *turn*, and a
     /// background agent isn't part of the turn any more — it carries on working
-    /// (editing files, spending tokens) in a session that looks stopped. Stopping it on its own
-    /// (`stop_task`) doesn't help either: the CLI then wakes Claude to answer
-    /// about the stopped agent, with nobody reading, and that stray answer would
-    /// end the chat's next turn early. So `commands::stop_chat` ends the process.
+    /// (editing files, spending tokens) in a session that looks stopped. Stopping
+    /// them one by one (`stop_task`) doesn't help once the turn is over: the CLI
+    /// then wakes Claude to answer about the stopped agent, with nobody reading,
+    /// and that stray answer would end the chat's next turn early. So
+    /// `commands::stop_chat` ends the process.
     pub fn has_agents(&self) -> bool {
         self.agents.lock().map(|m| !m.is_empty()).unwrap_or(false)
     }
@@ -553,6 +561,16 @@ mod tests {
         ids.sort();
         // A background shell still running is listed too, and is just as live.
         assert_eq!(ids, vec!["b", "c", "dev"]);
+    }
+
+    #[test]
+    fn stopping_one_job_names_its_task() {
+        let a = stop_task_request("a42996adc7beee452");
+        let b = stop_task_request("a42996adc7beee452");
+        assert_eq!(a["type"], "control_request");
+        assert_eq!(a["request"]["subtype"], "stop_task");
+        assert_eq!(a["request"]["task_id"], "a42996adc7beee452");
+        assert_ne!(a["request_id"], b["request_id"]);
     }
 
     #[test]

@@ -200,7 +200,8 @@ pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; transform: none; }
 
 /* ---- Image lightbox: view any thumbnail full-size ---- */
 .lightbox-overlay {
-  position: fixed; inset: 0; z-index: 60;
+  /* Above the modals (60): a thumbnail inside one — the agent inspector's — opens here. */
+  position: fixed; inset: 0; z-index: 90;
   display: flex; align-items: center; justify-content: center;
   padding: 40px; background: rgba(6, 8, 12, 0.82);
   opacity: 0; transition: opacity .19s ease;

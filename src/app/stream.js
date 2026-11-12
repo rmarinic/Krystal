@@ -105,6 +105,7 @@ function attachLiveTyper(live) {
   }
   refreshAgentChips();   // rebuilt sub-agent chips pick their tally back up
   if (live.toolInput) typer.toolInput(live.toolInput);   // how far a long tool call has got
+  if (live.retry) typer.retrying(live.retry);              // a wait for the API still running
   if (live.background) typer.background(live.background);   // waiting on a background job
   if (live.checking) typer.checking(live.checking);         // …or on the project's check
   if (live.permissions && live.permissions.length) typer.waiting(true);
@@ -246,8 +247,12 @@ function handleLiveEvent(live, msg) {
   } else if (event === 'background') {
     // Between answers: a background job Claude started (a sub-agent, a long
     // build) is still running, and the reply stays open until it reports.
-    live.background = msg.running || 0;
+    // The jobs themselves come along, each listed under the working line.
+    live.background = bgFromEvent(msg, live.background, live.threadId, Date.now());
     if (live.typer) live.typer.background(live.background);
+  } else if (event === 'job_activity') {
+    // A background command printed more: the end of it, on its row.
+    bgJobActivity(live.background, msg, Date.now());
   } else if (event === 'tool_result') {
     if (msg.id) (live.outputs || (live.outputs = {}))[msg.id] = { output: msg.output, isError: msg.isError };
     trackTool(live.activity, msg, active, live);    // updates the Activity panel
@@ -302,11 +307,19 @@ function handleLiveEvent(live, msg) {
     live.events.push(msg);
     trackAgentProgress(live.activity, msg, active);
     agentProgressSeen(msg);
+    bgBeat(msg.id);   // a sign of life from a worker the reply may be waiting on
+  } else if (event === 'api_retry') {
+    // A request failed and the CLI is waiting to try again — nothing else is on
+    // the wire meanwhile, so say so, or a retrying turn looks like a stuck one.
+    live.retry = apiRetryNote(msg, Date.now());
+    if (live.typer) live.typer.retrying(live.retry);
+    agentRetrySeen(live.threadId, live.retry);
   } else if (event === 'agent_activity') {
     // What a delegated worker is saying/doing right now — one line per step, kept
     // in its run (survives a thread switch AND the end of the turn) and streamed
     // into the inspector's timeline if it's open.
     agentActivitySeen(msg);
+    bgBeat(msg.id);
   } else if (event === 'orchestration') {
     // End-of-turn orchestrator savings summary: how the turn's tokens split
     // between the premium supervisor and its cheaper workers. Stash on the turn

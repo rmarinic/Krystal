@@ -61,6 +61,29 @@ pub async fn stop_chat(
     Ok(json!({ "ok": pid.is_some(), "killed": pid.is_some() }))
 }
 
+/// Stop one background job (a sub-agent or a shell, by its task id) while the
+/// reply waits on it, and leave the reply and every other job running.
+///
+/// Only while that chat's turn is in flight: a stopped agent gets Claude woken
+/// to answer about it, and the turn waiting on the agent is what reads that
+/// answer. With no turn running it would be a stray answer that ends the chat's
+/// next turn early (see `Session::has_agents`), so that is refused; stopping the
+/// whole chat is `stop_chat`. The job's end reaches the window the usual way,
+/// as a `background` list without it.
+#[tauri::command]
+pub async fn stop_job(state: State<'_, AppState>, thread_id: String, task_id: String) -> Result<Value, String> {
+    if task_id.trim().is_empty() {
+        return Err("no job named".into());
+    }
+    let turn_running = state.running.lock().unwrap().contains_key(&thread_id);
+    let sess = state.sessions.get(&thread_id).await.filter(|_| turn_running);
+    let Some(sess) = sess else {
+        return Ok(json!({ "ok": false }));
+    };
+    sess.stop_task(&task_id).await?;
+    Ok(json!({ "ok": true }))
+}
+
 /// Answer a permission prompt a turn is waiting on (Ask mode): `allow` this
 /// once, `always` (allow, and apply the rule the CLI suggested so it stops
 /// asking), or `deny`.

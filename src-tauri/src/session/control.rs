@@ -75,6 +75,18 @@ pub(super) fn interrupt_request() -> Value {
     })
 }
 
+/// A `stop_task` control request: end one background job (a sub-agent or a
+/// shell) and leave the rest of the session alone. Its own request id, like an
+/// interrupt's.
+pub(super) fn stop_task_request(task_id: &str) -> Value {
+    let n = INTERRUPTS.fetch_add(1, Ordering::Relaxed);
+    json!({
+        "type": "control_request",
+        "request_id": format!("krystal-stop-task-{n}"),
+        "request": { "subtype": "stop_task", "task_id": task_id }
+    })
+}
+
 /// Keep `agents` (task id -> backgrounded) in step with one event off stdout.
 ///
 /// A foreground agent is part of its turn, so it is gone once the turn's

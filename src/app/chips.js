@@ -163,16 +163,17 @@ function buildImagePreview(path) {
   return wrap;
 }
 
-/* Load any not-yet-fetched image previews inside a chip (called on first open).
- * Reads the file through the backend as a data URL — no asset-scope config. */
-function loadChipImages(chip) {
+/* Load any not-yet-fetched image previews inside a chip (called on first open)
+ * or an agent inspector step. Reads the file through the backend as a data URL —
+ * no asset-scope config. `onLoad` keeps whatever list it sits in following. */
+function loadChipImages(chip, onLoad = maybeFollow) {
   chip.querySelectorAll('.chip-img[data-img-path]').forEach((wrap) => {
     const path = wrap.dataset.imgPath;
     delete wrap.dataset.imgPath;               // load once
     const img = wrap.querySelector('img');
     api.readImage(path).then((src) => {
       if (src) {
-        img.onload = () => maybeFollow();
+        img.onload = () => onLoad();
         img.src = src;
         wrap.classList.add('loaded');
       } else {
@@ -227,6 +228,13 @@ function chipFileLine(path) {
   d.className = 'chip-detail-line';
   d.textContent = path;
   wrap.appendChild(d);
+  wrap.appendChild(chipFileActs(path));
+  return wrap;
+}
+
+/* Show in folder / Open for one file — under a chip's path, and under a file
+ * step in the agent inspector's timeline. */
+function chipFileActs(path) {
   const acts = document.createElement('div');
   acts.className = 'chip-acts';
   const btn = (iconName, label, title, run) => {
@@ -242,8 +250,7 @@ function chipFileLine(path) {
   const kind = chipOpenKind(path);
   if (kind === 'text') btn('file', tr('chip.openText'), tr('chip.openTextTitle'), () => chipOpen(path));
   else if (kind === 'default') btn('file', tr('chip.open'), '', () => chipOpen(path));
-  wrap.appendChild(acts);
-  return wrap;
+  return acts;
 }
 
 function chipOpenFailed(e) {
